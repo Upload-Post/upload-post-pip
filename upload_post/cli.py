@@ -18,8 +18,8 @@ def main():
         "--platforms", 
         nargs="+",
         required=True,
-        choices=["tiktok", "instagram", "facebook", "youtube"],
-        help="Platforms to upload to"
+        choices=["tiktok", "instagram", "linkedin", "youtube", "facebook", "x", "threads", "pinterest"],
+        help="Platforms to upload to. For platform-specific parameters, please use the Python API."
     )
     parser.add_argument(
         "--verbose", 
