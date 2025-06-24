@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="upload-post",
-    version="0.1.1",
+    version="0.1.2",
     author="Manuel Gracia",
     author_email="hi@img2html.com",
     description="Python client for Upload-Post.com API",
