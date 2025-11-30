@@ -7,9 +7,9 @@ A Python client for the [Upload-Post.com](https://www.upload-post.com/) API, des
 
 ## Features
 
-- 🚀 Upload videos to TikTok, Instagram, LinkedIn, YouTube, Facebook, X (Twitter), Threads, and Pinterest (platform support based on API availability)
-- 🖼️ Upload photos to TikTok, Instagram, LinkedIn, Facebook, X (Twitter), Threads, and Pinterest
-- ✍️ Upload text posts to LinkedIn, X (Twitter), Facebook, and Threads
+- 🚀 Upload videos to TikTok, Instagram, LinkedIn, YouTube, Facebook, X (Twitter), Threads, Pinterest, and Bluesky (platform support based on API availability)
+- 🖼️ Upload photos to TikTok, Instagram, LinkedIn, Facebook, X (Twitter), Threads, Pinterest, and Bluesky
+- ✍️ Upload text posts to LinkedIn, X (Twitter), Facebook, Threads, and Bluesky
 - 🔒 Secure API key authentication
 - 📁 File validation and error handling
 - 📊 Detailed logging
