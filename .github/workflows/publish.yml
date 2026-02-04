@@ -3,6 +3,13 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (build only, no publish)'
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   publish:
@@ -25,5 +32,13 @@ jobs:
       - name: Build package
         run: python -m build
 
+      - name: Show built packages (dry-run)
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "📦 Built packages:"
+          ls -la dist/
+          echo "✅ Dry run complete - no publish"
+
       - name: Publish to PyPI
+        if: ${{ inputs.dry_run != true }}
         uses: pypa/gh-action-pypi-publish@release/v1
