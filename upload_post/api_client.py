@@ -864,7 +864,11 @@ class UploadPostClient:
         redirect_url: Optional[str] = None,
         logo_image: Optional[str] = None,
         redirect_button_text: Optional[str] = None,
-        platforms: Optional[List[str]] = None
+        platforms: Optional[List[str]] = None,
+        show_calendar: Optional[bool] = None,
+        readonly_calendar: Optional[bool] = None,
+        connect_title: Optional[str] = None,
+        connect_description: Optional[str] = None
     ) -> Dict:
         """
         Generate a JWT for platform integration.
@@ -876,6 +880,10 @@ class UploadPostClient:
             logo_image: Logo image URL for the linking page.
             redirect_button_text: Text for redirect button.
             platforms: Platforms to show for connection.
+            show_calendar: Whether to show the calendar view.
+            readonly_calendar: Show only a read-only calendar (no editing, no account connection).
+            connect_title: Custom title for the connection page.
+            connect_description: Custom description for the connection page.
 
         Returns:
             JWT and connection URL.
@@ -889,6 +897,14 @@ class UploadPostClient:
             body["redirect_button_text"] = redirect_button_text
         if platforms:
             body["platforms"] = platforms
+        if show_calendar is not None:
+            body["show_calendar"] = show_calendar
+        if readonly_calendar is not None:
+            body["readonly_calendar"] = readonly_calendar
+        if connect_title:
+            body["connect_title"] = connect_title
+        if connect_description:
+            body["connect_description"] = connect_description
         return self._request("/uploadposts/users/generate-jwt", "POST", json_data=body)
 
     def validate_jwt(self, jwt: str) -> Dict:
