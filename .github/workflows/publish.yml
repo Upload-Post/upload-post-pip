@@ -3,6 +3,9 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
+    paths: ['setup.py', 'setup.cfg', 'pyproject.toml']
   workflow_dispatch:
     inputs:
       dry_run:
@@ -29,7 +32,24 @@ jobs:
       - name: Install build tools
         run: pip install build
 
+      - name: Check if version is new
+        id: version_check
+        run: |
+          LOCAL=$(python -c "import re; print(re.search(r'version=[\"'\''](.*?)[\"'\''']', open('setup.py').read()).group(1))")
+          PKG_NAME=$(python -c "import re; print(re.search(r'name=[\"'\''](.*?)[\"'\''']', open('setup.py').read()).group(1))")
+          REMOTE=$(pip index versions "$PKG_NAME" 2>/dev/null | grep -oP '\(\K[^)]+' | head -1 || echo "0.0.0")
+          echo "local=$LOCAL" >> $GITHUB_OUTPUT
+          echo "remote=$REMOTE" >> $GITHUB_OUTPUT
+          if [ "$LOCAL" = "$REMOTE" ]; then
+            echo "new=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Version $LOCAL already published, skipping."
+          else
+            echo "new=true" >> $GITHUB_OUTPUT
+            echo "🚀 New version detected: $REMOTE → $LOCAL"
+          fi
+
       - name: Build package
+        if: steps.version_check.outputs.new == 'true' || github.event_name == 'workflow_dispatch'
         run: python -m build
 
       - name: Show built packages (dry-run)
@@ -40,5 +60,5 @@ jobs:
           echo "✅ Dry run complete - no publish"
 
       - name: Publish to PyPI
-        if: ${{ inputs.dry_run != true }}
+        if: (steps.version_check.outputs.new == 'true' && inputs.dry_run != true) || github.event_name == 'release'
         uses: pypa/gh-action-pypi-publish@release/v1
