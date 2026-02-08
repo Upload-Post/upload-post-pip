@@ -1,7 +1,6 @@
 import argparse
 import logging
 from pathlib import Path
-from typing import List
 from . import UploadPostClient, UploadPostError
 
 logger = logging.getLogger(__name__)
@@ -12,7 +11,7 @@ def main():
     )
     parser.add_argument("--api-key", required=True, help="API authentication key")
     parser.add_argument("--video", required=True, type=Path, help="Path to video file")
-    parser.add_argument("--title", required=True, help="Video title")
+    parser.add_argument("--title", required=False, default="", help="Video title (required for most platforms; optional for TikTok-only uploads)")
     parser.add_argument("--user", required=True, help="User identifier")
     parser.add_argument(
         "--platforms", 

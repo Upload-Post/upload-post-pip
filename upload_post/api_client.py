@@ -6,7 +6,7 @@ Facebook, Pinterest, Threads, Reddit, Bluesky, and X (Twitter).
 """
 
 from pathlib import Path
-from typing import Dict, List, Union, Optional, Any, Literal
+from typing import Dict, List, Union, Optional, Any
 import requests
 
 
@@ -93,7 +93,7 @@ class UploadPostClient:
         self,
         data: List[tuple],
         user: str,
-        title: str,
+        title: Optional[str],
         platforms: List[str],
         first_comment: Optional[str] = None,
         alt_text: Optional[str] = None,
@@ -105,7 +105,8 @@ class UploadPostClient:
     ):
         """Add common upload parameters."""
         data.append(("user", user))
-        data.append(("title", title))
+        if title:
+            data.append(("title", title))
         for p in platforms:
             data.append(("platform[]", p))
         
@@ -339,7 +340,7 @@ class UploadPostClient:
     def upload_video(
         self,
         video_path: Union[str, Path],
-        title: str,
+        title: Optional[str],
         user: str,
         platforms: List[str],
         **kwargs
@@ -349,7 +350,7 @@ class UploadPostClient:
 
         Args:
             video_path: Path to video file or video URL.
-            title: Video title/caption.
+            title: Video title/caption. Required for most platforms; optional for TikTok-only uploads.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, youtube, 
                       linkedin, facebook, pinterest, threads, bluesky, x
@@ -479,7 +480,7 @@ class UploadPostClient:
     def upload_photos(
         self,
         photos: List[Union[str, Path]],
-        title: str,
+        title: Optional[str],
         user: str,
         platforms: List[str],
         **kwargs
@@ -489,7 +490,7 @@ class UploadPostClient:
 
         Args:
             photos: List of photo file paths or URLs.
-            title: Post title/caption.
+            title: Post title/caption. Required for most platforms; optional for TikTok-only uploads.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, linkedin,
                       facebook, pinterest, threads, reddit, bluesky, x

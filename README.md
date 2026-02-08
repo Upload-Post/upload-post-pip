@@ -279,7 +279,7 @@ These options work across all upload methods:
 
 | Option | Description |
 |--------|-------------|
-| `title` | Post title/caption (required) |
+| `title` | Post title/caption (required for most platforms; optional for TikTok-only uploads) |
 | `user` | Profile name (required) |
 | `platforms` | Target platforms list (required) |
 | `first_comment` | First comment to post |
