@@ -270,6 +270,7 @@ boards = client.get_pinterest_boards("my-profile")
 
 ### Threads
 - `threads_long_text_as_post` - Post long text as single post (vs thread)
+- `threads_thread_media_layout` - Comma-separated list of how many media items to include in each Threads post (e.g. "5,5" or "3,4,3"). Each value 1-10, total must equal media count. Auto-chunks into groups of 10 when >10 items.
 
 ### Reddit
 - `subreddit` - Subreddit name (without r/)
