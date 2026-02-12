@@ -253,7 +253,9 @@ class UploadPostClient:
                 data.append(("video_state", kwargs["video_state"]))
             if kwargs.get("facebook_media_type"):
                 data.append(("facebook_media_type", kwargs["facebook_media_type"]))
-        
+            if kwargs.get("thumbnail_url"):
+                data.append(("thumbnail_url", kwargs["thumbnail_url"]))
+
         if is_text and kwargs.get("facebook_link_url"):
             data.append(("facebook_link_url", kwargs["facebook_link_url"]))
 
@@ -307,6 +309,8 @@ class UploadPostClient:
                     data.append(("tagged_user_ids[]", uid))
             if kwargs.get("place_id"):
                 data.append(("place_id", kwargs["place_id"]))
+            if kwargs.get("x_thread_image_layout"):
+                data.append(("x_thread_image_layout", kwargs["x_thread_image_layout"]))
         else:
             if kwargs.get("post_url"):
                 data.append(("post_url", kwargs["post_url"]))
@@ -328,6 +332,8 @@ class UploadPostClient:
         """Add Threads-specific parameters."""
         if kwargs.get("threads_long_text_as_post") is not None:
             data.append(("threads_long_text_as_post", str(kwargs["threads_long_text_as_post"]).lower()))
+        if kwargs.get("threads_thread_media_layout"):
+            data.append(("threads_thread_media_layout", kwargs["threads_thread_media_layout"]))
 
     def _add_reddit_params(self, data: List[tuple], **kwargs):
         """Add Reddit-specific parameters."""
@@ -408,7 +414,8 @@ class UploadPostClient:
             Facebook:
                 facebook_page_id: Facebook Page ID
                 video_state: PUBLISHED or DRAFT
-                facebook_media_type: REELS or STORIES
+                facebook_media_type: REELS, STORIES, or VIDEO
+                thumbnail_url: Thumbnail URL for normal page videos (VIDEO type only)
             
             Pinterest:
                 pinterest_board_id: Board ID
@@ -533,10 +540,18 @@ class UploadPostClient:
                 nullcast: Promoted-only post
                 tagged_user_ids: User IDs to tag
                 x_long_text_as_post: Post long text as single post
-            
+                x_thread_image_layout: Comma-separated image layout for thread
+                    (e.g. "4,4" or "2,3,1"). Each value 1-4, total must equal
+                    image count. Auto-chunks into groups of 4 if >4 images
+                    and no layout specified.
+
             Threads:
                 threads_long_text_as_post: Post long text as single post
-            
+                threads_thread_media_layout: Comma-separated media layout for thread
+                    (e.g. "5,5" or "3,4,3"). Each value 1-10, total must equal
+                    media count. Auto-chunks into groups of 10 if >10 items
+                    and no layout specified.
+
             Reddit:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID

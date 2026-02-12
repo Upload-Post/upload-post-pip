@@ -242,7 +242,8 @@ boards = client.get_pinterest_boards("my-profile")
 ### Facebook
 - `facebook_page_id` - Facebook Page ID (required)
 - `video_state` - PUBLISHED, DRAFT
-- `facebook_media_type` - REELS, STORIES
+- `facebook_media_type` - REELS, STORIES, or VIDEO (normal page video)
+- `thumbnail_url` - Thumbnail URL for normal page videos (only when `facebook_media_type` is VIDEO)
 - `facebook_link_url` - URL for text posts
 
 ### Pinterest
@@ -265,9 +266,11 @@ boards = client.get_pinterest_boards("my-profile")
 - `share_with_followers` - Share community post with followers
 - `card_uri` - Card URI for Twitter Cards
 - `x_long_text_as_post` - Post long text as single post
+- `x_thread_image_layout` - Comma-separated image layout for thread (e.g. "4,4" or "2,3,1"). Each value 1-4, total must equal image count. Auto-chunks into groups of 4 when >4 images.
 
 ### Threads
 - `threads_long_text_as_post` - Post long text as single post (vs thread)
+- `threads_thread_media_layout` - Comma-separated list of how many media items to include in each Threads post (e.g. "5,5" or "3,4,3"). Each value 1-10, total must equal media count. Auto-chunks into groups of 10 when >10 items.
 
 ### Reddit
 - `subreddit` - Subreddit name (without r/)
