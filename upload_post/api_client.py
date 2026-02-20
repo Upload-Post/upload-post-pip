@@ -237,12 +237,15 @@ class UploadPostClient:
         if kwargs.get("recordingDate"):
             data.append(("recordingDate", kwargs["recordingDate"]))
 
-    def _add_linkedin_params(self, data: List[tuple], **kwargs):
+    def _add_linkedin_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add LinkedIn-specific parameters."""
         if kwargs.get("visibility"):
             data.append(("visibility", kwargs["visibility"]))
         if kwargs.get("target_linkedin_page_id"):
             data.append(("target_linkedin_page_id", kwargs["target_linkedin_page_id"]))
+        if is_text and (kwargs.get("linkedin_link_url") or kwargs.get("link_url")):
+            link = kwargs.get("linkedin_link_url") or kwargs.get("link_url")
+            data.append(("linkedin_link_url", link))
 
     def _add_facebook_params(self, data: List[tuple], is_video: bool = False, is_text: bool = False, **kwargs):
         """Add Facebook-specific parameters."""
@@ -629,14 +632,20 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
-            
+            link_url: Generic URL for link preview card (works for LinkedIn,
+                Bluesky, Facebook). Platform-specific params take priority.
+
             LinkedIn:
                 target_linkedin_page_id: Page ID for organization posts
-            
+                linkedin_link_url: URL to attach as link preview on LinkedIn
+
             Facebook:
                 facebook_page_id: Facebook Page ID
-                facebook_link_url: URL to attach as link preview
-            
+                facebook_link_url: URL to attach as link preview on Facebook
+
+            Bluesky:
+                bluesky_link_url: URL to attach as external embed link preview
+
             X (Twitter):
                 reply_settings: Who can reply
                 post_url: URL to attach
@@ -646,10 +655,10 @@ class UploadPostClient:
                 poll_reply_settings: Who can reply to poll
                 card_uri: Card URI for Twitter Cards
                 x_long_text_as_post: Post long text as single post
-            
+
             Threads:
                 threads_long_text_as_post: Post long text as single post
-            
+
             Reddit:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID
@@ -664,8 +673,12 @@ class UploadPostClient:
         
         self._add_common_params(data, user, title, platforms, **kwargs)
         
+        # Generic link_url support
+        if kwargs.get("link_url"):
+            data.append(("link_url", kwargs["link_url"]))
+
         if "linkedin" in platforms:
-            self._add_linkedin_params(data, **kwargs)
+            self._add_linkedin_params(data, is_text=True, **kwargs)
         if "facebook" in platforms:
             self._add_facebook_params(data, is_video=False, is_text=True, **kwargs)
         if "x" in platforms:
@@ -674,7 +687,11 @@ class UploadPostClient:
             self._add_threads_params(data, **kwargs)
         if "reddit" in platforms:
             self._add_reddit_params(data, **kwargs)
-        
+        if "bluesky" in platforms:
+            bluesky_link = kwargs.get("bluesky_link_url")
+            if bluesky_link:
+                data.append(("bluesky_link_url", bluesky_link))
+
         return self._request("/upload_text", "POST", data=data)
 
     def upload_document(
