@@ -85,7 +85,7 @@ class UploadPostClient:
                 try:
                     error_data = e.response.json()
                     error_msg = error_data.get('message') or error_data.get('detail') or str(error_data)
-                except:
+                except (ValueError, KeyError):
                     pass
             raise UploadPostError(f"API request failed: {error_msg}") from e
 
@@ -795,21 +795,93 @@ class UploadPostClient:
         """
         return self._request("/uploadposts/history", "GET", params={"page": page, "limit": limit})
 
-    def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None) -> Dict:
+    def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None,
+                      page_id: Optional[str] = None, page_urn: Optional[str] = None) -> Dict:
         """
         Get analytics for a profile.
 
         Args:
             profile_username: Profile username.
-            platforms: Filter by platforms (instagram, linkedin, facebook, x).
+            platforms: Filter by platforms (instagram, linkedin, facebook, x, youtube, tiktok, threads, pinterest, reddit).
+            page_id: Facebook Page ID (required for Facebook analytics).
+            page_urn: LinkedIn page URN (defaults to "me" for personal profile).
 
         Returns:
-            Analytics data.
+            Analytics data per platform.
         """
         params = {}
         if platforms:
             params["platforms"] = ",".join(platforms)
+        if page_id:
+            params["page_id"] = page_id
+        if page_urn:
+            params["page_urn"] = page_urn
         return self._request(f"/analytics/{profile_username}", "GET", params=params if params else None)
+
+    def get_total_impressions(
+        self,
+        profile_username: str,
+        period: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        date: Optional[str] = None,
+        platforms: Optional[List[str]] = None,
+        breakdown: bool = False,
+        metrics: Optional[List[str]] = None,
+    ) -> Dict:
+        """
+        Get total impressions for a profile from daily snapshots.
+
+        Args:
+            profile_username: Profile username.
+            period: Period shortcut (last_day, last_week, last_month, last_3months, last_year).
+            start_date: Start date in YYYY-MM-DD format.
+            end_date: End date in YYYY-MM-DD format.
+            date: Single date in YYYY-MM-DD format.
+            platforms: Filter by platforms.
+            breakdown: Include per-platform and per-day breakdown.
+            metrics: Specific metrics to aggregate (e.g., ["likes", "comments", "shares"]).
+
+        Returns:
+            Total impressions data with optional breakdown.
+        """
+        params: Dict[str, Any] = {}
+        if period:
+            params["period"] = period
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if date:
+            params["date"] = date
+        if platforms:
+            params["platform"] = ",".join(platforms)
+        if breakdown:
+            params["breakdown"] = "true"
+        if metrics:
+            params["metrics"] = ",".join(metrics)
+        return self._request(f"/uploadposts/total-impressions/{profile_username}", "GET", params=params if params else None)
+
+    def get_post_analytics(self, request_id: str) -> Dict:
+        """
+        Get analytics for a specific post across all platforms it was published to.
+
+        Args:
+            request_id: The request_id from the upload.
+
+        Returns:
+            Post analytics with per-platform metrics, profile snapshots, and post-level metrics.
+        """
+        return self._request(f"/uploadposts/post-analytics/{request_id}", "GET")
+
+    def get_platform_metrics(self) -> Dict:
+        """
+        Get available metrics configuration for all supported platforms.
+
+        Returns:
+            Platform metrics config with primary fields, available metrics, and labels.
+        """
+        return self._request("/uploadposts/platform-metrics", "GET")
 
     # ==================== Scheduled Posts ====================
 
