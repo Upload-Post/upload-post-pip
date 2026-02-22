@@ -45,7 +45,8 @@ class UploadPostClient:
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Apikey {self.api_key}",
-            "User-Agent": "upload-post-python-client/2.0.0"
+            "User-Agent": "upload-post-python-client/2.0.0",
+            "X-Upload-Post-Source": "pip",
         })
 
     def _request(
