@@ -101,6 +101,7 @@ class UploadPostClient:
         scheduled_date: Optional[str] = None,
         timezone: Optional[str] = None,
         add_to_queue: Optional[bool] = None,
+        max_posts_per_slot: Optional[int] = None,
         async_upload: Optional[bool] = None,
         **kwargs
     ):
@@ -110,7 +111,7 @@ class UploadPostClient:
             data.append(("title", title))
         for p in platforms:
             data.append(("platform[]", p))
-        
+
         if first_comment:
             data.append(("first_comment", first_comment))
         if alt_text:
@@ -121,6 +122,8 @@ class UploadPostClient:
             data.append(("timezone", timezone))
         if add_to_queue is not None:
             data.append(("add_to_queue", str(add_to_queue).lower()))
+        if max_posts_per_slot is not None:
+            data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
         
