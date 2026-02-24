@@ -6,7 +6,7 @@ Facebook, Pinterest, Threads, Reddit, Bluesky, and X (Twitter).
 """
 
 from pathlib import Path
-from typing import Dict, List, Union, Optional, Any, Literal
+from typing import Dict, List, Union, Optional, Any
 import requests
 
 
@@ -45,7 +45,8 @@ class UploadPostClient:
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Apikey {self.api_key}",
-            "User-Agent": "upload-post-python-client/2.0.0"
+            "User-Agent": "upload-post-python-client/2.0.0",
+            "X-Upload-Post-Source": "pip",
         })
 
     def _request(
@@ -85,7 +86,7 @@ class UploadPostClient:
                 try:
                     error_data = e.response.json()
                     error_msg = error_data.get('message') or error_data.get('detail') or str(error_data)
-                except:
+                except (ValueError, KeyError):
                     pass
             raise UploadPostError(f"API request failed: {error_msg}") from e
 
@@ -93,22 +94,24 @@ class UploadPostClient:
         self,
         data: List[tuple],
         user: str,
-        title: str,
+        title: Optional[str],
         platforms: List[str],
         first_comment: Optional[str] = None,
         alt_text: Optional[str] = None,
         scheduled_date: Optional[str] = None,
         timezone: Optional[str] = None,
         add_to_queue: Optional[bool] = None,
+        max_posts_per_slot: Optional[int] = None,
         async_upload: Optional[bool] = None,
         **kwargs
     ):
         """Add common upload parameters."""
         data.append(("user", user))
-        data.append(("title", title))
+        if title:
+            data.append(("title", title))
         for p in platforms:
             data.append(("platform[]", p))
-        
+
         if first_comment:
             data.append(("first_comment", first_comment))
         if alt_text:
@@ -119,6 +122,8 @@ class UploadPostClient:
             data.append(("timezone", timezone))
         if add_to_queue is not None:
             data.append(("add_to_queue", str(add_to_queue).lower()))
+        if max_posts_per_slot is not None:
+            data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
         
@@ -236,12 +241,15 @@ class UploadPostClient:
         if kwargs.get("recordingDate"):
             data.append(("recordingDate", kwargs["recordingDate"]))
 
-    def _add_linkedin_params(self, data: List[tuple], **kwargs):
+    def _add_linkedin_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add LinkedIn-specific parameters."""
         if kwargs.get("visibility"):
             data.append(("visibility", kwargs["visibility"]))
         if kwargs.get("target_linkedin_page_id"):
             data.append(("target_linkedin_page_id", kwargs["target_linkedin_page_id"]))
+        if is_text and (kwargs.get("linkedin_link_url") or kwargs.get("link_url")):
+            link = kwargs.get("linkedin_link_url") or kwargs.get("link_url")
+            data.append(("linkedin_link_url", link))
 
     def _add_facebook_params(self, data: List[tuple], is_video: bool = False, is_text: bool = False, **kwargs):
         """Add Facebook-specific parameters."""
@@ -345,9 +353,9 @@ class UploadPostClient:
     def upload_video(
         self,
         video_path: Union[str, Path],
-        title: str,
-        user: str,
-        platforms: List[str],
+        title: Optional[str] = None,
+        user: str = "",
+        platforms: Optional[List[str]] = None,
         **kwargs
     ) -> Dict:
         """
@@ -355,9 +363,10 @@ class UploadPostClient:
 
         Args:
             video_path: Path to video file or video URL.
-            title: Video title/caption.
+            title: Video title/caption. Required for YouTube and Reddit.
+                   Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Pinterest.
             user: User identifier (profile name).
-            platforms: Target platforms. Supported: tiktok, instagram, youtube, 
+            platforms: Target platforms. Supported: tiktok, instagram, youtube,
                       linkedin, facebook, pinterest, threads, bluesky, x
 
         Keyword Args:
@@ -486,9 +495,9 @@ class UploadPostClient:
     def upload_photos(
         self,
         photos: List[Union[str, Path]],
-        title: str,
-        user: str,
-        platforms: List[str],
+        title: Optional[str] = None,
+        user: str = "",
+        platforms: Optional[List[str]] = None,
         **kwargs
     ) -> Dict:
         """
@@ -496,7 +505,8 @@ class UploadPostClient:
 
         Args:
             photos: List of photo file paths or URLs.
-            title: Post title/caption.
+            title: Post title/caption. Required for Reddit.
+                   Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Pinterest.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, linkedin,
                       facebook, pinterest, threads, reddit, bluesky, x
@@ -626,14 +636,20 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
-            
+            link_url: Generic URL for link preview card (works for LinkedIn,
+                Bluesky, Facebook). Platform-specific params take priority.
+
             LinkedIn:
                 target_linkedin_page_id: Page ID for organization posts
-            
+                linkedin_link_url: URL to attach as link preview on LinkedIn
+
             Facebook:
                 facebook_page_id: Facebook Page ID
-                facebook_link_url: URL to attach as link preview
-            
+                facebook_link_url: URL to attach as link preview on Facebook
+
+            Bluesky:
+                bluesky_link_url: URL to attach as external embed link preview
+
             X (Twitter):
                 reply_settings: Who can reply
                 post_url: URL to attach
@@ -643,10 +659,10 @@ class UploadPostClient:
                 poll_reply_settings: Who can reply to poll
                 card_uri: Card URI for Twitter Cards
                 x_long_text_as_post: Post long text as single post
-            
+
             Threads:
                 threads_long_text_as_post: Post long text as single post
-            
+
             Reddit:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID
@@ -661,8 +677,12 @@ class UploadPostClient:
         
         self._add_common_params(data, user, title, platforms, **kwargs)
         
+        # Generic link_url support
+        if kwargs.get("link_url"):
+            data.append(("link_url", kwargs["link_url"]))
+
         if "linkedin" in platforms:
-            self._add_linkedin_params(data, **kwargs)
+            self._add_linkedin_params(data, is_text=True, **kwargs)
         if "facebook" in platforms:
             self._add_facebook_params(data, is_video=False, is_text=True, **kwargs)
         if "x" in platforms:
@@ -671,7 +691,11 @@ class UploadPostClient:
             self._add_threads_params(data, **kwargs)
         if "reddit" in platforms:
             self._add_reddit_params(data, **kwargs)
-        
+        if "bluesky" in platforms:
+            bluesky_link = kwargs.get("bluesky_link_url")
+            if bluesky_link:
+                data.append(("bluesky_link_url", bluesky_link))
+
         return self._request("/upload_text", "POST", data=data)
 
     def upload_document(
@@ -775,21 +799,93 @@ class UploadPostClient:
         """
         return self._request("/uploadposts/history", "GET", params={"page": page, "limit": limit})
 
-    def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None) -> Dict:
+    def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None,
+                      page_id: Optional[str] = None, page_urn: Optional[str] = None) -> Dict:
         """
         Get analytics for a profile.
 
         Args:
             profile_username: Profile username.
-            platforms: Filter by platforms (instagram, linkedin, facebook, x).
+            platforms: Filter by platforms (instagram, linkedin, facebook, x, youtube, tiktok, threads, pinterest, reddit).
+            page_id: Facebook Page ID (required for Facebook analytics).
+            page_urn: LinkedIn page URN (defaults to "me" for personal profile).
 
         Returns:
-            Analytics data.
+            Analytics data per platform.
         """
         params = {}
         if platforms:
             params["platforms"] = ",".join(platforms)
+        if page_id:
+            params["page_id"] = page_id
+        if page_urn:
+            params["page_urn"] = page_urn
         return self._request(f"/analytics/{profile_username}", "GET", params=params if params else None)
+
+    def get_total_impressions(
+        self,
+        profile_username: str,
+        period: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        date: Optional[str] = None,
+        platforms: Optional[List[str]] = None,
+        breakdown: bool = False,
+        metrics: Optional[List[str]] = None,
+    ) -> Dict:
+        """
+        Get total impressions for a profile from daily snapshots.
+
+        Args:
+            profile_username: Profile username.
+            period: Period shortcut (last_day, last_week, last_month, last_3months, last_year).
+            start_date: Start date in YYYY-MM-DD format.
+            end_date: End date in YYYY-MM-DD format.
+            date: Single date in YYYY-MM-DD format.
+            platforms: Filter by platforms.
+            breakdown: Include per-platform and per-day breakdown.
+            metrics: Specific metrics to aggregate (e.g., ["likes", "comments", "shares"]).
+
+        Returns:
+            Total impressions data with optional breakdown.
+        """
+        params: Dict[str, Any] = {}
+        if period:
+            params["period"] = period
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if date:
+            params["date"] = date
+        if platforms:
+            params["platform"] = ",".join(platforms)
+        if breakdown:
+            params["breakdown"] = "true"
+        if metrics:
+            params["metrics"] = ",".join(metrics)
+        return self._request(f"/uploadposts/total-impressions/{profile_username}", "GET", params=params if params else None)
+
+    def get_post_analytics(self, request_id: str) -> Dict:
+        """
+        Get analytics for a specific post across all platforms it was published to.
+
+        Args:
+            request_id: The request_id from the upload.
+
+        Returns:
+            Post analytics with per-platform metrics, profile snapshots, and post-level metrics.
+        """
+        return self._request(f"/uploadposts/post-analytics/{request_id}", "GET")
+
+    def get_platform_metrics(self) -> Dict:
+        """
+        Get available metrics configuration for all supported platforms.
+
+        Returns:
+            Platform metrics config with primary fields, available metrics, and labels.
+        """
+        return self._request("/uploadposts/platform-metrics", "GET")
 
     # ==================== Scheduled Posts ====================
 

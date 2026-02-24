@@ -290,6 +290,7 @@ These options work across all upload methods:
 | `scheduled_date` | ISO date for scheduling |
 | `timezone` | Timezone for scheduled date |
 | `add_to_queue` | Add to posting queue |
+| `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
 
 ## Error Handling
