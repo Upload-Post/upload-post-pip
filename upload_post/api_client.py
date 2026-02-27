@@ -349,6 +349,8 @@ class UploadPostClient:
             data.append(("subreddit", kwargs["subreddit"]))
         if kwargs.get("flair_id"):
             data.append(("flair_id", kwargs["flair_id"]))
+        if kwargs.get("reddit_link_url"):
+            data.append(("reddit_link_url", kwargs["reddit_link_url"]))
 
     def upload_video(
         self,
@@ -666,6 +668,8 @@ class UploadPostClient:
             Reddit:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID
+                reddit_link_url: URL for a link post. Creates a link post
+                    (kind=link) instead of a text/self post.
 
         Returns:
             API response.
@@ -674,7 +678,7 @@ class UploadPostClient:
             UploadPostError: If upload fails.
         """
         data: List[tuple] = []
-        
+
         self._add_common_params(data, user, title, platforms, **kwargs)
         
         # Generic link_url support
