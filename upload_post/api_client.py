@@ -343,12 +343,16 @@ class UploadPostClient:
         if kwargs.get("threads_thread_media_layout"):
             data.append(("threads_thread_media_layout", kwargs["threads_thread_media_layout"]))
 
-    def _add_reddit_params(self, data: List[tuple], **kwargs):
+    def _add_reddit_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add Reddit-specific parameters."""
         if kwargs.get("subreddit"):
             data.append(("subreddit", kwargs["subreddit"]))
         if kwargs.get("flair_id"):
             data.append(("flair_id", kwargs["flair_id"]))
+        if is_text:
+            reddit_link = kwargs.get("reddit_link_url") or kwargs.get("link_url")
+            if reddit_link:
+                data.append(("reddit_link_url", reddit_link))
 
     def upload_video(
         self,
@@ -551,20 +555,24 @@ class UploadPostClient:
                 tagged_user_ids: User IDs to tag
                 x_long_text_as_post: Post long text as single post
                 x_thread_image_layout: Comma-separated image layout for thread
-                    (e.g. "4,4" or "2,3,1"). Each value 1-4, total must equal
-                    image count. Auto-chunks into groups of 4 if >4 images
-                    and no layout specified.
+                    (e.g. "4,4", "2,3,1", or "0,1"). Each value 0-4, total must
+                    equal image count. 0 means no images for that tweet (useful
+                    for URL preview cards). Auto-chunks into groups of 4 if >4
+                    images and no layout specified.
 
             Threads:
                 threads_long_text_as_post: Post long text as single post
                 threads_thread_media_layout: Comma-separated media layout for thread
-                    (e.g. "5,5" or "3,4,3"). Each value 1-10, total must equal
-                    media count. Auto-chunks into groups of 10 if >10 items
-                    and no layout specified.
+                    (e.g. "5,5", "3,4,3", or "0,1"). Each value 0-10, total must
+                    equal media count. 0 means no media for that post. Auto-chunks
+                    into groups of 10 if >10 items and no layout specified.
 
             Reddit:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID
+
+            first_comment_media: List of file paths to attach as images in
+                the first comment. Supported on Reddit and X.
 
         Returns:
             API response.
@@ -575,7 +583,7 @@ class UploadPostClient:
         data: List[tuple] = []
         files: List[tuple] = []
         opened_files: List = []
-        
+
         try:
             for photo in photos:
                 photo_str = str(photo)
@@ -588,9 +596,9 @@ class UploadPostClient:
                     photo_file = photo_p.open("rb")
                     opened_files.append(photo_file)
                     files.append(("photos[]", (photo_p.name, photo_file)))
-            
+
             self._add_common_params(data, user, title, platforms, **kwargs)
-            
+
             if "tiktok" in platforms:
                 self._add_tiktok_params(data, is_video=False, **kwargs)
             if "instagram" in platforms:
@@ -607,9 +615,19 @@ class UploadPostClient:
                 self._add_threads_params(data, **kwargs)
             if "reddit" in platforms:
                 self._add_reddit_params(data, **kwargs)
-            
+
+            first_comment_media = kwargs.get("first_comment_media")
+            if first_comment_media:
+                for media_path in first_comment_media:
+                    p = Path(media_path)
+                    if not p.exists():
+                        raise UploadPostError(f"First comment media file not found: {media_path}")
+                    f = open(p, "rb")
+                    opened_files.append(f)
+                    files.append(("first_comment_media[]", (p.name, f)))
+
             return self._request("/upload_photos", "POST", data=data, files=files if files else None)
-            
+
         finally:
             for f in opened_files:
                 f.close()
@@ -666,6 +684,12 @@ class UploadPostClient:
             Reddit:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID
+                reddit_link_url: URL for link post. Creates a Reddit link post
+                    (kind: "link") instead of a text post. Overrides `link_url`
+                    for Reddit.
+
+            first_comment_media: List of file paths to attach as images in
+                the first comment. Supported on Reddit and X.
 
         Returns:
             API response.
@@ -674,9 +698,10 @@ class UploadPostClient:
             UploadPostError: If upload fails.
         """
         data: List[tuple] = []
-        
+        files: Optional[List[tuple]] = None
+
         self._add_common_params(data, user, title, platforms, **kwargs)
-        
+
         # Generic link_url support
         if kwargs.get("link_url"):
             data.append(("link_url", kwargs["link_url"]))
@@ -690,13 +715,29 @@ class UploadPostClient:
         if "threads" in platforms:
             self._add_threads_params(data, **kwargs)
         if "reddit" in platforms:
-            self._add_reddit_params(data, **kwargs)
+            self._add_reddit_params(data, is_text=True, **kwargs)
         if "bluesky" in platforms:
             bluesky_link = kwargs.get("bluesky_link_url")
             if bluesky_link:
                 data.append(("bluesky_link_url", bluesky_link))
 
-        return self._request("/upload_text", "POST", data=data)
+        first_comment_media = kwargs.get("first_comment_media")
+        opened_files: List = []
+        if first_comment_media:
+            files = []
+            for media_path in first_comment_media:
+                p = Path(media_path)
+                if not p.exists():
+                    raise UploadPostError(f"First comment media file not found: {media_path}")
+                f = open(p, "rb")
+                opened_files.append(f)
+                files.append(("first_comment_media[]", (p.name, f)))
+
+        try:
+            return self._request("/upload_text", "POST", data=data, files=files)
+        finally:
+            for f in opened_files:
+                f.close()
 
     def upload_document(
         self,
