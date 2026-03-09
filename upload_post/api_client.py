@@ -817,7 +817,7 @@ class UploadPostClient:
 
     def get_status(self, request_id: str) -> Dict:
         """
-        Get the status of an async upload.
+        Get the status of an async upload by request ID.
 
         Args:
             request_id: The request_id from an async upload.
@@ -826,6 +826,18 @@ class UploadPostClient:
             Upload status.
         """
         return self._request("/uploadposts/status", "GET", params={"request_id": request_id})
+
+    def get_job_status(self, job_id: str) -> Dict:
+        """
+        Get the status of a scheduled or queued upload by job ID.
+
+        Args:
+            job_id: The job_id from a scheduled or queued upload.
+
+        Returns:
+            Upload status.
+        """
+        return self._request("/uploadposts/status", "GET", params={"job_id": job_id})
 
     def get_history(self, page: int = 1, limit: int = 20) -> Dict:
         """

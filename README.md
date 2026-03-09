@@ -124,6 +124,13 @@ status = client.get_status("request_id_from_upload")
 print(status)
 ```
 
+For scheduled or queued posts, check the status using the job_id:
+
+```python
+status = client.get_job_status("job_id_from_scheduled_post")
+print(status)
+```
+
 ### Get Upload History
 
 ```python
