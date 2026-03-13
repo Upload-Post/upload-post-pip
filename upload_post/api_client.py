@@ -149,7 +149,7 @@ class UploadPostClient:
         comment_overrides = [
             "instagram_first_comment", "facebook_first_comment", "x_first_comment",
             "threads_first_comment", "youtube_first_comment", "reddit_first_comment",
-            "bluesky_first_comment"
+            "bluesky_first_comment", "linkedin_first_comment"
         ]
         for key in comment_overrides:
             if kwargs.get(key):
