@@ -1111,3 +1111,32 @@ class UploadPostClient:
         """
         params = {"profile": profile} if profile else None
         return self._request("/uploadposts/pinterest/boards", "GET", params=params)
+
+    def get_google_business_locations(self, profile: Optional[str] = None) -> Dict:
+        """
+        Get Google Business Profile locations for a connected account.
+
+        Args:
+            profile: Profile username.
+
+        Returns:
+            List of Google Business locations.
+        """
+        params = {"profile": profile} if profile else None
+        return self._request("/uploadposts/google-business/locations", "GET", params=params)
+
+    def select_google_business_location(self, location_id: str, profile: Optional[str] = None) -> Dict:
+        """
+        Select a specific Google Business Profile location for a profile.
+
+        Args:
+            location_id: The location ID to select (e.g. "accounts/123/locations/456").
+            profile: Profile username.
+
+        Returns:
+            Selection result with google_business_id and display_name.
+        """
+        data = {"location_id": location_id}
+        if profile:
+            data["profile"] = profile
+        return self._request("/uploadposts/google-business/locations/select", "POST", json_data=data)
