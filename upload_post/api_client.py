@@ -342,6 +342,8 @@ class UploadPostClient:
             data.append(("threads_long_text_as_post", str(kwargs["threads_long_text_as_post"]).lower()))
         if kwargs.get("threads_thread_media_layout"):
             data.append(("threads_thread_media_layout", kwargs["threads_thread_media_layout"]))
+        if kwargs.get("threads_topic_tag"):
+            data.append(("threads_topic_tag", kwargs["threads_topic_tag"]))
 
     def _add_reddit_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add Reddit-specific parameters."""
@@ -449,6 +451,7 @@ class UploadPostClient:
             
             Threads:
                 threads_long_text_as_post: Post long text as single post
+                threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
 
         Returns:
             API response with request_id for async uploads.
@@ -566,6 +569,7 @@ class UploadPostClient:
                     (e.g. "5,5", "3,4,3", or "0,1"). Each value 0-10, total must
                     equal media count. 0 means no media for that post. Auto-chunks
                     into groups of 10 if >10 items and no layout specified.
+                threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
 
             Reddit:
                 subreddit: Subreddit name (without r/)
@@ -680,6 +684,7 @@ class UploadPostClient:
 
             Threads:
                 threads_long_text_as_post: Post long text as single post
+                threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
 
             Reddit:
                 subreddit: Subreddit name (without r/)
