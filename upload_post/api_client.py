@@ -852,7 +852,8 @@ class UploadPostClient:
             page_urn: LinkedIn page URN (defaults to "me" for personal profile).
 
         Returns:
-            Analytics data per platform.
+            Analytics data per platform. For Instagram, the response includes both
+            'views' (official Instagram metric) and 'impressions' (backwards-compatible alias).
         """
         params = {}
         if platforms:
@@ -885,10 +886,10 @@ class UploadPostClient:
             date: Single date in YYYY-MM-DD format.
             platforms: Filter by platforms.
             breakdown: Include per-platform and per-day breakdown.
-            metrics: Specific metrics to aggregate (e.g., ["likes", "comments", "shares"]).
+            metrics: Specific metrics to aggregate (e.g., ["likes", "comments", "shares", "views"]).
 
         Returns:
-            Total impressions data with optional breakdown.
+            Total impressions data with optional breakdown. For Instagram, uses 'reach' as the primary metric.
         """
         params: Dict[str, Any] = {}
         if period:
