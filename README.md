@@ -124,6 +124,13 @@ status = client.get_status("request_id_from_upload")
 print(status)
 ```
 
+For scheduled or queued posts, check the status using the job_id:
+
+```python
+status = client.get_job_status("job_id_from_scheduled_post")
+print(status)
+```
+
 ### Get Upload History
 
 ```python
@@ -271,6 +278,7 @@ boards = client.get_pinterest_boards("my-profile")
 ### Threads
 - `threads_long_text_as_post` - Post long text as single post (vs thread)
 - `threads_thread_media_layout` - Comma-separated list of how many media items to include in each Threads post (e.g. "5,5" or "3,4,3"). Each value 1-10, total must equal media count. Auto-chunks into groups of 10 when >10 items.
+- `threads_topic_tag` - Topic tag for the Threads post (1-50 characters, no periods or ampersands). One tag per post. Helps increase reach.
 
 ### Reddit
 - `subreddit` - Subreddit name (without r/)

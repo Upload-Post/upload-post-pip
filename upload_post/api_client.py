@@ -149,7 +149,7 @@ class UploadPostClient:
         comment_overrides = [
             "instagram_first_comment", "facebook_first_comment", "x_first_comment",
             "threads_first_comment", "youtube_first_comment", "reddit_first_comment",
-            "bluesky_first_comment"
+            "bluesky_first_comment", "linkedin_first_comment"
         ]
         for key in comment_overrides:
             if kwargs.get(key):
@@ -342,6 +342,8 @@ class UploadPostClient:
             data.append(("threads_long_text_as_post", str(kwargs["threads_long_text_as_post"]).lower()))
         if kwargs.get("threads_thread_media_layout"):
             data.append(("threads_thread_media_layout", kwargs["threads_thread_media_layout"]))
+        if kwargs.get("threads_topic_tag"):
+            data.append(("threads_topic_tag", kwargs["threads_topic_tag"]))
 
     def _add_reddit_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add Reddit-specific parameters."""
@@ -449,6 +451,7 @@ class UploadPostClient:
             
             Threads:
                 threads_long_text_as_post: Post long text as single post
+                threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
 
         Returns:
             API response with request_id for async uploads.
@@ -566,6 +569,7 @@ class UploadPostClient:
                     (e.g. "5,5", "3,4,3", or "0,1"). Each value 0-10, total must
                     equal media count. 0 means no media for that post. Auto-chunks
                     into groups of 10 if >10 items and no layout specified.
+                threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
 
             Reddit:
                 subreddit: Subreddit name (without r/)
@@ -680,6 +684,7 @@ class UploadPostClient:
 
             Threads:
                 threads_long_text_as_post: Post long text as single post
+                threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
 
             Reddit:
                 subreddit: Subreddit name (without r/)
@@ -817,7 +822,7 @@ class UploadPostClient:
 
     def get_status(self, request_id: str) -> Dict:
         """
-        Get the status of an async upload.
+        Get the status of an async upload by request ID.
 
         Args:
             request_id: The request_id from an async upload.
@@ -826,6 +831,18 @@ class UploadPostClient:
             Upload status.
         """
         return self._request("/uploadposts/status", "GET", params={"request_id": request_id})
+
+    def get_job_status(self, job_id: str) -> Dict:
+        """
+        Get the status of a scheduled or queued upload by job ID.
+
+        Args:
+            job_id: The job_id from a scheduled or queued upload.
+
+        Returns:
+            Upload status.
+        """
+        return self._request("/uploadposts/status", "GET", params={"job_id": job_id})
 
     def get_history(self, page: int = 1, limit: int = 20) -> Dict:
         """
@@ -852,7 +869,8 @@ class UploadPostClient:
             page_urn: LinkedIn page URN (defaults to "me" for personal profile).
 
         Returns:
-            Analytics data per platform.
+            Analytics data per platform. For Instagram, the response includes both
+            'views' (official Instagram metric) and 'impressions' (backwards-compatible alias).
         """
         params = {}
         if platforms:
@@ -885,10 +903,10 @@ class UploadPostClient:
             date: Single date in YYYY-MM-DD format.
             platforms: Filter by platforms.
             breakdown: Include per-platform and per-day breakdown.
-            metrics: Specific metrics to aggregate (e.g., ["likes", "comments", "shares"]).
+            metrics: Specific metrics to aggregate (e.g., ["likes", "comments", "shares", "views"]).
 
         Returns:
-            Total impressions data with optional breakdown.
+            Total impressions data with optional breakdown. For Instagram, uses 'reach' as the primary metric.
         """
         params: Dict[str, Any] = {}
         if period:
@@ -1111,3 +1129,32 @@ class UploadPostClient:
         """
         params = {"profile": profile} if profile else None
         return self._request("/uploadposts/pinterest/boards", "GET", params=params)
+
+    def get_google_business_locations(self, profile: Optional[str] = None) -> Dict:
+        """
+        Get Google Business Profile locations for a connected account.
+
+        Args:
+            profile: Profile username.
+
+        Returns:
+            List of Google Business locations.
+        """
+        params = {"profile": profile} if profile else None
+        return self._request("/uploadposts/google-business/locations", "GET", params=params)
+
+    def select_google_business_location(self, location_id: str, profile: Optional[str] = None) -> Dict:
+        """
+        Select a specific Google Business Profile location for a profile.
+
+        Args:
+            location_id: The location ID to select (e.g. "accounts/123/locations/456").
+            profile: Profile username.
+
+        Returns:
+            Selection result with google_business_id and display_name.
+        """
+        data = {"location_id": location_id}
+        if profile:
+            data["profile"] = profile
+        return self._request("/uploadposts/google-business/locations/select", "POST", json_data=data)
