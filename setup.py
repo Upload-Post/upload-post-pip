@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="upload-post",
-    version="2.0.1",
+    version="2.1.0",
     author="Upload-Post",
     author_email="hi@img2html.com",
     description="Cross-platform social media upload for TikTok, Instagram, YouTube, LinkedIn, Facebook, Pinterest, Threads, Reddit, Bluesky, and X (Twitter)",
