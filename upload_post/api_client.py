@@ -1130,6 +1130,82 @@ class UploadPostClient:
         params = {"profile": profile} if profile else None
         return self._request("/uploadposts/pinterest/boards", "GET", params=params)
 
+    # ==================== Instagram Comments ====================
+
+    def get_post_comments(
+        self,
+        user: str,
+        post_id: Optional[str] = None,
+        post_url: Optional[str] = None
+    ) -> Dict:
+        """
+        Get comments on an Instagram post.
+
+        Args:
+            user: Profile username.
+            post_id: Numeric media ID (provide post_id or post_url).
+            post_url: Full Instagram post URL (provide post_id or post_url).
+
+        Returns:
+            Comments data including comment IDs, text, timestamps, and user info.
+        """
+        params = {"platform": "instagram", "user": user}
+        if post_id:
+            params["post_id"] = post_id
+        if post_url:
+            params["post_url"] = post_url
+        return self._request("/uploadposts/comments", "GET", params=params)
+
+    def reply_to_comment(
+        self,
+        user: str,
+        comment_id: str,
+        message: str
+    ) -> Dict:
+        """
+        Send a private reply (DM) to the author of an Instagram comment.
+
+        Args:
+            user: Profile username.
+            comment_id: Comment ID from get_post_comments.
+            message: Reply message text.
+
+        Returns:
+            Reply result with recipient_id and message_id.
+        """
+        return self._request("/uploadposts/comments/reply", "POST", json_data={
+            "platform": "instagram",
+            "user": user,
+            "comment_id": comment_id,
+            "message": message
+        })
+
+    def public_reply_to_comment(
+        self,
+        user: str,
+        comment_id: str,
+        message: str
+    ) -> Dict:
+        """
+        Post a public reply to an Instagram comment (visible under the original comment).
+
+        Args:
+            user: Profile username.
+            comment_id: Comment ID from get_post_comments.
+            message: Reply message text.
+
+        Returns:
+            Reply result with the new comment ID.
+        """
+        return self._request("/uploadposts/comments/public-reply", "POST", json_data={
+            "platform": "instagram",
+            "user": user,
+            "comment_id": comment_id,
+            "message": message
+        })
+
+    # ==================== Google Business ====================
+
     def get_google_business_locations(self, profile: Optional[str] = None) -> Dict:
         """
         Get Google Business Profile locations for a connected account.
