@@ -183,7 +183,7 @@ class UploadPostClient:
             if kwargs.get("photo_cover_index") is not None:
                 data.append(("photo_cover_index", str(kwargs["photo_cover_index"])))
 
-    def _add_instagram_params(self, data: List[tuple], is_video: bool = True, **kwargs):
+    def _add_instagram_params(self, data: List[tuple], is_video: bool = True, files: List[tuple] | None = None, **kwargs):
         """Add Instagram-specific parameters."""
         if kwargs.get("media_type"):
             data.append(("media_type", kwargs["media_type"]))
@@ -193,12 +193,20 @@ class UploadPostClient:
             data.append(("user_tags", kwargs["user_tags"]))
         if kwargs.get("location_id"):
             data.append(("location_id", kwargs["location_id"]))
-        
+
         if is_video:
             if kwargs.get("share_to_feed") is not None:
                 data.append(("share_to_feed", str(kwargs["share_to_feed"]).lower()))
             if kwargs.get("cover_url"):
-                data.append(("cover_url", kwargs["cover_url"]))
+                cover_val = str(kwargs["cover_url"])
+                if cover_val.lower().startswith(("http://", "https://")):
+                    data.append(("cover_url", cover_val))
+                elif files is not None:
+                    cover_path = Path(cover_val)
+                    if cover_path.exists():
+                        files.append(("cover_image", (cover_path.name, cover_path.open("rb"))))
+                else:
+                    data.append(("cover_url", cover_val))
             if kwargs.get("audio_name"):
                 data.append(("audio_name", kwargs["audio_name"]))
             if kwargs.get("thumb_offset"):
@@ -399,7 +407,7 @@ class UploadPostClient:
                 media_type: REELS or STORIES
                 share_to_feed: Share to feed
                 collaborators: Comma-separated collaborator usernames
-                cover_url: Custom cover URL
+                cover_url: Custom cover URL or file path. URLs are sent directly; file paths are uploaded as binary.
                 audio_name: Audio track name
                 user_tags: Comma-separated user tags
                 location_id: Location ID
@@ -479,7 +487,7 @@ class UploadPostClient:
             if "tiktok" in platforms:
                 self._add_tiktok_params(data, is_video=True, **kwargs)
             if "instagram" in platforms:
-                self._add_instagram_params(data, is_video=True, **kwargs)
+                self._add_instagram_params(data, is_video=True, files=files, **kwargs)
             if "youtube" in platforms:
                 self._add_youtube_params(data, **kwargs)
             if "linkedin" in platforms:
