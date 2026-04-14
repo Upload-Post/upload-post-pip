@@ -1116,6 +1116,66 @@ class UploadPostClient:
         """
         return self._request("/uploadposts/users/validate-jwt", "POST", json_data={"jwt": jwt})
 
+    def get_user_preferences(self) -> Dict:
+        """
+        Get user preferences (including calendar settings).
+
+        Returns:
+            User preferences including week_start_day.
+        """
+        return self._request("/uploadposts/users/preferences", "GET")
+
+    def update_user_preferences(
+        self,
+        week_start_day: Optional[int] = None
+    ) -> Dict:
+        """
+        Update user preferences (including calendar settings).
+
+        Args:
+            week_start_day: Week start day (0=Sunday, 1=Monday).
+
+        Returns:
+            Updated preferences.
+        """
+        body: Dict[str, Any] = {}
+        if week_start_day is not None:
+            body["week_start_day"] = week_start_day
+        return self._request("/uploadposts/users/preferences", "POST", json_data=body)
+
+    def get_notification_config(self) -> Dict:
+        """
+        Get notification configuration (including webhook settings).
+
+        Returns:
+            Notification config including webhook_events and webhook_url.
+        """
+        return self._request("/uploadposts/notification-config", "GET")
+
+    def update_notification_config(
+        self,
+        webhook_events: Optional[List[str]] = None,
+        webhook_url: Optional[str] = None
+    ) -> Dict:
+        """
+        Update notification configuration (including webhook settings).
+
+        Args:
+            webhook_events: Webhook event types to subscribe to
+                (upload_completed, social_account_connected,
+                social_account_disconnected, social_account_reauth_required).
+            webhook_url: Webhook URL for notifications.
+
+        Returns:
+            Updated notification config.
+        """
+        body: Dict[str, Any] = {}
+        if webhook_events:
+            body["webhook_events"] = webhook_events
+        if webhook_url:
+            body["webhook_url"] = webhook_url
+        return self._request("/uploadposts/notification-config", "POST", json_data=body)
+
     # ==================== Helper Endpoints ====================
 
     def get_facebook_pages(self, profile: Optional[str] = None) -> Dict:
