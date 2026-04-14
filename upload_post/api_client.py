@@ -183,7 +183,7 @@ class UploadPostClient:
             if kwargs.get("photo_cover_index") is not None:
                 data.append(("photo_cover_index", str(kwargs["photo_cover_index"])))
 
-    def _add_instagram_params(self, data: List[tuple], is_video: bool = True, **kwargs):
+    def _add_instagram_params(self, data: List[tuple], is_video: bool = True, files: List[tuple] | None = None, **kwargs):
         """Add Instagram-specific parameters."""
         if kwargs.get("media_type"):
             data.append(("media_type", kwargs["media_type"]))
@@ -193,12 +193,20 @@ class UploadPostClient:
             data.append(("user_tags", kwargs["user_tags"]))
         if kwargs.get("location_id"):
             data.append(("location_id", kwargs["location_id"]))
-        
+
         if is_video:
             if kwargs.get("share_to_feed") is not None:
                 data.append(("share_to_feed", str(kwargs["share_to_feed"]).lower()))
             if kwargs.get("cover_url"):
-                data.append(("cover_url", kwargs["cover_url"]))
+                cover_val = str(kwargs["cover_url"])
+                if cover_val.lower().startswith(("http://", "https://")):
+                    data.append(("cover_url", cover_val))
+                elif files is not None:
+                    cover_path = Path(cover_val)
+                    if cover_path.exists():
+                        files.append(("cover_image", (cover_path.name, cover_path.open("rb"))))
+                else:
+                    data.append(("cover_url", cover_val))
             if kwargs.get("audio_name"):
                 data.append(("audio_name", kwargs["audio_name"]))
             if kwargs.get("thumb_offset"):
@@ -399,7 +407,7 @@ class UploadPostClient:
                 media_type: REELS or STORIES
                 share_to_feed: Share to feed
                 collaborators: Comma-separated collaborator usernames
-                cover_url: Custom cover URL
+                cover_url: Custom cover URL or file path. URLs are sent directly; file paths are uploaded as binary.
                 audio_name: Audio track name
                 user_tags: Comma-separated user tags
                 location_id: Location ID
@@ -479,7 +487,7 @@ class UploadPostClient:
             if "tiktok" in platforms:
                 self._add_tiktok_params(data, is_video=True, **kwargs)
             if "instagram" in platforms:
-                self._add_instagram_params(data, is_video=True, **kwargs)
+                self._add_instagram_params(data, is_video=True, files=files, **kwargs)
             if "youtube" in platforms:
                 self._add_youtube_params(data, **kwargs)
             if "linkedin" in platforms:
@@ -937,6 +945,25 @@ class UploadPostClient:
         """
         return self._request(f"/uploadposts/post-analytics/{request_id}", "GET")
 
+    def get_post_analytics_by_platform_id(self, platform_post_id: str, platform: str, user: str) -> Dict:
+        """
+        Get analytics for any post (including organic posts) using its native platform ID.
+
+        Args:
+            platform_post_id: The native post ID on the platform (e.g., Instagram media ID).
+            platform: The platform to query (instagram, youtube, tiktok, facebook, linkedin, x, threads, pinterest, reddit).
+            user: The profile_username that owns the social account.
+
+        Returns:
+            Post analytics with live per-post metrics from the platform API.
+        """
+        params = {
+            "platform_post_id": platform_post_id,
+            "platform": platform,
+            "user": user,
+        }
+        return self._request("/uploadposts/post-analytics", "GET", params=params)
+
     def get_platform_metrics(self) -> Dict:
         """
         Get available metrics configuration for all supported platforms.
@@ -1129,6 +1156,82 @@ class UploadPostClient:
         """
         params = {"profile": profile} if profile else None
         return self._request("/uploadposts/pinterest/boards", "GET", params=params)
+
+    # ==================== Instagram Comments ====================
+
+    def get_post_comments(
+        self,
+        user: str,
+        post_id: Optional[str] = None,
+        post_url: Optional[str] = None
+    ) -> Dict:
+        """
+        Get comments on an Instagram post.
+
+        Args:
+            user: Profile username.
+            post_id: Numeric media ID (provide post_id or post_url).
+            post_url: Full Instagram post URL (provide post_id or post_url).
+
+        Returns:
+            Comments data including comment IDs, text, timestamps, and user info.
+        """
+        params = {"platform": "instagram", "user": user}
+        if post_id:
+            params["post_id"] = post_id
+        if post_url:
+            params["post_url"] = post_url
+        return self._request("/uploadposts/comments", "GET", params=params)
+
+    def reply_to_comment(
+        self,
+        user: str,
+        comment_id: str,
+        message: str
+    ) -> Dict:
+        """
+        Send a private reply (DM) to the author of an Instagram comment.
+
+        Args:
+            user: Profile username.
+            comment_id: Comment ID from get_post_comments.
+            message: Reply message text.
+
+        Returns:
+            Reply result with recipient_id and message_id.
+        """
+        return self._request("/uploadposts/comments/reply", "POST", json_data={
+            "platform": "instagram",
+            "user": user,
+            "comment_id": comment_id,
+            "message": message
+        })
+
+    def public_reply_to_comment(
+        self,
+        user: str,
+        comment_id: str,
+        message: str
+    ) -> Dict:
+        """
+        Post a public reply to an Instagram comment (visible under the original comment).
+
+        Args:
+            user: Profile username.
+            comment_id: Comment ID from get_post_comments.
+            message: Reply message text.
+
+        Returns:
+            Reply result with the new comment ID.
+        """
+        return self._request("/uploadposts/comments/public-reply", "POST", json_data={
+            "platform": "instagram",
+            "user": user,
+            "comment_id": comment_id,
+            "message": message
+        })
+
+    # ==================== Google Business ====================
 
     def get_google_business_locations(self, profile: Optional[str] = None) -> Dict:
         """
