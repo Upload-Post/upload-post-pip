@@ -212,7 +212,7 @@ class UploadPostClient:
             if kwargs.get("thumb_offset"):
                 data.append(("thumb_offset", kwargs["thumb_offset"]))
 
-    def _add_youtube_params(self, data: List[tuple], **kwargs):
+    def _add_youtube_params(self, data: List[tuple], files: List[tuple] = None, **kwargs):
         """Add YouTube-specific parameters."""
         if kwargs.get("tags"):
             tags = kwargs["tags"]
@@ -248,6 +248,21 @@ class UploadPostClient:
             data.append(("hasPaidProductPlacement", str(kwargs["hasPaidProductPlacement"]).lower()))
         if kwargs.get("recordingDate"):
             data.append(("recordingDate", kwargs["recordingDate"]))
+        if kwargs.get("subtitles"):
+            for idx, sub in enumerate(kwargs["subtitles"]):
+                if sub.get("language"):
+                    data.append((f"youtube_subtitle_language_{idx}", sub["language"]))
+                    if sub.get("name"):
+                        data.append((f"youtube_subtitle_name_{idx}", sub["name"]))
+                    if sub.get("file"):
+                        sub_path = Path(sub["file"])
+                        if sub_path.exists() and files is not None:
+                            files.append((f"youtube_subtitle_file_{idx}", (sub_path.name, sub_path.open("rb"))))
+                        else:
+                            # Treat as URL string
+                            data.append((f"youtube_subtitle_file_{idx}", str(sub["file"])))
+                    elif sub.get("url"):
+                        data.append((f"youtube_subtitle_file_{idx}", sub["url"]))
 
     def _add_linkedin_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add LinkedIn-specific parameters."""
@@ -429,7 +444,9 @@ class UploadPostClient:
                 blockedCountries: Comma-separated country codes
                 hasPaidProductPlacement: Paid placement flag
                 recordingDate: Recording date (ISO 8601)
-            
+                subtitles: List of subtitle dicts with keys: language (BCP-47),
+                    name (display name), file (path to SRT/VTT file), url (subtitle URL)
+
             LinkedIn:
                 visibility: PUBLIC, CONNECTIONS, LOGGED_IN, CONTAINER
                 target_linkedin_page_id: Page ID for organization posts
@@ -489,7 +506,7 @@ class UploadPostClient:
             if "instagram" in platforms:
                 self._add_instagram_params(data, is_video=True, files=files, **kwargs)
             if "youtube" in platforms:
-                self._add_youtube_params(data, **kwargs)
+                self._add_youtube_params(data, files=files, **kwargs)
             if "linkedin" in platforms:
                 self._add_linkedin_params(data, **kwargs)
             if "facebook" in platforms:
