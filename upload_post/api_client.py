@@ -937,6 +937,25 @@ class UploadPostClient:
         """
         return self._request(f"/uploadposts/post-analytics/{request_id}", "GET")
 
+    def get_post_analytics_by_platform_id(self, platform_post_id: str, platform: str, user: str) -> Dict:
+        """
+        Get analytics for any post (including organic posts) using its native platform ID.
+
+        Args:
+            platform_post_id: The native post ID on the platform (e.g., Instagram media ID).
+            platform: The platform to query (instagram, youtube, tiktok, facebook, linkedin, x, threads, pinterest, reddit).
+            user: The profile_username that owns the social account.
+
+        Returns:
+            Post analytics with live per-post metrics from the platform API.
+        """
+        params = {
+            "platform_post_id": platform_post_id,
+            "platform": platform,
+            "user": user,
+        }
+        return self._request("/uploadposts/post-analytics", "GET", params=params)
+
     def get_platform_metrics(self) -> Dict:
         """
         Get available metrics configuration for all supported platforms.
