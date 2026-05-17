@@ -973,6 +973,35 @@ class UploadPostClient:
         """
         return self._request("/uploadposts/platform-metrics", "GET")
 
+    def get_media(
+        self,
+        platform: str,
+        user: str,
+        page_urn: Optional[str] = None,
+    ) -> Dict:
+        """
+        Retrieve recent media (posts, reels, videos, pins, tweets) from a
+        connected social account.
+
+        Args:
+            platform: One of instagram, tiktok, youtube, linkedin, facebook,
+                x, threads, pinterest, bluesky, reddit.
+            user: Profile username (as configured in Upload-Post).
+            page_urn: LinkedIn only. Numeric organization ID (e.g. ``"12345"``),
+                full URN (``"urn:li:organization:12345"``), or ``"me"`` to force
+                the personal profile. When omitted, accounts linked as an
+                organization admin auto-resolve to the first administered
+                organization; otherwise the personal profile is used.
+
+        Returns:
+            ``{"success": True, "media": [{"id", "caption", "media_type",
+            "media_url", "permalink", "timestamp", "thumbnail_url"}, ...]}``.
+        """
+        params: Dict[str, str] = {"platform": platform, "user": user}
+        if page_urn:
+            params["page_urn"] = page_urn
+        return self._request("/uploadposts/media", "GET", params=params)
+
     # ==================== Scheduled Posts ====================
 
     def list_scheduled(self) -> Dict:

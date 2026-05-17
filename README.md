@@ -185,6 +185,23 @@ analytics = client.get_analytics(
 print(analytics)
 ```
 
+### Get Media
+
+Retrieve recent posts from a connected social account. Supported platforms:
+`instagram`, `tiktok`, `youtube`, `linkedin`, `facebook`, `x`, `threads`,
+`pinterest`, `bluesky`, `reddit`.
+
+```python
+# Personal LinkedIn profile (default for non-org accounts):
+media = client.get_media("linkedin", "my-profile")
+
+# Force the personal profile of an account connected as an org admin:
+media = client.get_media("linkedin", "my-profile", page_urn="me")
+
+# Target a specific LinkedIn organization page:
+media = client.get_media("linkedin", "my-profile", page_urn="12345")
+```
+
 ### Helper Methods
 
 ```python
