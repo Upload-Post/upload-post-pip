@@ -248,6 +248,18 @@ class UploadPostClient:
             data.append(("hasPaidProductPlacement", str(kwargs["hasPaidProductPlacement"]).lower()))
         if kwargs.get("recordingDate"):
             data.append(("recordingDate", kwargs["recordingDate"]))
+        # Playlist: accept a single id, a list, or a comma-separated string. Sent as comma-separated
+        # so the API can add the uploaded video to one or more playlists on the same channel.
+        playlist_value = (
+            kwargs.get("youtube_playlist_id")
+            or kwargs.get("youtube_playlist_ids")
+            or kwargs.get("playlist_id")
+            or kwargs.get("playlist_ids")
+        )
+        if playlist_value:
+            if isinstance(playlist_value, (list, tuple)):
+                playlist_value = ",".join(str(p).strip() for p in playlist_value if str(p).strip())
+            data.append(("youtube_playlist_id", str(playlist_value)))
 
     def _add_linkedin_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add LinkedIn-specific parameters."""
@@ -429,6 +441,8 @@ class UploadPostClient:
                 blockedCountries: Comma-separated country codes
                 hasPaidProductPlacement: Paid placement flag
                 recordingDate: Recording date (ISO 8601)
+                youtube_playlist_id: Playlist ID (or list/comma-separated of IDs) to add
+                    the uploaded video to after publishing
             
             LinkedIn:
                 visibility: PUBLIC, CONNECTIONS, LOGGED_IN, CONTAINER
