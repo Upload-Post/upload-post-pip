@@ -241,6 +241,7 @@ boards = client.get_pinterest_boards("my-profile")
 - `allowedCountries` / `blockedCountries` - Country restrictions
 - `hasPaidProductPlacement` - Paid placement flag
 - `recordingDate` - Recording date (ISO 8601)
+- `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 
 ### LinkedIn
 - `visibility` - PUBLIC, CONNECTIONS, LOGGED_IN, CONTAINER
