@@ -980,22 +980,17 @@ class UploadPostClient:
         page_urn: Optional[str] = None,
     ) -> Dict:
         """
-        Retrieve recent media (posts, reels, videos, pins, tweets) from a
-        connected social account.
+        Retrieve recent media from a connected social account.
 
         Args:
-            platform: One of instagram, tiktok, youtube, linkedin, facebook,
-                x, threads, pinterest, bluesky, reddit.
-            user: Profile username (as configured in Upload-Post).
-            page_urn: LinkedIn only. Numeric organization ID (e.g. ``"12345"``),
-                full URN (``"urn:li:organization:12345"``), or ``"me"`` to force
-                the personal profile. When omitted, accounts linked as an
-                organization admin auto-resolve to the first administered
-                organization; otherwise the personal profile is used.
+            platform: instagram, tiktok, youtube, linkedin, facebook, x,
+                threads, pinterest, bluesky, or reddit.
+            user: Profile username.
+            page_urn: LinkedIn only. Numeric org ID, full URN, or ``"me"`` to
+                force the personal profile of an org-admin account.
 
         Returns:
-            ``{"success": True, "media": [{"id", "caption", "media_type",
-            "media_url", "permalink", "timestamp", "thumbnail_url"}, ...]}``.
+            ``{"success": True, "media": [...]}``.
         """
         params: Dict[str, str] = {"platform": platform, "user": user}
         if page_urn:
