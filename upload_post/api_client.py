@@ -74,6 +74,8 @@ class UploadPostClient:
                     response = self.session.delete(url, json=json_data)
                 else:
                     response = self.session.delete(url)
+            elif method == "PATCH":
+                response = self.session.patch(url, json=json_data)
             else:
                 raise UploadPostError(f"Unsupported HTTP method: {method}")
             
@@ -1059,7 +1061,7 @@ class UploadPostClient:
             body["scheduled_date"] = scheduled_date
         if timezone:
             body["timezone"] = timezone
-        return self._request(f"/uploadposts/schedule/{job_id}", "POST", json_data=body)
+        return self._request(f"/uploadposts/schedule/{job_id}", "PATCH", json_data=body)
 
     # ==================== User Management ====================
 
