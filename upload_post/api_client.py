@@ -1108,7 +1108,8 @@ class UploadPostClient:
         show_calendar: Optional[bool] = None,
         readonly_calendar: Optional[bool] = None,
         connect_title: Optional[str] = None,
-        connect_description: Optional[str] = None
+        connect_description: Optional[str] = None,
+        language: Optional[str] = None
     ) -> Dict:
         """
         Generate a JWT for platform integration.
@@ -1124,6 +1125,9 @@ class UploadPostClient:
             readonly_calendar: Show only a read-only calendar (no editing, no account connection).
             connect_title: Custom title for the connection page.
             connect_description: Custom description for the connection page.
+            language: Force the connection page language for this profile.
+                Supported: 'en', 'es', 'de', 'fr', 'pt'. When omitted, the page
+                auto-detects the visitor's browser language and falls back to English.
 
         Returns:
             JWT and connection URL.
@@ -1145,6 +1149,8 @@ class UploadPostClient:
             body["connect_title"] = connect_title
         if connect_description:
             body["connect_description"] = connect_description
+        if language:
+            body["language"] = language
         return self._request("/uploadposts/users/generate-jwt", "POST", json_data=body)
 
     def validate_jwt(self, jwt: str) -> Dict:

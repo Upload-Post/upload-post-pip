@@ -172,6 +172,10 @@ jwt = client.generate_jwt(
     "my-profile",
     redirect_url="https://yourapp.com/callback",
     platforms=["tiktok", "instagram"],
+    # Optional: force the connection page language for this profile.
+    # Supported: "en", "es", "de", "fr", "pt". When omitted, the page
+    # auto-detects the visitor's browser language and falls back to English.
+    language="es",
 )
 ```
 
