@@ -2,7 +2,7 @@
 Upload-Post API Client
 
 Cross-platform social media upload for TikTok, Instagram, YouTube, LinkedIn,
-Facebook, Pinterest, Threads, Reddit, Bluesky, and X (Twitter).
+Facebook, Pinterest, Threads, Reddit, Bluesky, Discord, Telegram, and X (Twitter).
 """
 
 from pathlib import Path
@@ -20,7 +20,7 @@ class UploadPostClient:
     Upload-Post API Client
     
     Supports uploading to: TikTok, Instagram, YouTube, LinkedIn, Facebook,
-    Pinterest, Threads, Reddit, Bluesky, X (Twitter)
+    Pinterest, Threads, Reddit, Bluesky, Discord, Telegram, X (Twitter)
     
     Example:
         >>> client = UploadPostClient("YOUR_API_KEY")
@@ -395,10 +395,10 @@ class UploadPostClient:
         Args:
             video_path: Path to video file or video URL.
             title: Video title/caption. Required for YouTube and Reddit.
-                   Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Pinterest.
+                   Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Discord, Telegram, Pinterest.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, youtube,
-                      linkedin, facebook, pinterest, threads, bluesky, x
+                      linkedin, facebook, pinterest, threads, bluesky, discord, telegram, x
 
         Keyword Args:
             description: Video description
@@ -540,10 +540,10 @@ class UploadPostClient:
         Args:
             photos: List of photo file paths or URLs.
             title: Post title/caption. Required for Reddit.
-                   Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Pinterest.
+                   Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Discord, Telegram, Pinterest.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, linkedin,
-                      facebook, pinterest, threads, reddit, bluesky, x
+                      facebook, pinterest, threads, reddit, bluesky, discord, telegram, x
 
         Keyword Args:
             description: Photo description
@@ -676,8 +676,8 @@ class UploadPostClient:
         Args:
             title: Text content for the post.
             user: User identifier (profile name).
-            platforms: Target platforms. Supported: x, linkedin, facebook, 
-                      threads, reddit, bluesky
+            platforms: Target platforms. Supported: x, linkedin, facebook,
+                      threads, reddit, bluesky, discord, telegram
 
         Keyword Args:
             first_comment: First comment to post

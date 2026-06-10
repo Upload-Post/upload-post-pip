@@ -2,7 +2,7 @@
 Upload-Post - Cross-platform social media upload
 
 Upload videos, photos, text posts, and documents to TikTok, Instagram, YouTube,
-LinkedIn, Facebook, Pinterest, Threads, Reddit, Bluesky, and X (Twitter).
+LinkedIn, Facebook, Pinterest, Threads, Reddit, Bluesky, Discord, Telegram, and X (Twitter).
 
 Example:
     >>> from upload_post import UploadPostClient
