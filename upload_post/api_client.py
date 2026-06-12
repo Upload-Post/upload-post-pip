@@ -128,6 +128,15 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # AI auto-generation of native per-platform copy from the media (fills blank fields)
+        if kwargs.get("autogenerate") is not None:
+            data.append(("autogenerate", str(kwargs["autogenerate"]).lower()))
+        if kwargs.get("autogenerate_title") is not None:
+            data.append(("autogenerate_title", str(kwargs["autogenerate_title"]).lower()))
+        if kwargs.get("autogenerate_description") is not None:
+            data.append(("autogenerate_description", str(kwargs["autogenerate_description"]).lower()))
+        if kwargs.get("autogenerate_language"):
+            data.append(("autogenerate_language", str(kwargs["autogenerate_language"])))
         
         # Platform-specific title overrides
         title_overrides = [
@@ -407,6 +416,11 @@ class UploadPostClient:
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously (default: True)
+            autogenerate: If True, the server uses AI to generate native per-platform
+                          title/description from the media and fills any platform field
+                          left empty. Also: autogenerate_title / autogenerate_description
+                          (bool) for granularity, autogenerate_language (ISO code) to force
+                          the language (omit to auto-detect from the media).
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, 
