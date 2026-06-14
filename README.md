@@ -321,6 +321,9 @@ These options work across all upload methods:
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
+| `autogenerate` | If True, AI generates native per-platform title/description from the media and fills any field left empty |
+| `autogenerate_title` / `autogenerate_description` | Generate only the title or only the description (bool) |
+| `autogenerate_language` | Force the output language (ISO code); omit to auto-detect from the media |
 
 ## Error Handling
 
