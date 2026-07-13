@@ -18,7 +18,7 @@ def main():
         "--platforms", 
         nargs="+",
         required=True,
-        choices=["tiktok", "instagram", "linkedin", "youtube", "facebook", "x", "threads", "pinterest", "discord", "telegram"],
+        choices=["tiktok", "instagram", "linkedin", "youtube", "facebook", "x", "threads", "pinterest", "discord", "telegram", "mastodon", "wordpress"],
         help="Platforms to upload to. For platform-specific parameters, please use the Python API."
     )
     parser.add_argument(

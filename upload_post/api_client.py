@@ -141,7 +141,10 @@ class UploadPostClient:
         # Platform-specific title overrides
         title_overrides = [
             "bluesky_title", "instagram_title", "facebook_title", "tiktok_title",
-            "linkedin_title", "x_title", "youtube_title", "pinterest_title", "threads_title"
+            "linkedin_title", "x_title", "youtube_title", "pinterest_title", "threads_title",
+            # New credential-based platforms
+            "slack_title", "mastodon_title", "nostr_title", "lemmy_title", "devto_title",
+            "hashnode_title", "wordpress_title", "whop_title", "listmonk_title"
         ]
         for key in title_overrides:
             if kwargs.get(key):
