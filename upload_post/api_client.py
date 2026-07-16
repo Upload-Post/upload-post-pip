@@ -141,7 +141,10 @@ class UploadPostClient:
         # Platform-specific title overrides
         title_overrides = [
             "bluesky_title", "instagram_title", "facebook_title", "tiktok_title",
-            "linkedin_title", "x_title", "youtube_title", "pinterest_title", "threads_title"
+            "linkedin_title", "x_title", "youtube_title", "pinterest_title", "threads_title",
+            # New credential-based platforms
+            "slack_title", "mastodon_title", "nostr_title", "lemmy_title", "devto_title",
+            "hashnode_title", "wordpress_title", "whop_title", "listmonk_title"
         ]
         for key in title_overrides:
             if kwargs.get(key):
@@ -407,7 +410,8 @@ class UploadPostClient:
                    Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Discord, Telegram, Pinterest.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, youtube,
-                      linkedin, facebook, pinterest, threads, bluesky, discord, telegram, x
+                      linkedin, facebook, pinterest, threads, bluesky, discord, telegram, x,
+                      mastodon, wordpress
 
         Keyword Args:
             description: Video description
@@ -557,7 +561,8 @@ class UploadPostClient:
                    Optional for TikTok, Instagram, Facebook, LinkedIn, X, Threads, Bluesky, Discord, Telegram, Pinterest.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, linkedin,
-                      facebook, pinterest, threads, reddit, bluesky, discord, telegram, x
+                      facebook, pinterest, threads, reddit, bluesky, discord, telegram, x,
+                      mastodon, lemmy, wordpress
 
         Keyword Args:
             description: Photo description
@@ -691,7 +696,8 @@ class UploadPostClient:
             title: Text content for the post.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: x, linkedin, facebook,
-                      threads, reddit, bluesky, discord, telegram
+                      threads, reddit, bluesky, discord, telegram, slack, mastodon,
+                      nostr, lemmy, devto, hashnode, wordpress, whop, listmonk
 
         Keyword Args:
             first_comment: First comment to post
