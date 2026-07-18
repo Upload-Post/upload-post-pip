@@ -1316,7 +1316,8 @@ class UploadPostClient:
         self,
         user: str,
         comment_id: str,
-        message: str
+        message: str,
+        buttons: Optional[List[Dict]] = None
     ) -> Dict:
         """
         Send a private reply (DM) to the author of an Instagram comment.
@@ -1325,16 +1326,21 @@ class UploadPostClient:
             user: Profile username.
             comment_id: Comment ID from get_post_comments.
             message: Reply message text.
+            buttons: Optional list of web_url buttons (max 3) rendered in the Instagram
+                DM. Each item is a dict like {"title": "Open", "url": "https://..."}.
 
         Returns:
             Reply result with recipient_id and message_id.
         """
-        return self._request("/uploadposts/comments/reply", "POST", json_data={
+        json_data = {
             "platform": "instagram",
             "user": user,
             "comment_id": comment_id,
             "message": message
-        })
+        }
+        if buttons is not None:
+            json_data["buttons"] = buttons
+        return self._request("/uploadposts/comments/reply", "POST", json_data=json_data)
 
     def public_reply_to_comment(
         self,
