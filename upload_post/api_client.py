@@ -262,6 +262,12 @@ class UploadPostClient:
             data.append(("hasPaidProductPlacement", str(kwargs["hasPaidProductPlacement"]).lower()))
         if kwargs.get("recordingDate"):
             data.append(("recordingDate", kwargs["recordingDate"]))
+        playlist_value = kwargs.get("youtube_playlist_id")
+        if playlist_value:
+            if isinstance(playlist_value, (list, tuple)):
+                playlist_value = ",".join(str(p).strip() for p in playlist_value if str(p).strip())
+            if playlist_value:
+                data.append(("youtube_playlist_id", str(playlist_value)))
         if kwargs.get("subtitles"):
             for idx, sub in enumerate(kwargs["subtitles"]):
                 if sub.get("language"):
@@ -464,6 +470,8 @@ class UploadPostClient:
                 blockedCountries: Comma-separated country codes
                 hasPaidProductPlacement: Paid placement flag
                 recordingDate: Recording date (ISO 8601)
+                youtube_playlist_id: Playlist ID (or list/comma-separated of IDs) to add
+                    the uploaded video to after publishing
                 subtitles: List of subtitle dicts with keys: language (BCP-47),
                     name (display name), file (path to SRT/VTT file), url (subtitle URL)
 
