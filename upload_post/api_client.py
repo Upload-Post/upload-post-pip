@@ -177,10 +177,17 @@ class UploadPostClient:
             data.append(("brand_content_toggle", str(kwargs["brand_content_toggle"]).lower()))
         if kwargs.get("brand_organic_toggle") is not None:
             data.append(("brand_organic_toggle", str(kwargs["brand_organic_toggle"]).lower()))
-        
+
+        # Shared by TikTok video AND photo uploads: the backend reads privacy_level and
+        # post_mode for both /upload (video) and /upload_photos. They used to sit behind
+        # the `if is_video` gate, so photo carousels silently published as
+        # PUBLIC_TO_EVERYONE / DIRECT_POST regardless of what the caller passed (issue #24).
+        if kwargs.get("privacy_level"):
+            data.append(("privacy_level", kwargs["privacy_level"]))
+        if kwargs.get("post_mode"):
+            data.append(("post_mode", kwargs["post_mode"]))
+
         if is_video:
-            if kwargs.get("privacy_level"):
-                data.append(("privacy_level", kwargs["privacy_level"]))
             if kwargs.get("disable_duet") is not None:
                 data.append(("disable_duet", str(kwargs["disable_duet"]).lower()))
             if kwargs.get("disable_stitch") is not None:
@@ -189,8 +196,6 @@ class UploadPostClient:
                 data.append(("cover_timestamp", str(kwargs["cover_timestamp"])))
             if kwargs.get("is_aigc") is not None:
                 data.append(("is_aigc", str(kwargs["is_aigc"]).lower()))
-            if kwargs.get("post_mode"):
-                data.append(("post_mode", kwargs["post_mode"]))
         else:
             if kwargs.get("auto_add_music") is not None:
                 data.append(("auto_add_music", str(kwargs["auto_add_music"]).lower()))
