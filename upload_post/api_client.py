@@ -913,7 +913,10 @@ class UploadPostClient:
             profile_username: Profile username.
             platforms: Filter by platforms (instagram, linkedin, facebook, x, youtube, tiktok, threads, pinterest, reddit).
             page_id: Facebook Page ID (required for Facebook analytics).
-            page_urn: LinkedIn page URN (defaults to "me" for personal profile).
+            page_urn: LinkedIn organization/company page URN or numeric ID. LinkedIn
+                analytics are only available for pages you administer; personal profiles
+                are not supported (LinkedIn's API exposes no member-level analytics). If
+                omitted, the first administered organization page is used.
 
         Returns:
             Analytics data per platform. For Instagram, the response includes both
