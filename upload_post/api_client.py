@@ -904,6 +904,53 @@ class UploadPostClient:
         """
         return self._request("/uploadposts/history", "GET", params={"page": page, "limit": limit})
 
+    def retry_post(
+        self,
+        request_id: Optional[str] = None,
+        job_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Retry a failed post.
+
+        Args:
+            request_id: Request ID of the post to retry.
+            job_id: Job ID of the post to retry.
+
+        One of request_id or job_id is required.
+
+        Returns:
+            Retry result.
+        """
+        json_data = {}
+        if request_id is not None:
+            json_data["request_id"] = request_id
+        if job_id is not None:
+            json_data["job_id"] = job_id
+        return self._request("/uploadposts/posts/retry", "POST", json_data=json_data)
+
+    def unpublish_post(
+        self,
+        user: str,
+        platform: str,
+        post_id: str
+    ) -> Dict:
+        """
+        Unpublish (delete) a previously published post.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (facebook, youtube, x, linkedin, threads).
+            post_id: ID of the published post to unpublish.
+
+        Returns:
+            Unpublish result.
+        """
+        return self._request("/uploadposts/posts/unpublish", "POST", json_data={
+            "user": user,
+            "platform": platform,
+            "post_id": post_id
+        })
+
     def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None,
                       page_id: Optional[str] = None, page_urn: Optional[str] = None) -> Dict:
         """
@@ -1294,25 +1341,35 @@ class UploadPostClient:
     def get_post_comments(
         self,
         user: str,
+        platform: str = "instagram",
         post_id: Optional[str] = None,
-        post_url: Optional[str] = None
+        post_url: Optional[str] = None,
+        limit: Optional[int] = None,
+        after: Optional[str] = None
     ) -> Dict:
         """
-        Get comments on an Instagram post.
+        Get comments on a post.
 
         Args:
             user: Profile username.
-            post_id: Numeric media ID (provide post_id or post_url).
-            post_url: Full Instagram post URL (provide post_id or post_url).
+            platform: Platform name (instagram, facebook, youtube, linkedin).
+            post_id: Post/media ID (provide post_id or post_url).
+            post_url: Full post URL (provide post_id or post_url).
+            limit: Maximum number of comments to return.
+            after: Pagination cursor for the next page of comments.
 
         Returns:
             Comments data including comment IDs, text, timestamps, and user info.
         """
-        params = {"platform": "instagram", "user": user}
+        params = {"platform": platform, "user": user}
         if post_id:
             params["post_id"] = post_id
         if post_url:
             params["post_url"] = post_url
+        if limit is not None:
+            params["limit"] = limit
+        if after is not None:
+            params["after"] = after
         return self._request("/uploadposts/comments", "GET", params=params)
 
     def reply_to_comment(
@@ -1368,6 +1425,72 @@ class UploadPostClient:
             "comment_id": comment_id,
             "message": message
         })
+
+    def create_comment(
+        self,
+        user: str,
+        platform: str,
+        message: str,
+        post_id: Optional[str] = None,
+        post_url: Optional[str] = None,
+        comment_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Create a comment on a post, or reply to an existing comment.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (instagram, facebook, youtube, linkedin).
+            message: Comment text.
+            post_id: Post/media ID to comment on.
+            post_url: Full post URL to comment on.
+            comment_id: Existing comment ID to reply to.
+
+        One of post_id, post_url or comment_id is required.
+
+        Returns:
+            Creation result with the new comment ID.
+        """
+        json_data = {
+            "platform": platform,
+            "user": user,
+            "message": message
+        }
+        if post_id is not None:
+            json_data["post_id"] = post_id
+        if post_url is not None:
+            json_data["post_url"] = post_url
+        if comment_id is not None:
+            json_data["comment_id"] = comment_id
+        return self._request("/uploadposts/comments/create", "POST", json_data=json_data)
+
+    def delete_comment(
+        self,
+        user: str,
+        platform: str,
+        comment_id: str,
+        post_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Delete a comment on a post.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (instagram, facebook, youtube, linkedin).
+            comment_id: Comment ID to delete.
+            post_id: Post URN (required for LinkedIn).
+
+        Returns:
+            Deletion result.
+        """
+        json_data = {
+            "platform": platform,
+            "user": user,
+            "comment_id": comment_id
+        }
+        if post_id is not None:
+            json_data["post_id"] = post_id
+        return self._request("/uploadposts/comments/delete", "DELETE", json_data=json_data)
 
     # ==================== Google Business ====================
 
