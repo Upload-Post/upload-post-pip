@@ -303,12 +303,16 @@ class UploadPostClient:
         """Add Facebook-specific parameters."""
         if kwargs.get("facebook_page_id"):
             data.append(("facebook_page_id", kwargs["facebook_page_id"]))
-        
+
+        # facebook_media_type (POSTS/STORIES/REELS) is honored for BOTH photos and video
+        # (backend uploadphotos.py reads request.form.get('facebook_media_type')). Gating it
+        # behind is_video prevented publishing Facebook Story photos from the SDK.
+        if kwargs.get("facebook_media_type"):
+            data.append(("facebook_media_type", kwargs["facebook_media_type"]))
+
         if is_video:
             if kwargs.get("video_state"):
                 data.append(("video_state", kwargs["video_state"]))
-            if kwargs.get("facebook_media_type"):
-                data.append(("facebook_media_type", kwargs["facebook_media_type"]))
             if kwargs.get("thumbnail_url"):
                 data.append(("thumbnail_url", kwargs["thumbnail_url"]))
 
