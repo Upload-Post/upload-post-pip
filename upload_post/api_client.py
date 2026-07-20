@@ -129,14 +129,6 @@ class UploadPostClient:
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
-        if kwargs.get("autogenerate") is not None:
-            data.append(("autogenerate", str(kwargs["autogenerate"]).lower()))
-        if kwargs.get("autogenerate_title") is not None:
-            data.append(("autogenerate_title", str(kwargs["autogenerate_title"]).lower()))
-        if kwargs.get("autogenerate_description") is not None:
-            data.append(("autogenerate_description", str(kwargs["autogenerate_description"]).lower()))
-        if kwargs.get("autogenerate_language"):
-            data.append(("autogenerate_language", str(kwargs["autogenerate_language"])))
         
         # Platform-specific title overrides
         title_overrides = [
