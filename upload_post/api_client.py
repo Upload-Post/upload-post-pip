@@ -427,10 +427,7 @@ class UploadPostClient:
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously (default: True)
-            autogenerate: If True, the server uses AI to generate native per-platform
                           title/description from the media and fills any platform field
-                          left empty. Also: autogenerate_title / autogenerate_description
-                          (bool) for granularity, autogenerate_language (ISO code) to force
                           the language (omit to auto-detect from the media).
             
             TikTok:
