@@ -32,6 +32,24 @@ jobs:
       - name: Install build tools
         run: pip install build
 
+      # setup.py y upload_post/__init__.py llevaban versiones distintas (2.8.1 y
+      # 2.8.0): se publicaba un paquete cuyo __version__ mentia a quien lo leyera
+      # desde el propio cliente. Nadie se entero hasta que se miro a mano.
+      - name: Version files must agree
+        shell: bash
+        run: |
+          SETUP=$(sed -n 's/.*version="\([^"]*\)".*/\1/p' setup.py | head -1)
+          INIT=$(sed -n 's/.*__version__ = "\([^"]*\)".*/\1/p' upload_post/__init__.py | head -1)
+          echo "setup.py=$SETUP  __init__.py=$INIT"
+          if [ -z "$SETUP" ] || [ -z "$INIT" ]; then
+            echo "::error::No se pudo leer la version de setup.py o de upload_post/__init__.py"
+            exit 1
+          fi
+          if [ "$SETUP" != "$INIT" ]; then
+            echo "::error::Version descuadrada: setup.py=$SETUP pero __init__.py=$INIT. Publicar asi deja un __version__ que miente."
+            exit 1
+          fi
+
       - name: Check if version is new
         id: version_check
         shell: bash
