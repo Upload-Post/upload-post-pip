@@ -15,7 +15,7 @@ Example:
     ... )
 """
 
-__version__ = "2.4.0"
+__version__ = "2.8.0"
 
 from .api_client import UploadPostClient, UploadPostError
 

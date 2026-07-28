@@ -129,14 +129,6 @@ class UploadPostClient:
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
-        if kwargs.get("autogenerate") is not None:
-            data.append(("autogenerate", str(kwargs["autogenerate"]).lower()))
-        if kwargs.get("autogenerate_title") is not None:
-            data.append(("autogenerate_title", str(kwargs["autogenerate_title"]).lower()))
-        if kwargs.get("autogenerate_description") is not None:
-            data.append(("autogenerate_description", str(kwargs["autogenerate_description"]).lower()))
-        if kwargs.get("autogenerate_language"):
-            data.append(("autogenerate_language", str(kwargs["autogenerate_language"])))
         
         # Platform-specific title overrides
         title_overrides = [
@@ -177,10 +169,17 @@ class UploadPostClient:
             data.append(("brand_content_toggle", str(kwargs["brand_content_toggle"]).lower()))
         if kwargs.get("brand_organic_toggle") is not None:
             data.append(("brand_organic_toggle", str(kwargs["brand_organic_toggle"]).lower()))
-        
+
+        # Shared by TikTok video AND photo uploads: the backend reads privacy_level and
+        # post_mode for both /upload (video) and /upload_photos. They used to sit behind
+        # the `if is_video` gate, so photo carousels silently published as
+        # PUBLIC_TO_EVERYONE / DIRECT_POST regardless of what the caller passed (issue #24).
+        if kwargs.get("privacy_level"):
+            data.append(("privacy_level", kwargs["privacy_level"]))
+        if kwargs.get("post_mode"):
+            data.append(("post_mode", kwargs["post_mode"]))
+
         if is_video:
-            if kwargs.get("privacy_level"):
-                data.append(("privacy_level", kwargs["privacy_level"]))
             if kwargs.get("disable_duet") is not None:
                 data.append(("disable_duet", str(kwargs["disable_duet"]).lower()))
             if kwargs.get("disable_stitch") is not None:
@@ -189,8 +188,6 @@ class UploadPostClient:
                 data.append(("cover_timestamp", str(kwargs["cover_timestamp"])))
             if kwargs.get("is_aigc") is not None:
                 data.append(("is_aigc", str(kwargs["is_aigc"]).lower()))
-            if kwargs.get("post_mode"):
-                data.append(("post_mode", kwargs["post_mode"]))
         else:
             if kwargs.get("auto_add_music") is not None:
                 data.append(("auto_add_music", str(kwargs["auto_add_music"]).lower()))
@@ -262,6 +259,12 @@ class UploadPostClient:
             data.append(("hasPaidProductPlacement", str(kwargs["hasPaidProductPlacement"]).lower()))
         if kwargs.get("recordingDate"):
             data.append(("recordingDate", kwargs["recordingDate"]))
+        playlist_value = kwargs.get("youtube_playlist_id")
+        if playlist_value:
+            if isinstance(playlist_value, (list, tuple)):
+                playlist_value = ",".join(str(p).strip() for p in playlist_value if str(p).strip())
+            if playlist_value:
+                data.append(("youtube_playlist_id", str(playlist_value)))
         if kwargs.get("subtitles"):
             for idx, sub in enumerate(kwargs["subtitles"]):
                 if sub.get("language"):
@@ -292,12 +295,16 @@ class UploadPostClient:
         """Add Facebook-specific parameters."""
         if kwargs.get("facebook_page_id"):
             data.append(("facebook_page_id", kwargs["facebook_page_id"]))
-        
+
+        # facebook_media_type (POSTS/STORIES/REELS) is honored for BOTH photos and video
+        # (backend uploadphotos.py reads request.form.get('facebook_media_type')). Gating it
+        # behind is_video prevented publishing Facebook Story photos from the SDK.
+        if kwargs.get("facebook_media_type"):
+            data.append(("facebook_media_type", kwargs["facebook_media_type"]))
+
         if is_video:
             if kwargs.get("video_state"):
                 data.append(("video_state", kwargs["video_state"]))
-            if kwargs.get("facebook_media_type"):
-                data.append(("facebook_media_type", kwargs["facebook_media_type"]))
             if kwargs.get("thumbnail_url"):
                 data.append(("thumbnail_url", kwargs["thumbnail_url"]))
 
@@ -420,10 +427,7 @@ class UploadPostClient:
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously (default: True)
-            autogenerate: If True, the server uses AI to generate native per-platform
                           title/description from the media and fills any platform field
-                          left empty. Also: autogenerate_title / autogenerate_description
-                          (bool) for granularity, autogenerate_language (ISO code) to force
                           the language (omit to auto-detect from the media).
             
             TikTok:
@@ -464,6 +468,8 @@ class UploadPostClient:
                 blockedCountries: Comma-separated country codes
                 hasPaidProductPlacement: Paid placement flag
                 recordingDate: Recording date (ISO 8601)
+                youtube_playlist_id: Playlist ID (or list/comma-separated of IDs) to add
+                    the uploaded video to after publishing
                 subtitles: List of subtitle dicts with keys: language (BCP-47),
                     name (display name), file (path to SRT/VTT file), url (subtitle URL)
 
@@ -904,6 +910,53 @@ class UploadPostClient:
         """
         return self._request("/uploadposts/history", "GET", params={"page": page, "limit": limit})
 
+    def retry_post(
+        self,
+        request_id: Optional[str] = None,
+        job_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Retry a failed post.
+
+        Args:
+            request_id: Request ID of the post to retry.
+            job_id: Job ID of the post to retry.
+
+        One of request_id or job_id is required.
+
+        Returns:
+            Retry result.
+        """
+        json_data = {}
+        if request_id is not None:
+            json_data["request_id"] = request_id
+        if job_id is not None:
+            json_data["job_id"] = job_id
+        return self._request("/uploadposts/posts/retry", "POST", json_data=json_data)
+
+    def unpublish_post(
+        self,
+        user: str,
+        platform: str,
+        post_id: str
+    ) -> Dict:
+        """
+        Unpublish (delete) a previously published post.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (facebook, youtube, x, linkedin, threads).
+            post_id: ID of the published post to unpublish.
+
+        Returns:
+            Unpublish result.
+        """
+        return self._request("/uploadposts/posts/unpublish", "POST", json_data={
+            "user": user,
+            "platform": platform,
+            "post_id": post_id
+        })
+
     def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None,
                       page_id: Optional[str] = None, page_urn: Optional[str] = None) -> Dict:
         """
@@ -913,7 +966,10 @@ class UploadPostClient:
             profile_username: Profile username.
             platforms: Filter by platforms (instagram, linkedin, facebook, x, youtube, tiktok, threads, pinterest, reddit).
             page_id: Facebook Page ID (required for Facebook analytics).
-            page_urn: LinkedIn page URN (defaults to "me" for personal profile).
+            page_urn: LinkedIn organization/company page URN or numeric ID. LinkedIn
+                analytics are only available for pages you administer; personal profiles
+                are not supported (LinkedIn's API exposes no member-level analytics). If
+                omitted, the first administered organization page is used.
 
         Returns:
             Analytics data per platform. For Instagram, the response includes both
@@ -1291,32 +1347,43 @@ class UploadPostClient:
     def get_post_comments(
         self,
         user: str,
+        platform: str = "instagram",
         post_id: Optional[str] = None,
-        post_url: Optional[str] = None
+        post_url: Optional[str] = None,
+        limit: Optional[int] = None,
+        after: Optional[str] = None
     ) -> Dict:
         """
-        Get comments on an Instagram post.
+        Get comments on a post.
 
         Args:
             user: Profile username.
-            post_id: Numeric media ID (provide post_id or post_url).
-            post_url: Full Instagram post URL (provide post_id or post_url).
+            platform: Platform name (instagram, facebook, youtube, linkedin).
+            post_id: Post/media ID (provide post_id or post_url).
+            post_url: Full post URL (provide post_id or post_url).
+            limit: Maximum number of comments to return.
+            after: Pagination cursor for the next page of comments.
 
         Returns:
             Comments data including comment IDs, text, timestamps, and user info.
         """
-        params = {"platform": "instagram", "user": user}
+        params = {"platform": platform, "user": user}
         if post_id:
             params["post_id"] = post_id
         if post_url:
             params["post_url"] = post_url
+        if limit is not None:
+            params["limit"] = limit
+        if after is not None:
+            params["after"] = after
         return self._request("/uploadposts/comments", "GET", params=params)
 
     def reply_to_comment(
         self,
         user: str,
         comment_id: str,
-        message: str
+        message: str,
+        buttons: Optional[List[Dict]] = None
     ) -> Dict:
         """
         Send a private reply (DM) to the author of an Instagram comment.
@@ -1325,16 +1392,21 @@ class UploadPostClient:
             user: Profile username.
             comment_id: Comment ID from get_post_comments.
             message: Reply message text.
+            buttons: Optional list of web_url buttons (max 3) rendered in the Instagram
+                DM. Each item is a dict like {"title": "Open", "url": "https://..."}.
 
         Returns:
             Reply result with recipient_id and message_id.
         """
-        return self._request("/uploadposts/comments/reply", "POST", json_data={
+        json_data = {
             "platform": "instagram",
             "user": user,
             "comment_id": comment_id,
             "message": message
-        })
+        }
+        if buttons is not None:
+            json_data["buttons"] = buttons
+        return self._request("/uploadposts/comments/reply", "POST", json_data=json_data)
 
     def public_reply_to_comment(
         self,
@@ -1359,6 +1431,72 @@ class UploadPostClient:
             "comment_id": comment_id,
             "message": message
         })
+
+    def create_comment(
+        self,
+        user: str,
+        platform: str,
+        message: str,
+        post_id: Optional[str] = None,
+        post_url: Optional[str] = None,
+        comment_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Create a comment on a post, or reply to an existing comment.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (instagram, facebook, youtube, linkedin).
+            message: Comment text.
+            post_id: Post/media ID to comment on.
+            post_url: Full post URL to comment on.
+            comment_id: Existing comment ID to reply to.
+
+        One of post_id, post_url or comment_id is required.
+
+        Returns:
+            Creation result with the new comment ID.
+        """
+        json_data = {
+            "platform": platform,
+            "user": user,
+            "message": message
+        }
+        if post_id is not None:
+            json_data["post_id"] = post_id
+        if post_url is not None:
+            json_data["post_url"] = post_url
+        if comment_id is not None:
+            json_data["comment_id"] = comment_id
+        return self._request("/uploadposts/comments/create", "POST", json_data=json_data)
+
+    def delete_comment(
+        self,
+        user: str,
+        platform: str,
+        comment_id: str,
+        post_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Delete a comment on a post.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (instagram, facebook, youtube, linkedin).
+            comment_id: Comment ID to delete.
+            post_id: Post URN (required for LinkedIn).
+
+        Returns:
+            Deletion result.
+        """
+        json_data = {
+            "platform": platform,
+            "user": user,
+            "comment_id": comment_id
+        }
+        if post_id is not None:
+            json_data["post_id"] = post_id
+        return self._request("/uploadposts/comments/delete", "DELETE", json_data=json_data)
 
     # ==================== Google Business ====================
 

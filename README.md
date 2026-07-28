@@ -262,6 +262,7 @@ boards = client.get_pinterest_boards("my-profile")
 - `allowedCountries` / `blockedCountries` - Country restrictions
 - `hasPaidProductPlacement` - Paid placement flag
 - `recordingDate` - Recording date (ISO 8601)
+- `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 
 ### LinkedIn
 - `visibility` - PUBLIC, CONNECTIONS, LOGGED_IN, CONTAINER
@@ -321,9 +322,6 @@ These options work across all upload methods:
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
-| `autogenerate` | If True, AI generates native per-platform title/description from the media and fills any field left empty |
-| `autogenerate_title` / `autogenerate_description` | Generate only the title or only the description (bool) |
-| `autogenerate_language` | Force the output language (ISO code); omit to auto-detect from the media |
 
 ## Error Handling
 
