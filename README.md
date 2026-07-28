@@ -173,9 +173,16 @@ jwt = client.generate_jwt(
     redirect_url="https://yourapp.com/callback",
     platforms=["tiktok", "instagram"],
     # Optional: force the connection page language for this profile.
-    # Supported: "en", "es", "de", "fr", "pt". When omitted, the page
+    # Supported: "en", "es", "de", "fr", "pt", "pl", "tr". When omitted, the page
     # auto-detects the visitor's browser language and falls back to English.
     language="es",
+    # Optional: override individual connection-page strings. Flat dict of i18n
+    # dot-path keys to strings. Max 100 entries, keys ^[a-zA-Z0-9_.]+$, values
+    # up to 300 chars. Echoed back in the "profile" object of validate_jwt.
+    ui_labels={
+        "connect.title": "Link your accounts",
+        "connect.subtitle": "Publish everywhere from one place",
+    },
 )
 ```
 
@@ -187,6 +194,35 @@ analytics = client.get_analytics(
     platforms=["instagram", "tiktok"],
 )
 print(analytics)
+
+# Instagram returns two audience breakdowns with the same shape
+# ("age", "gender", "country", "city"):
+print(analytics["analytics"]["instagram"]["follower_demographics"])
+print(analytics["analytics"]["instagram"]["engaged_audience_demographics"])
+```
+
+### Cached Post Analytics
+
+Per-post metrics served from the daily snapshot cache instead of live platform
+calls, so it is not subject to the live post-analytics rate limit
+(100 requests / 5 minutes). Use it to page through a profile's post history.
+
+```python
+cursor = None
+while True:
+    page = client.get_cached_post_analytics(
+        "my-profile",
+        platform="youtube",   # optional: instagram, tiktok, youtube, facebook, linkedin, threads, pinterest, reddit
+        limit=50,             # default 50, max 200
+        since="2026-06-01",   # defaults to 30 days ago
+        until="2026-07-01",   # defaults to today
+        cursor=cursor,
+    )
+    for post in page["posts"]:
+        print(post["platform"], post["post_id"], post["metrics"])
+    cursor = page["next_cursor"]
+    if not cursor:
+        break
 ```
 
 ### Get Media
@@ -205,6 +241,24 @@ media = client.get_media("linkedin", "my-profile", page_urn="me")
 # Target a specific LinkedIn organization page:
 media = client.get_media("linkedin", "my-profile", page_urn="12345")
 ```
+
+The response carries a `pagination` object — `{"limit": ..., "next_cursor": ...,
+"has_more": ...}`, with `next_cursor` `None` and `has_more` `False` on the last
+page:
+
+```python
+cursor = None
+while True:
+    page = client.get_media("instagram", "my-profile", limit=50, cursor=cursor)
+    print(len(page["media"]))
+    cursor = page["pagination"]["next_cursor"]
+    if not cursor:
+        break
+```
+
+`limit` defaults to 25 and is clamped to 1-100, with per-platform caps of 20 for
+TikTok and 50 for YouTube. **LinkedIn, Discord and Telegram do not support
+cursors** — they accept `limit` only, and passing a `cursor` returns HTTP 400.
 
 ### Helper Methods
 
@@ -305,6 +359,30 @@ boards = client.get_pinterest_boards("my-profile")
 ### Reddit
 - `subreddit` - Subreddit name (without r/)
 - `flair_id` - Flair template ID
+
+### Google Business
+- `gbp_location_id` - Location, e.g. `"accounts/123/locations/456"` (list them with `get_google_business_locations`). Required when the account has more than one location; the API only auto-selects when exactly one exists.
+- `gbp_post_type` - `MEDIA`, `PHOTO` or `GALLERY` to publish into the location's photo gallery instead of creating a Local Post. Any other value, or omitting it, keeps the Local Post behaviour.
+- `gbp_media_category` - Gallery category, default `ADDITIONAL`. One of `COVER`, `PROFILE`, `LOGO`, `EXTERIOR`, `INTERIOR`, `PRODUCT`, `AT_WORK`, `FOOD_AND_DRINK`, `MENU`, `COMMON_AREA`, `ROOMS`, `TEAMS`, `ADDITIONAL`.
+- `gbp_topic_type` - STANDARD, EVENT or OFFER
+- `gbp_media_url` / `gbp_media_format` - Media attached to the post
+- `gbp_cta_type` / `gbp_cta_url` - Call-to-action button
+- `gbp_event_title` / `gbp_event_start_date` / `gbp_event_start_time` / `gbp_event_end_date` / `gbp_event_end_time` - Used with `gbp_topic_type="EVENT"`
+- `gbp_offer_coupon` / `gbp_offer_redeem_url` / `gbp_offer_terms` - Used with `gbp_topic_type="OFFER"`
+
+```python
+locations = client.get_google_business_locations("my-profile")
+
+# Publish a photo straight into the location's gallery
+client.upload_photos(
+    ["storefront.jpg"],
+    user="my-profile",
+    platforms=["google_business"],
+    gbp_location_id=locations["locations"][0]["name"],
+    gbp_post_type="GALLERY",
+    gbp_media_category="EXTERIOR",
+)
+```
 
 ## Common Options
 

@@ -400,6 +400,49 @@ class UploadPostClient:
             if reddit_link:
                 data.append(("reddit_link_url", reddit_link))
 
+    def _add_google_business_params(self, data: List[tuple], **kwargs):
+        """Add Google Business Profile parameters.
+
+        ``gbp_location_id`` is required for accounts with more than one location;
+        the API only auto-selects when exactly one location exists.
+
+        ``gbp_post_type`` switches the call from the default Local Post to a
+        gallery photo upload (MEDIA / PHOTO / GALLERY). Any other value, or
+        omitting it, keeps the Local Post behaviour.
+        """
+        if kwargs.get("gbp_location_id"):
+            data.append(("gbp_location_id", kwargs["gbp_location_id"]))
+        if kwargs.get("gbp_post_type"):
+            data.append(("gbp_post_type", str(kwargs["gbp_post_type"]).upper()))
+        if kwargs.get("gbp_media_category"):
+            data.append(("gbp_media_category", str(kwargs["gbp_media_category"]).upper()))
+        if kwargs.get("gbp_topic_type"):
+            data.append(("gbp_topic_type", str(kwargs["gbp_topic_type"]).upper()))
+        if kwargs.get("gbp_media_url"):
+            data.append(("gbp_media_url", kwargs["gbp_media_url"]))
+        if kwargs.get("gbp_media_format"):
+            data.append(("gbp_media_format", str(kwargs["gbp_media_format"]).upper()))
+        if kwargs.get("gbp_cta_type"):
+            data.append(("gbp_cta_type", str(kwargs["gbp_cta_type"]).upper()))
+        if kwargs.get("gbp_cta_url"):
+            data.append(("gbp_cta_url", kwargs["gbp_cta_url"]))
+        if kwargs.get("gbp_event_title"):
+            data.append(("gbp_event_title", kwargs["gbp_event_title"]))
+        if kwargs.get("gbp_event_start_date"):
+            data.append(("gbp_event_start_date", kwargs["gbp_event_start_date"]))
+        if kwargs.get("gbp_event_start_time"):
+            data.append(("gbp_event_start_time", kwargs["gbp_event_start_time"]))
+        if kwargs.get("gbp_event_end_date"):
+            data.append(("gbp_event_end_date", kwargs["gbp_event_end_date"]))
+        if kwargs.get("gbp_event_end_time"):
+            data.append(("gbp_event_end_time", kwargs["gbp_event_end_time"]))
+        if kwargs.get("gbp_offer_coupon"):
+            data.append(("gbp_offer_coupon", kwargs["gbp_offer_coupon"]))
+        if kwargs.get("gbp_offer_redeem_url"):
+            data.append(("gbp_offer_redeem_url", kwargs["gbp_offer_redeem_url"]))
+        if kwargs.get("gbp_offer_terms"):
+            data.append(("gbp_offer_terms", kwargs["gbp_offer_terms"]))
+
     def upload_video(
         self,
         video_path: Union[str, Path],
@@ -418,7 +461,7 @@ class UploadPostClient:
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, youtube,
                       linkedin, facebook, pinterest, threads, bluesky, discord, telegram, x,
-                      mastodon, wordpress
+                      google_business, mastodon, wordpress
 
         Keyword Args:
             description: Video description
@@ -504,6 +547,22 @@ class UploadPostClient:
                 threads_long_text_as_post: Post long text as single post
                 threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
 
+            Google Business:
+                gbp_location_id: Location, e.g. "accounts/123/locations/456". Required
+                    when the account has more than one location.
+                gbp_post_type: MEDIA, PHOTO or GALLERY to publish into the location's
+                    gallery instead of creating a Local Post. Any other value, or
+                    omitting it, keeps the Local Post behaviour.
+                gbp_media_category: Gallery category (default ADDITIONAL). One of
+                    COVER, PROFILE, LOGO, EXTERIOR, INTERIOR, PRODUCT, AT_WORK,
+                    FOOD_AND_DRINK, MENU, COMMON_AREA, ROOMS, TEAMS, ADDITIONAL.
+                gbp_topic_type: STANDARD, EVENT or OFFER
+                gbp_media_url / gbp_media_format: Media attached to the post
+                gbp_cta_type / gbp_cta_url: Call-to-action button
+                gbp_event_title / gbp_event_start_date / gbp_event_start_time /
+                    gbp_event_end_date / gbp_event_end_time: Used with EVENT
+                gbp_offer_coupon / gbp_offer_redeem_url / gbp_offer_terms: Used with OFFER
+
         Returns:
             API response with request_id for async uploads.
 
@@ -543,7 +602,9 @@ class UploadPostClient:
                 self._add_x_params(data, is_text=False, **kwargs)
             if "threads" in platforms:
                 self._add_threads_params(data, **kwargs)
-            
+            if "google_business" in platforms:
+                self._add_google_business_params(data, **kwargs)
+
             return self._request("/upload", "POST", data=data, files=files if files else None)
             
         finally:
@@ -568,7 +629,7 @@ class UploadPostClient:
             user: User identifier (profile name).
             platforms: Target platforms. Supported: tiktok, instagram, linkedin,
                       facebook, pinterest, threads, reddit, bluesky, discord, telegram, x,
-                      mastodon, lemmy, wordpress
+                      google_business, mastodon, lemmy, wordpress
 
         Keyword Args:
             description: Photo description
@@ -627,6 +688,18 @@ class UploadPostClient:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID
 
+            Google Business:
+                gbp_location_id: Location, e.g. "accounts/123/locations/456". Required
+                    when the account has more than one location.
+                gbp_post_type: MEDIA, PHOTO or GALLERY to publish the photo into the
+                    location's gallery instead of creating a Local Post. Any other
+                    value, or omitting it, keeps the Local Post behaviour.
+                gbp_media_category: Gallery category (default ADDITIONAL). One of
+                    COVER, PROFILE, LOGO, EXTERIOR, INTERIOR, PRODUCT, AT_WORK,
+                    FOOD_AND_DRINK, MENU, COMMON_AREA, ROOMS, TEAMS, ADDITIONAL.
+                gbp_topic_type: STANDARD, EVENT or OFFER
+                gbp_cta_type / gbp_cta_url: Call-to-action button
+
             first_comment_media: List of file paths to attach as images in
                 the first comment. Supported on Reddit and X.
 
@@ -671,6 +744,8 @@ class UploadPostClient:
                 self._add_threads_params(data, **kwargs)
             if "reddit" in platforms:
                 self._add_reddit_params(data, **kwargs)
+            if "google_business" in platforms:
+                self._add_google_business_params(data, **kwargs)
 
             first_comment_media = kwargs.get("first_comment_media")
             if first_comment_media:
@@ -702,8 +777,9 @@ class UploadPostClient:
             title: Text content for the post.
             user: User identifier (profile name).
             platforms: Target platforms. Supported: x, linkedin, facebook,
-                      threads, reddit, bluesky, discord, telegram, slack, mastodon,
-                      nostr, lemmy, devto, hashnode, wordpress, whop, listmonk
+                      threads, reddit, bluesky, discord, telegram, google_business,
+                      slack, mastodon, nostr, lemmy, devto, hashnode, wordpress,
+                      whop, listmonk
 
         Keyword Args:
             first_comment: First comment to post
@@ -746,6 +822,15 @@ class UploadPostClient:
                     (kind: "link") instead of a text post. Overrides `link_url`
                     for Reddit.
 
+            Google Business:
+                gbp_location_id: Location, e.g. "accounts/123/locations/456". Required
+                    when the account has more than one location.
+                gbp_topic_type: STANDARD, EVENT or OFFER
+                gbp_cta_type / gbp_cta_url: Call-to-action button
+                gbp_event_title / gbp_event_start_date / gbp_event_start_time /
+                    gbp_event_end_date / gbp_event_end_time: Used with EVENT
+                gbp_offer_coupon / gbp_offer_redeem_url / gbp_offer_terms: Used with OFFER
+
             first_comment_media: List of file paths to attach as images in
                 the first comment. Supported on Reddit and X.
 
@@ -778,6 +863,8 @@ class UploadPostClient:
             bluesky_link = kwargs.get("bluesky_link_url")
             if bluesky_link:
                 data.append(("bluesky_link_url", bluesky_link))
+        if "google_business" in platforms:
+            self._add_google_business_params(data, **kwargs)
 
         first_comment_media = kwargs.get("first_comment_media")
         opened_files: List = []
@@ -973,7 +1060,11 @@ class UploadPostClient:
 
         Returns:
             Analytics data per platform. For Instagram, the response includes both
-            'views' (official Instagram metric) and 'impressions' (backwards-compatible alias).
+            'views' (official Instagram metric) and 'impressions' (backwards-compatible alias),
+            plus two audience breakdowns with the same shape ('age', 'gender',
+            'country', 'city'): 'follower_demographics' for the account's followers
+            and 'engaged_audience_demographics' for the accounts that engaged with
+            its content.
         """
         params = {}
         if platforms:
@@ -1059,6 +1150,49 @@ class UploadPostClient:
         }
         return self._request("/uploadposts/post-analytics", "GET", params=params)
 
+    def get_cached_post_analytics(
+        self,
+        user: str,
+        platform: Optional[str] = None,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+    ) -> Dict:
+        """
+        Get per-post metrics from the daily snapshot cache instead of querying
+        the platforms live.
+
+        Because it never calls the platform APIs it is not subject to the live
+        post-analytics rate limit (100 requests / 5 minutes), which makes it the
+        right method for paging through a profile's whole post history.
+
+        Args:
+            user: Profile username.
+            platform: Filter by platform (instagram, tiktok, youtube, facebook,
+                linkedin, threads, pinterest, reddit).
+            limit: Posts per page. Defaults to 50, max 200.
+            cursor: Opaque cursor from a previous response's ``next_cursor``.
+            since: Start date in YYYY-MM-DD format (defaults to 30 days ago).
+            until: End date in YYYY-MM-DD format (defaults to today).
+
+        Returns:
+            Cached post metrics with ``source: "snapshot_cache"``, plus
+            ``next_cursor`` and ``has_more`` for pagination.
+        """
+        params: Dict[str, Any] = {"user": user}
+        if platform:
+            params["platform"] = platform
+        if limit is not None:
+            params["limit"] = limit
+        if cursor:
+            params["cursor"] = cursor
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+        return self._request("/uploadposts/post-analytics/cached", "GET", params=params)
+
     def get_platform_metrics(self) -> Dict:
         """
         Get available metrics configuration for all supported platforms.
@@ -1073,6 +1207,8 @@ class UploadPostClient:
         platform: str,
         user: str,
         page_urn: Optional[str] = None,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
     ) -> Dict:
         """
         Retrieve recent media from a connected social account.
@@ -1083,13 +1219,24 @@ class UploadPostClient:
             user: Profile username.
             page_urn: LinkedIn only. Numeric org ID, full URN, or ``"me"`` to
                 force the personal profile of an org-admin account.
+            limit: Items per page. Defaults to 25 and is clamped to 1-100.
+                Per-platform caps: TikTok 20, YouTube 50, everything else 100.
+            cursor: Opaque cursor from a previous response's
+                ``pagination["next_cursor"]``. LinkedIn, Discord and Telegram do
+                not support cursors: passing one there returns HTTP 400.
 
         Returns:
-            ``{"success": True, "media": [...]}``.
+            ``{"success": True, "media": [...], "pagination": {"limit": 50,
+            "next_cursor": "QVFI...", "has_more": True}}``. The last page has
+            ``next_cursor`` ``None`` and ``has_more`` ``False``.
         """
-        params: Dict[str, str] = {"platform": platform, "user": user}
+        params: Dict[str, Any] = {"platform": platform, "user": user}
         if page_urn:
             params["page_urn"] = page_urn
+        if limit is not None:
+            params["limit"] = limit
+        if cursor:
+            params["cursor"] = cursor
         return self._request("/uploadposts/media", "GET", params=params)
 
     # ==================== Scheduled Posts ====================
@@ -1185,7 +1332,8 @@ class UploadPostClient:
         readonly_calendar: Optional[bool] = None,
         connect_title: Optional[str] = None,
         connect_description: Optional[str] = None,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        ui_labels: Optional[Dict[str, str]] = None
     ) -> Dict:
         """
         Generate a JWT for platform integration.
@@ -1202,8 +1350,13 @@ class UploadPostClient:
             connect_title: Custom title for the connection page.
             connect_description: Custom description for the connection page.
             language: Force the connection page language for this profile.
-                Supported: 'en', 'es', 'de', 'fr', 'pt'. When omitted, the page
-                auto-detects the visitor's browser language and falls back to English.
+                Supported: 'en', 'es', 'de', 'fr', 'pt', 'pl', 'tr'. When omitted,
+                the page auto-detects the visitor's browser language and falls back
+                to English.
+            ui_labels: Flat mapping of i18n dot-path keys to replacement strings,
+                e.g. {"connect.title": "Link your accounts"}. Max 100 entries; keys
+                must match ^[a-zA-Z0-9_.]+$ and values are strings of up to 300
+                characters. Echoed back in the 'profile' object of validate_jwt.
 
         Returns:
             JWT and connection URL.
@@ -1227,6 +1380,8 @@ class UploadPostClient:
             body["connect_description"] = connect_description
         if language:
             body["language"] = language
+        if ui_labels:
+            body["ui_labels"] = ui_labels
         return self._request("/uploadposts/users/generate-jwt", "POST", json_data=body)
 
     def validate_jwt(self, jwt: str) -> Dict:
@@ -1237,7 +1392,9 @@ class UploadPostClient:
             jwt: JWT token to validate.
 
         Returns:
-            Validation result.
+            Validation result. The 'profile' object echoes back the connection
+            page settings, including 'language' and any 'ui_labels' sent to
+            generate_jwt.
         """
         return self._request("/uploadposts/users/validate-jwt", "POST", json_data={"jwt": jwt})
 
