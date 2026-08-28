@@ -188,6 +188,31 @@ class UploadPostClient:
                 data.append(("cover_timestamp", str(kwargs["cover_timestamp"])))
             if kwargs.get("is_aigc") is not None:
                 data.append(("is_aigc", str(kwargs["is_aigc"]).lower()))
+
+            # TikTok Business only. These require a TikTok Business account
+            # connected through the business OAuth flow; on a standard TikTok
+            # connection the API ignores them and returns a warning, so the post
+            # still publishes.
+            if kwargs.get("tiktok_music_id") is not None:
+                data.append(("tiktok_music_id", str(kwargs["tiktok_music_id"])))
+            if kwargs.get("tiktok_music_volume") is not None:
+                data.append(("tiktok_music_volume", str(kwargs["tiktok_music_volume"])))
+            if kwargs.get("tiktok_music_start") is not None:
+                data.append(("tiktok_music_start", str(kwargs["tiktok_music_start"])))
+            if kwargs.get("tiktok_music_end") is not None:
+                data.append(("tiktok_music_end", str(kwargs["tiktok_music_end"])))
+            if kwargs.get("tiktok_original_sound_volume") is not None:
+                data.append(("tiktok_original_sound_volume", str(kwargs["tiktok_original_sound_volume"])))
+            if kwargs.get("tiktok_location_id") is not None:
+                data.append(("tiktok_location_id", str(kwargs["tiktok_location_id"])))
+            if kwargs.get("tiktok_location_name") is not None:
+                data.append(("tiktok_location_name", str(kwargs["tiktok_location_name"])))
+            if kwargs.get("tiktok_cover_image_url") is not None:
+                data.append(("tiktok_cover_image_url", str(kwargs["tiktok_cover_image_url"])))
+            if kwargs.get("tiktok_is_ai_generated") is not None:
+                data.append(("tiktok_is_ai_generated", str(kwargs["tiktok_is_ai_generated"]).lower()))
+            if kwargs.get("tiktok_upload_to_draft") is not None:
+                data.append(("tiktok_upload_to_draft", str(kwargs["tiktok_upload_to_draft"]).lower()))
         else:
             if kwargs.get("auto_add_music") is not None:
                 data.append(("auto_add_music", str(kwargs["auto_add_music"]).lower()))
@@ -484,7 +509,25 @@ class UploadPostClient:
                 post_mode: DIRECT_POST or MEDIA_UPLOAD
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
-            
+
+            TikTok Business (require a TikTok Business account; ignored with a
+            warning on standard TikTok connections):
+                tiktok_music_id: Commercial Music Library track id
+                                 (see get_tiktok_trending_music)
+                tiktok_music_volume: Music volume 0-100 (defaults to 50 when
+                                     music is set)
+                tiktok_music_start: Music start offset in ms
+                tiktok_music_end: Music end offset in ms
+                tiktok_original_sound_volume: Original audio volume 0-100
+                                              (defaults to 50 when music is set,
+                                              so the original audio is not muted)
+                tiktok_location_id: Location id (see get_tiktok_locations)
+                tiktok_location_name: Location name, required together with the id
+                tiktok_cover_image_url: Custom cover image URL
+                tiktok_is_ai_generated: AI-generated content disclosure
+                tiktok_upload_to_draft: Publish to drafts. When True TikTok
+                                        ignores the rest of the post settings
+
             Instagram:
                 media_type: REELS or STORIES
                 share_to_feed: Share to feed
@@ -643,7 +686,8 @@ class UploadPostClient:
             TikTok:
                 auto_add_music: Auto add music
                 disable_comment: Disable comments
-                photo_cover_index: Index of photo for cover (0-based)
+                photo_cover_index: Index of photo for cover (0-based). Also
+                                   honoured by TikTok Business photo posts.
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
             
@@ -1654,6 +1698,63 @@ class UploadPostClient:
         if post_id is not None:
             json_data["post_id"] = post_id
         return self._request("/uploadposts/comments/delete", "DELETE", json_data=json_data)
+
+    # ==================== TikTok Business ====================
+
+    def get_tiktok_trending_music(
+        self,
+        profile: str,
+        genre: Optional[str] = None,
+        country_code: Optional[str] = None,
+        date_range: Optional[str] = None
+    ) -> Dict:
+        """
+        Get trending tracks from the TikTok Commercial Music Library.
+
+        Requires the profile to have a TikTok Business account connected. The
+        returned 'commercial_music_id' is what you pass as 'tiktok_music_id' on
+        an upload.
+
+        Args:
+            profile: Profile username.
+            genre: Genre filter (e.g. "ALL", "POP"). Defaults to ALL upstream.
+            country_code: ISO country code. Defaults to US upstream.
+            date_range: Trending window: "1DAY", "7DAY", "30DAY" or "90DAY".
+                        Defaults to 7DAY upstream.
+
+        Returns:
+            Trending tracks.
+        """
+        params: Dict[str, Any] = {"profile": profile}
+        if genre:
+            params["genre"] = genre
+        if country_code:
+            params["country_code"] = country_code
+        if date_range:
+            params["date_range"] = date_range
+        return self._request("/uploadposts/tiktok/music/trending", "GET", params=params)
+
+    def get_tiktok_locations(self, profile: str, query: str) -> Dict:
+        """
+        Search TikTok locations (places) to tag on a post.
+
+        Requires the profile to have a TikTok Business account connected. TikTok
+        requires the id and the name together, so pass the returned
+        'location_id' as 'tiktok_location_id' and 'location_name' as
+        'tiktok_location_name' on the upload.
+
+        Args:
+            profile: Profile username.
+            query: Search query (max 100 characters).
+
+        Returns:
+            Matching locations (up to 20).
+        """
+        return self._request(
+            "/uploadposts/tiktok/locations",
+            "GET",
+            params={"profile": profile, "q": query}
+        )
 
     # ==================== Google Business ====================
 

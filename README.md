@@ -271,7 +271,65 @@ li_pages = client.get_linkedin_pages("my-profile")
 
 # Get Pinterest boards for a profile
 boards = client.get_pinterest_boards("my-profile")
+
+# TikTok Business only: trending Commercial Music Library tracks
+music = client.get_tiktok_trending_music(
+    "my-profile", genre="POP", country_code="ES", date_range="7DAY"
+)
+
+# TikTok Business only: search locations to tag
+locations = client.get_tiktok_locations("my-profile", "Madrid")
 ```
+
+## TikTok Business
+
+> **Requires a TikTok Business account.** These options and endpoints only work
+> for profiles whose TikTok account is connected through the TikTok Business
+> flow. On a standard TikTok connection the API ignores the fields and returns a
+> warning in the response, so the post still publishes.
+
+```python
+# 1. Pick a track and a place
+tracks = client.get_tiktok_trending_music("my-profile", country_code="ES")["tracks"]
+places = client.get_tiktok_locations("my-profile", "Madrid")["locations"]
+
+# 2. Publish with them
+client.upload_video(
+    "video.mp4",
+    title="Shot in Madrid",
+    user="my-profile",
+    platforms=["tiktok"],
+
+    tiktok_music_id=tracks[0]["commercial_music_id"],
+    tiktok_music_volume=70,             # 0-100, defaults to 50 when music is set
+    tiktok_music_start=0,               # ms
+    tiktok_music_end=15000,             # ms
+    tiktok_original_sound_volume=30,    # 0-100, defaults to 50 so the original audio is not muted
+
+    tiktok_location_id=places[0]["location_id"],
+    tiktok_location_name=places[0]["location_name"],  # required together with the id
+
+    tiktok_cover_image_url="https://example.com/cover.jpg",
+    tiktok_is_ai_generated=False,
+    tiktok_upload_to_draft=False,       # True sends it to drafts and ignores the rest
+)
+```
+
+### TikTok Business options
+
+| Option | Type | Notes |
+| --- | --- | --- |
+| `tiktok_music_id` | str | `commercial_music_id` from `get_tiktok_trending_music()` |
+| `tiktok_music_volume` | int | 0-100. Defaults to 50 when music is set |
+| `tiktok_music_start` | int | Music start offset in ms |
+| `tiktok_music_end` | int | Music end offset in ms |
+| `tiktok_original_sound_volume` | int | 0-100. Defaults to 50 when music is set, so the original audio is not muted |
+| `tiktok_location_id` | str | `location_id` from `get_tiktok_locations()` |
+| `tiktok_location_name` | str | Required whenever `tiktok_location_id` is set |
+| `tiktok_cover_image_url` | str | Custom cover image URL |
+| `tiktok_is_ai_generated` | bool | AI-generated content disclosure |
+| `tiktok_upload_to_draft` | bool | Publish to drafts; TikTok ignores the rest of the post settings |
+| `photo_cover_index` | int | Cover photo index for photo posts (0-based) |
 
 ## Platform-Specific Options
 
@@ -285,6 +343,9 @@ boards = client.get_pinterest_boards("my-profile")
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD
 - `brand_content_toggle` - Branded content toggle
 - `brand_organic_toggle` - Brand organic toggle
+
+See [TikTok Business](#tiktok-business) for the music, location, cover and draft
+options, which require a TikTok Business account.
 
 ### TikTok (Photos)
 - `auto_add_music` - Auto add music
