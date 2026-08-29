@@ -1375,7 +1375,7 @@ class UploadPostClient:
         The TikTok account object carries a `capabilities` array with the
         values the connection supports: `music`, `location`, `cover_image`,
         `cover_timestamp`, `draft`, `photo_privacy`, `video_privacy`,
-        `inbox_fallback`, `comments` and `profile_analytics`. Fields whose
+        `inbox_fallback` and `profile_analytics`. Fields whose
         capability is missing are ignored on upload (the post still publishes)
         and reported as plain strings in the response `warnings`.
 

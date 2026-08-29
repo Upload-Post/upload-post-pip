@@ -291,7 +291,7 @@ locations = client.get_tiktok_locations("my-profile", "Madrid")
 > `capabilities` array on the TikTok account returned by
 > `GET /api/uploadposts/users` (`client.list_users()`). Other values that can
 > appear there: `cover_timestamp`, `photo_privacy`, `video_privacy`,
-> `inbox_fallback`, `comments`, `profile_analytics`. If your connection does
+> `inbox_fallback` and `profile_analytics`. If your connection does
 > not have the capability, the field is ignored, the post still publishes, and
 > the response includes a per-field `warnings` string — reconnect the TikTok
 > account to enable it.
