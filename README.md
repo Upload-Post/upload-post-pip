@@ -330,16 +330,16 @@ client.upload_video(
 
 | Option | Type | Capability | Notes |
 | --- | --- | --- | --- |
-| `tiktok_music_id` | str | `music` | The track `id` from `get_tiktok_trending_music()` or `search_tiktok_music()` (not `commercial_music_id`) |
-| `tiktok_music_volume` | int | `music` | 0-100. Defaults to 50 when music is set |
-| `tiktok_music_start` | int | `music` | Music start offset in ms |
-| `tiktok_music_end` | int | `music` | Music end offset in ms |
-| `tiktok_original_sound_volume` | int | `music` | 0-100. Defaults to 50 when music is set, so the original audio is not muted |
-| `tiktok_location_id` | str | `location` | `location_id` from `get_tiktok_locations()` |
+| `tiktok_music_id` | str | `music` | Video + photos. The track `id` from `get_tiktok_trending_music()` or `search_tiktok_music()` (not `commercial_music_id`) |
+| `tiktok_music_volume` | int | `music` | Video only. 0-100, defaults to 50 when music is set |
+| `tiktok_music_start` | int | `music` | Video only. Music start offset in ms |
+| `tiktok_music_end` | int | `music` | Video only. Music end offset in ms |
+| `tiktok_original_sound_volume` | int | `music` | Video only. 0-100, defaults to 50 when music is set, so the original audio is not muted |
+| `tiktok_location_id` | str | `location` | Video + photos. `location_id` from `get_tiktok_locations()` |
 | `tiktok_location_name` | str | `location` | Required whenever `tiktok_location_id` is set |
-| `tiktok_cover_image_url` | str | `cover_image` | Custom cover image URL |
-| `tiktok_is_ai_generated` | bool | — | AI-generated content disclosure |
-| `tiktok_upload_to_draft` | bool | `draft` | Publish to drafts; TikTok ignores the rest of the post settings |
+| `tiktok_cover_image_url` | str | `cover_image` | Video only. Custom cover image URL |
+| `tiktok_is_ai_generated` | bool | — | Video + photos. AI-generated content disclosure |
+| `tiktok_upload_to_draft` | bool | `draft` | Video only. Publish to drafts; TikTok ignores the rest of the post settings |
 | `photo_cover_index` | int | — | Cover photo index for photo posts (0-based) |
 | `privacy_level` | str | `photo_privacy` / `video_privacy` | Accepted on video and photo posts alike; which values the account may use is decided by TikTok, see the note below |
 
@@ -362,7 +362,10 @@ client.upload_video(
 > for one the account does not have fails with
 > `error_code="tiktok_privacy_unavailable"` and an error listing the ones it
 > does have. Omit it on video and TikTok applies the account's own default; on
-> photo posts it defaults to `PUBLIC_TO_EVERYONE`.
+> photo posts it defaults to `PUBLIC_TO_EVERYONE`. To offer only the values that
+> will actually work, ask the account with
+> `client.get_tiktok_publishing_settings(profile)` and read
+> `privacy_level_options`.
 
 See [TikTok music, location, cover and drafts](#tiktok-music-location-cover-and-drafts)
 for the music, location, cover and draft options.
@@ -373,6 +376,13 @@ for the music, location, cover and draft options.
 - `auto_add_music` - Auto add music
 - `photo_cover_index` - Index of photo for cover (0-based)
 - `disable_comment` - Disable comments
+- `tiktok_music_id` - Commercial Music Library track id
+- `tiktok_location_id` / `tiktok_location_name` - Location tag, both required together
+- `tiktok_is_ai_generated` - AI-generated content disclosure
+
+> TikTok's photo contract takes the music track id alone: `tiktok_music_volume`,
+> `tiktok_music_start`, `tiktok_music_end`, `tiktok_original_sound_volume`,
+> `tiktok_cover_image_url` and `tiktok_upload_to_draft` are video-only.
 
 ### Instagram
 - `media_type` - REELS, STORIES, IMAGE
