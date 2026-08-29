@@ -335,7 +335,7 @@ client.upload_video(
 | `tiktok_is_ai_generated` | bool | — | AI-generated content disclosure |
 | `tiktok_upload_to_draft` | bool | `draft` | Publish to drafts; TikTok ignores the rest of the post settings |
 | `photo_cover_index` | int | — | Cover photo index for photo posts (0-based) |
-| `privacy_level` | str | `photo_privacy` / `video_privacy` | Photo posts only unless the connection declares `video_privacy`, see the note below |
+| `privacy_level` | str | `photo_privacy` / `video_privacy` | Accepted on video and photo posts alike; which values the account may use is decided by TikTok, see the note below |
 
 ## Platform-Specific Options
 
@@ -349,10 +349,14 @@ client.upload_video(
 - `brand_content_toggle` - Branded content toggle
 - `brand_organic_toggle` - Brand organic toggle
 
-> **TikTok particularity:** `privacy_level` is not accepted on TikTok **video**
-> posts — the video is published public, or sent to your TikTok drafts with
-> `tiktok_upload_to_draft=True`. On TikTok **photo** posts `privacy_level` *is*
-> accepted.
+> **TikTok particularity:** `privacy_level` works on video and photo posts
+> alike, but **TikTok decides per account which values are available**. A
+> private account, for example, is offered `FOLLOWER_OF_CREATOR`,
+> `MUTUAL_FOLLOW_FRIENDS` and `SELF_ONLY`, with no `PUBLIC_TO_EVERYONE`; asking
+> for one the account does not have fails with
+> `error_code="tiktok_privacy_unavailable"` and an error listing the ones it
+> does have. Omit it on video and TikTok applies the account's own default; on
+> photo posts it defaults to `PUBLIC_TO_EVERYONE`.
 
 See [TikTok music, location, cover and drafts](#tiktok-music-location-cover-and-drafts)
 for the music, location, cover and draft options.

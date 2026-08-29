@@ -501,11 +501,14 @@ class UploadPostClient:
                           the language (omit to auto-detect from the media).
             
             TikTok:
-                privacy_level: Not accepted on TikTok video posts. A TikTok
-                              video is published public; use
-                              tiktok_upload_to_draft=True to send it to drafts
-                              instead. (privacy_level IS accepted on TikTok
-                              photo posts, see upload_photos.)
+                privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
+                              FOLLOWER_OF_CREATOR, SELF_ONLY. TikTok decides
+                              per account which of these are available (a
+                              private account has no PUBLIC_TO_EVERYONE);
+                              asking for another one fails with
+                              error_code="tiktok_privacy_unavailable" listing
+                              the allowed ones. Omit it to keep the account's
+                              own default.
                 disable_duet: Disable duet
                 disable_comment: Disable comments
                 disable_stitch: Disable stitch
@@ -695,12 +698,14 @@ class UploadPostClient:
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
-                              FOLLOWER_OF_CREATOR, SELF_ONLY. Accepted on
-                              TikTok photo posts (unlike TikTok video posts,
-                              where it is not accepted). Available on
-                              connections that declare the `photo_privacy`
-                              capability - see `capabilities` on the TikTok
-                              account returned by list_users().
+                              FOLLOWER_OF_CREATOR, SELF_ONLY. TikTok requires
+                              one on photo posts, so it defaults to
+                              PUBLIC_TO_EVERYONE. Which values the account may
+                              use is decided by TikTok (a private account has
+                              no PUBLIC_TO_EVERYONE). Available on connections
+                              that declare the `photo_privacy` capability - see
+                              `capabilities` on the TikTok account returned by
+                              list_users().
                 post_mode: DIRECT_POST or MEDIA_UPLOAD
                 auto_add_music: Auto add music
                 disable_comment: Disable comments
