@@ -286,10 +286,12 @@ locations = client.get_tiktok_locations("my-profile", "Madrid")
 > **Capabilities.** These options are available on connections that declare the
 > matching capability (`music`, `location`, `cover_image`, `draft`) — see the
 > `capabilities` array on the TikTok account returned by
-> `GET /api/uploadposts/users` (`client.list_users()`). If your connection does
-> not have it, the field is ignored, the post still publishes, and the response
-> includes a per-field `warnings` entry — reconnect the TikTok account to
-> enable it.
+> `GET /api/uploadposts/users` (`client.list_users()`). Other values that can
+> appear there: `cover_timestamp`, `photo_privacy`, `video_privacy`,
+> `inbox_fallback`, `comments`, `profile_analytics`. If your connection does
+> not have the capability, the field is ignored, the post still publishes, and
+> the response includes a per-field `warnings` string — reconnect the TikTok
+> account to enable it.
 
 ```python
 # 1. Pick a track and a place
@@ -303,7 +305,7 @@ client.upload_video(
     user="my-profile",
     platforms=["tiktok"],
 
-    tiktok_music_id=tracks[0]["commercial_music_id"],
+    tiktok_music_id=tracks[0]["id"],
     tiktok_music_volume=70,             # 0-100, defaults to 50 when music is set
     tiktok_music_start=0,               # ms
     tiktok_music_end=15000,             # ms
@@ -322,7 +324,7 @@ client.upload_video(
 
 | Option | Type | Capability | Notes |
 | --- | --- | --- | --- |
-| `tiktok_music_id` | str | `music` | `commercial_music_id` from `get_tiktok_trending_music()` |
+| `tiktok_music_id` | str | `music` | The track `id` from `get_tiktok_trending_music()` (not `commercial_music_id`) |
 | `tiktok_music_volume` | int | `music` | 0-100. Defaults to 50 when music is set |
 | `tiktok_music_start` | int | `music` | Music start offset in ms |
 | `tiktok_music_end` | int | `music` | Music end offset in ms |
@@ -333,7 +335,7 @@ client.upload_video(
 | `tiktok_is_ai_generated` | bool | — | AI-generated content disclosure |
 | `tiktok_upload_to_draft` | bool | `draft` | Publish to drafts; TikTok ignores the rest of the post settings |
 | `photo_cover_index` | int | — | Cover photo index for photo posts (0-based) |
-| `privacy_level` | str | `privacy_levels` | Photo posts only, see the note below |
+| `privacy_level` | str | `photo_privacy` / `video_privacy` | Photo posts only unless the connection declares `video_privacy`, see the note below |
 
 ## Platform-Specific Options
 

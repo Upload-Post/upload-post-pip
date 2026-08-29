@@ -698,7 +698,7 @@ class UploadPostClient:
                               FOLLOWER_OF_CREATOR, SELF_ONLY. Accepted on
                               TikTok photo posts (unlike TikTok video posts,
                               where it is not accepted). Available on
-                              connections that declare the `privacy_levels`
+                              connections that declare the `photo_privacy`
                               capability - see `capabilities` on the TikTok
                               account returned by list_users().
                 post_mode: DIRECT_POST or MEDIA_UPLOAD
@@ -1355,9 +1355,10 @@ class UploadPostClient:
 
         The TikTok account object carries a `capabilities` array with the
         values the connection supports: `music`, `location`, `cover_image`,
-        `draft` and `privacy_levels`. Fields whose capability is missing are
-        ignored on upload (the post still publishes) and reported in the
-        response `warnings`.
+        `cover_timestamp`, `draft`, `photo_privacy`, `video_privacy`,
+        `inbox_fallback`, `comments` and `profile_analytics`. Fields whose
+        capability is missing are ignored on upload (the post still publishes)
+        and reported as plain strings in the response `warnings`.
 
         Returns:
             List of users.
@@ -1736,8 +1737,8 @@ class UploadPostClient:
 
         Available on connections that declare the `music` capability (see
         `capabilities` on the TikTok account returned by list_users()). The
-        returned 'commercial_music_id' is what you pass as 'tiktok_music_id' on
-        an upload.
+        returned track 'id' is what you pass as 'tiktok_music_id' on an upload
+        - not 'commercial_music_id', which TikTok rejects on public posts.
 
         Args:
             profile: Profile username.
