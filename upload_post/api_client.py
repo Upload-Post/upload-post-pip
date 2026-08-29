@@ -189,10 +189,12 @@ class UploadPostClient:
             if kwargs.get("is_aigc") is not None:
                 data.append(("is_aigc", str(kwargs["is_aigc"]).lower()))
 
-            # TikTok Business only. These require a TikTok Business account
-            # connected through the business OAuth flow; on a standard TikTok
-            # connection the API ignores them and returns a warning, so the post
-            # still publishes.
+            # Music, location, cover, AI disclosure and draft options. Available
+            # on connections that declare the matching capability (see
+            # `capabilities` on the TikTok account returned by list_users()).
+            # If the connection does not have it, the field is ignored, the post
+            # still publishes, and the response includes a per-field `warnings`
+            # entry.
             if kwargs.get("tiktok_music_id") is not None:
                 data.append(("tiktok_music_id", str(kwargs["tiktok_music_id"])))
             if kwargs.get("tiktok_music_volume") is not None:
@@ -499,8 +501,11 @@ class UploadPostClient:
                           the language (omit to auto-detect from the media).
             
             TikTok:
-                privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, 
-                              FOLLOWER_OF_CREATOR, SELF_ONLY
+                privacy_level: Not accepted on TikTok video posts. A TikTok
+                              video is published public; use
+                              tiktok_upload_to_draft=True to send it to drafts
+                              instead. (privacy_level IS accepted on TikTok
+                              photo posts, see upload_photos.)
                 disable_duet: Disable duet
                 disable_comment: Disable comments
                 disable_stitch: Disable stitch
@@ -510,8 +515,13 @@ class UploadPostClient:
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
 
-            TikTok Business (require a TikTok Business account; ignored with a
-            warning on standard TikTok connections):
+            TikTok music, location, cover and draft options. Available on
+            connections that declare the matching capability (`music`,
+            `location`, `cover_image`, `draft`) - see `capabilities` on the
+            TikTok account returned by list_users(). If your connection does
+            not have it, the field is ignored, the post still publishes, and
+            the response includes a per-field `warnings` entry; reconnect the
+            TikTok account to enable it.
                 tiktok_music_id: Commercial Music Library track id
                                  (see get_tiktok_trending_music)
                 tiktok_music_volume: Music volume 0-100 (defaults to 50 when
@@ -684,10 +694,17 @@ class UploadPostClient:
             async_upload: Process asynchronously
             
             TikTok:
+                privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
+                              FOLLOWER_OF_CREATOR, SELF_ONLY. Accepted on
+                              TikTok photo posts (unlike TikTok video posts,
+                              where it is not accepted). Available on
+                              connections that declare the `privacy_levels`
+                              capability - see `capabilities` on the TikTok
+                              account returned by list_users().
+                post_mode: DIRECT_POST or MEDIA_UPLOAD
                 auto_add_music: Auto add music
                 disable_comment: Disable comments
-                photo_cover_index: Index of photo for cover (0-based). Also
-                                   honoured by TikTok Business photo posts.
+                photo_cover_index: Index of photo for cover (0-based)
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
             
@@ -1336,6 +1353,12 @@ class UploadPostClient:
         """
         List all users/profiles.
 
+        The TikTok account object carries a `capabilities` array with the
+        values the connection supports: `music`, `location`, `cover_image`,
+        `draft` and `privacy_levels`. Fields whose capability is missing are
+        ignored on upload (the post still publishes) and reported in the
+        response `warnings`.
+
         Returns:
             List of users.
         """
@@ -1699,7 +1722,7 @@ class UploadPostClient:
             json_data["post_id"] = post_id
         return self._request("/uploadposts/comments/delete", "DELETE", json_data=json_data)
 
-    # ==================== TikTok Business ====================
+    # ==================== TikTok ====================
 
     def get_tiktok_trending_music(
         self,
@@ -1711,7 +1734,8 @@ class UploadPostClient:
         """
         Get trending tracks from the TikTok Commercial Music Library.
 
-        Requires the profile to have a TikTok Business account connected. The
+        Available on connections that declare the `music` capability (see
+        `capabilities` on the TikTok account returned by list_users()). The
         returned 'commercial_music_id' is what you pass as 'tiktok_music_id' on
         an upload.
 
@@ -1738,7 +1762,8 @@ class UploadPostClient:
         """
         Search TikTok locations (places) to tag on a post.
 
-        Requires the profile to have a TikTok Business account connected. TikTok
+        Available on connections that declare the `location` capability (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
         requires the id and the name together, so pass the returned
         'location_id' as 'tiktok_location_id' and 'location_name' as
         'tiktok_location_name' on the upload.

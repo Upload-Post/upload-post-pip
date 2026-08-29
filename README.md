@@ -59,7 +59,7 @@ response = client.upload_video(
     first_comment="Thanks for watching! 🙏",
     
     # Optional: Platform-specific settings
-    privacy_level="PUBLIC_TO_EVERYONE",  # TikTok
+    disable_comment=False,  # TikTok
     media_type="REELS",  # Instagram
     privacyStatus="public",  # YouTube
     tags=["tutorial", "coding"],  # YouTube
@@ -272,21 +272,24 @@ li_pages = client.get_linkedin_pages("my-profile")
 # Get Pinterest boards for a profile
 boards = client.get_pinterest_boards("my-profile")
 
-# TikTok Business only: trending Commercial Music Library tracks
+# TikTok: trending Commercial Music Library tracks
 music = client.get_tiktok_trending_music(
     "my-profile", genre="POP", country_code="ES", date_range="7DAY"
 )
 
-# TikTok Business only: search locations to tag
+# TikTok: search locations to tag
 locations = client.get_tiktok_locations("my-profile", "Madrid")
 ```
 
-## TikTok Business
+## TikTok music, location, cover and drafts
 
-> **Requires a TikTok Business account.** These options and endpoints only work
-> for profiles whose TikTok account is connected through the TikTok Business
-> flow. On a standard TikTok connection the API ignores the fields and returns a
-> warning in the response, so the post still publishes.
+> **Capabilities.** These options are available on connections that declare the
+> matching capability (`music`, `location`, `cover_image`, `draft`) — see the
+> `capabilities` array on the TikTok account returned by
+> `GET /api/uploadposts/users` (`client.list_users()`). If your connection does
+> not have it, the field is ignored, the post still publishes, and the response
+> includes a per-field `warnings` entry — reconnect the TikTok account to
+> enable it.
 
 ```python
 # 1. Pick a track and a place
@@ -315,26 +318,26 @@ client.upload_video(
 )
 ```
 
-### TikTok Business options
+### TikTok music, location, cover and draft options
 
-| Option | Type | Notes |
-| --- | --- | --- |
-| `tiktok_music_id` | str | `commercial_music_id` from `get_tiktok_trending_music()` |
-| `tiktok_music_volume` | int | 0-100. Defaults to 50 when music is set |
-| `tiktok_music_start` | int | Music start offset in ms |
-| `tiktok_music_end` | int | Music end offset in ms |
-| `tiktok_original_sound_volume` | int | 0-100. Defaults to 50 when music is set, so the original audio is not muted |
-| `tiktok_location_id` | str | `location_id` from `get_tiktok_locations()` |
-| `tiktok_location_name` | str | Required whenever `tiktok_location_id` is set |
-| `tiktok_cover_image_url` | str | Custom cover image URL |
-| `tiktok_is_ai_generated` | bool | AI-generated content disclosure |
-| `tiktok_upload_to_draft` | bool | Publish to drafts; TikTok ignores the rest of the post settings |
-| `photo_cover_index` | int | Cover photo index for photo posts (0-based) |
+| Option | Type | Capability | Notes |
+| --- | --- | --- | --- |
+| `tiktok_music_id` | str | `music` | `commercial_music_id` from `get_tiktok_trending_music()` |
+| `tiktok_music_volume` | int | `music` | 0-100. Defaults to 50 when music is set |
+| `tiktok_music_start` | int | `music` | Music start offset in ms |
+| `tiktok_music_end` | int | `music` | Music end offset in ms |
+| `tiktok_original_sound_volume` | int | `music` | 0-100. Defaults to 50 when music is set, so the original audio is not muted |
+| `tiktok_location_id` | str | `location` | `location_id` from `get_tiktok_locations()` |
+| `tiktok_location_name` | str | `location` | Required whenever `tiktok_location_id` is set |
+| `tiktok_cover_image_url` | str | `cover_image` | Custom cover image URL |
+| `tiktok_is_ai_generated` | bool | — | AI-generated content disclosure |
+| `tiktok_upload_to_draft` | bool | `draft` | Publish to drafts; TikTok ignores the rest of the post settings |
+| `photo_cover_index` | int | — | Cover photo index for photo posts (0-based) |
+| `privacy_level` | str | `privacy_levels` | Photo posts only, see the note below |
 
 ## Platform-Specific Options
 
 ### TikTok (Video)
-- `privacy_level` - PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR, SELF_ONLY
 - `disable_duet` - Disable duet
 - `disable_comment` - Disable comments
 - `disable_stitch` - Disable stitch
@@ -344,10 +347,17 @@ client.upload_video(
 - `brand_content_toggle` - Branded content toggle
 - `brand_organic_toggle` - Brand organic toggle
 
-See [TikTok Business](#tiktok-business) for the music, location, cover and draft
-options, which require a TikTok Business account.
+> **TikTok particularity:** `privacy_level` is not accepted on TikTok **video**
+> posts — the video is published public, or sent to your TikTok drafts with
+> `tiktok_upload_to_draft=True`. On TikTok **photo** posts `privacy_level` *is*
+> accepted.
+
+See [TikTok music, location, cover and drafts](#tiktok-music-location-cover-and-drafts)
+for the music, location, cover and draft options.
 
 ### TikTok (Photos)
+- `privacy_level` - PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR, SELF_ONLY
+- `post_mode` - DIRECT_POST or MEDIA_UPLOAD
 - `auto_add_music` - Auto add music
 - `photo_cover_index` - Index of photo for cover (0-based)
 - `disable_comment` - Disable comments
