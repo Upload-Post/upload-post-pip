@@ -277,6 +277,9 @@ music = client.get_tiktok_trending_music(
     "my-profile", genre="POP", country_code="ES", date_range="7DAY"
 )
 
+# TikTok: find a track by song or artist
+found = client.search_tiktok_music("my-profile", q="bad bunny", country_code="ES")
+
 # TikTok: search locations to tag
 locations = client.get_tiktok_locations("my-profile", "Madrid")
 ```
@@ -296,6 +299,9 @@ locations = client.get_tiktok_locations("my-profile", "Madrid")
 ```python
 # 1. Pick a track and a place
 tracks = client.get_tiktok_trending_music("my-profile", country_code="ES")["tracks"]
+# ...or find one by name. TikTok has no music search endpoint, so this searches
+# the trending charts Upload-Post caches, not TikTok's whole catalogue.
+tracks = client.search_tiktok_music("my-profile", q="bossa", country_code="ES")["tracks"]
 places = client.get_tiktok_locations("my-profile", "Madrid")["locations"]
 
 # 2. Publish with them
@@ -324,7 +330,7 @@ client.upload_video(
 
 | Option | Type | Capability | Notes |
 | --- | --- | --- | --- |
-| `tiktok_music_id` | str | `music` | The track `id` from `get_tiktok_trending_music()` (not `commercial_music_id`) |
+| `tiktok_music_id` | str | `music` | The track `id` from `get_tiktok_trending_music()` or `search_tiktok_music()` (not `commercial_music_id`) |
 | `tiktok_music_volume` | int | `music` | 0-100. Defaults to 50 when music is set |
 | `tiktok_music_start` | int | `music` | Music start offset in ms |
 | `tiktok_music_end` | int | `music` | Music end offset in ms |

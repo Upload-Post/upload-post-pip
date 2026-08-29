@@ -1764,6 +1764,55 @@ class UploadPostClient:
             params["date_range"] = date_range
         return self._request("/uploadposts/tiktok/music/trending", "GET", params=params)
 
+    def search_tiktok_music(
+        self,
+        profile: str,
+        q: Optional[str] = None,
+        genre: Optional[str] = None,
+        country_code: Optional[str] = None,
+        date_range: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> Dict:
+        """
+        Search the TikTok Commercial Music Library by song title or artist.
+
+        TikTok itself has no music search endpoint - its only catalogue read is
+        the trending chart for a genre/country/period. Upload-Post caches those
+        charts and matches your text against them, so this searches the trending
+        charts rather than TikTok's entire catalogue. Matching is case- and
+        accent-insensitive and every word must match.
+
+        Returns the same track objects as get_tiktok_trending_music(), so the
+        'id' is again what you pass as 'tiktok_music_id' on an upload.
+
+        Args:
+            profile: Profile username.
+            q: Text to match against titles and artists (max 80 characters).
+               Omit it to get the chart in trending order.
+            genre: Genre filter (e.g. "ALL", "POP"). Defaults to ALL upstream.
+            country_code: ISO country code choosing which chart is searched.
+                          Defaults to US upstream.
+            date_range: Chart window: "1DAY", "7DAY", "30DAY" or "90DAY".
+                        Defaults to 7DAY upstream.
+            limit: Maximum tracks to return (capped at 100 upstream).
+
+        Returns:
+            Matching tracks, plus a 'catalog' block describing how many tracks
+            the search actually ran against.
+        """
+        params: Dict[str, Any] = {"profile": profile}
+        if q:
+            params["q"] = q
+        if genre:
+            params["genre"] = genre
+        if country_code:
+            params["country_code"] = country_code
+        if date_range:
+            params["date_range"] = date_range
+        if limit is not None:
+            params["limit"] = limit
+        return self._request("/uploadposts/tiktok/music/search", "GET", params=params)
+
     def get_tiktok_locations(self, profile: str, query: str) -> Dict:
         """
         Search TikTok locations (places) to tag on a post.
