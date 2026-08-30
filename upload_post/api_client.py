@@ -161,72 +161,62 @@ class UploadPostClient:
             if kwargs.get(key):
                 data.append((key, kwargs[key]))
 
+    # TikTok form fields, by where they apply. Booleans go out lowercased
+    # ("true"/"false"), everything else as a plain string.
+    #
+    # The shared block is shared on purpose: the backend reads privacy_level and
+    # post_mode on both /upload and /upload_photos, and the photo endpoint also
+    # accepts the music track id, the location pair and is_ai_generated. They
+    # used to sit behind the `is_video` gate, so photo carousels silently
+    # published as PUBLIC_TO_EVERYONE / DIRECT_POST (issue #24) and could not
+    # carry music or a location tag at all.
+    #
+    # The music/location/cover/draft fields need the matching capability on the
+    # connection (see `capabilities` on the TikTok account returned by
+    # list_users()). Without it the field is ignored, the post still publishes,
+    # and the response includes a per-field `warnings` entry.
+    _TIKTOK_SHARED_FIELDS = (
+        ("disable_comment", True),
+        ("brand_content_toggle", True),
+        ("brand_organic_toggle", True),
+        ("privacy_level", False),
+        ("post_mode", False),
+        ("tiktok_music_id", False),
+        ("tiktok_location_id", False),
+        ("tiktok_location_name", False),
+        ("tiktok_is_ai_generated", True),
+    )
+    # Video-only: TikTok's photo contract takes the track id alone, with no
+    # volume or trim, and has no custom cover or draft switch.
+    _TIKTOK_VIDEO_FIELDS = (
+        ("disable_duet", True),
+        ("disable_stitch", True),
+        ("cover_timestamp", False),
+        ("is_aigc", True),
+        ("tiktok_music_volume", False),
+        ("tiktok_music_start", False),
+        ("tiktok_music_end", False),
+        ("tiktok_original_sound_volume", False),
+        ("tiktok_cover_image_url", False),
+        ("tiktok_upload_to_draft", True),
+    )
+    _TIKTOK_PHOTO_FIELDS = (
+        ("auto_add_music", True),
+        ("photo_cover_index", False),
+    )
+
     def _add_tiktok_params(self, data: List[tuple], is_video: bool = True, **kwargs):
         """Add TikTok-specific parameters."""
-        if kwargs.get("disable_comment") is not None:
-            data.append(("disable_comment", str(kwargs["disable_comment"]).lower()))
-        if kwargs.get("brand_content_toggle") is not None:
-            data.append(("brand_content_toggle", str(kwargs["brand_content_toggle"]).lower()))
-        if kwargs.get("brand_organic_toggle") is not None:
-            data.append(("brand_organic_toggle", str(kwargs["brand_organic_toggle"]).lower()))
-
-        # Shared by TikTok video AND photo uploads: the backend reads privacy_level and
-        # post_mode for both /upload (video) and /upload_photos. They used to sit behind
-        # the `if is_video` gate, so photo carousels silently published as
-        # PUBLIC_TO_EVERYONE / DIRECT_POST regardless of what the caller passed (issue #24).
-        if kwargs.get("privacy_level"):
-            data.append(("privacy_level", kwargs["privacy_level"]))
-        if kwargs.get("post_mode"):
-            data.append(("post_mode", kwargs["post_mode"]))
-
-        # Music, location and the AI disclosure work on TikTok PHOTO posts too,
-        # not just video: the photo endpoint accepts the track id, the location
-        # pair and is_ai_generated. Gating them behind `is_video` made them
-        # impossible to send on a carousel. The volume/trim fields are the
-        # video-only part (TikTok's photo contract has no equivalent), so they
-        # stay below.
-        # Available on connections that declare the matching capability (see
-        # `capabilities` on the TikTok account returned by list_users()). If the
-        # connection does not have it, the field is ignored, the post still
-        # publishes, and the response includes a per-field `warnings` entry.
-        if kwargs.get("tiktok_music_id") is not None:
-            data.append(("tiktok_music_id", str(kwargs["tiktok_music_id"])))
-        if kwargs.get("tiktok_location_id") is not None:
-            data.append(("tiktok_location_id", str(kwargs["tiktok_location_id"])))
-        if kwargs.get("tiktok_location_name") is not None:
-            data.append(("tiktok_location_name", str(kwargs["tiktok_location_name"])))
-        if kwargs.get("tiktok_is_ai_generated") is not None:
-            data.append(("tiktok_is_ai_generated", str(kwargs["tiktok_is_ai_generated"]).lower()))
-
-        if is_video:
-            if kwargs.get("disable_duet") is not None:
-                data.append(("disable_duet", str(kwargs["disable_duet"]).lower()))
-            if kwargs.get("disable_stitch") is not None:
-                data.append(("disable_stitch", str(kwargs["disable_stitch"]).lower()))
-            if kwargs.get("cover_timestamp") is not None:
-                data.append(("cover_timestamp", str(kwargs["cover_timestamp"])))
-            if kwargs.get("is_aigc") is not None:
-                data.append(("is_aigc", str(kwargs["is_aigc"]).lower()))
-
-            # Video-only: TikTok's photo endpoint takes the track id alone, with
-            # no volume or trim, and has no custom cover or draft switch.
-            if kwargs.get("tiktok_music_volume") is not None:
-                data.append(("tiktok_music_volume", str(kwargs["tiktok_music_volume"])))
-            if kwargs.get("tiktok_music_start") is not None:
-                data.append(("tiktok_music_start", str(kwargs["tiktok_music_start"])))
-            if kwargs.get("tiktok_music_end") is not None:
-                data.append(("tiktok_music_end", str(kwargs["tiktok_music_end"])))
-            if kwargs.get("tiktok_original_sound_volume") is not None:
-                data.append(("tiktok_original_sound_volume", str(kwargs["tiktok_original_sound_volume"])))
-            if kwargs.get("tiktok_cover_image_url") is not None:
-                data.append(("tiktok_cover_image_url", str(kwargs["tiktok_cover_image_url"])))
-            if kwargs.get("tiktok_upload_to_draft") is not None:
-                data.append(("tiktok_upload_to_draft", str(kwargs["tiktok_upload_to_draft"]).lower()))
-        else:
-            if kwargs.get("auto_add_music") is not None:
-                data.append(("auto_add_music", str(kwargs["auto_add_music"]).lower()))
-            if kwargs.get("photo_cover_index") is not None:
-                data.append(("photo_cover_index", str(kwargs["photo_cover_index"])))
+        fields = self._TIKTOK_SHARED_FIELDS + (
+            self._TIKTOK_VIDEO_FIELDS if is_video else self._TIKTOK_PHOTO_FIELDS
+        )
+        for key, is_bool in fields:
+            value = kwargs.get(key)
+            # privacy_level and post_mode keep their historical truthiness check:
+            # an empty string means "not set", not "send an empty value".
+            if value is None or (not is_bool and value == ""):
+                continue
+            data.append((key, str(value).lower() if is_bool else str(value)))
 
     def _add_instagram_params(self, data: List[tuple], is_video: bool = True, files: List[tuple] | None = None, **kwargs):
         """Add Instagram-specific parameters."""
