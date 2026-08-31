@@ -151,11 +151,13 @@ class UploadPostClient:
             if kwargs.get(key):
                 data.append((key, kwargs[key]))
         
-        # Platform-specific first comment overrides
+        # Platform-specific first comment overrides. TikTok needs the
+        # `comments` capability on the connection: without it the post still
+        # publishes and the response carries a warning instead of the comment.
         comment_overrides = [
             "instagram_first_comment", "facebook_first_comment", "x_first_comment",
             "threads_first_comment", "youtube_first_comment", "reddit_first_comment",
-            "bluesky_first_comment", "linkedin_first_comment"
+            "bluesky_first_comment", "linkedin_first_comment", "tiktok_first_comment"
         ]
         for key in comment_overrides:
             if kwargs.get(key):
@@ -1576,7 +1578,7 @@ class UploadPostClient:
         params = {"profile": profile} if profile else None
         return self._request("/uploadposts/pinterest/boards", "GET", params=params)
 
-    # ==================== Instagram Comments ====================
+    # ==================== Comments ====================
 
     def get_post_comments(
         self,
@@ -1590,10 +1592,17 @@ class UploadPostClient:
         """
         Get comments on a post.
 
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
         Args:
             user: Profile username.
-            platform: Platform name (instagram, facebook, youtube, linkedin).
-            post_id: Post/media ID (provide post_id or post_url).
+            platform: Platform name (instagram, facebook, youtube, linkedin,
+                tiktok).
+            post_id: Post/media ID (provide post_id or post_url). Required on
+                TikTok, which has no post URL lookup.
             post_url: Full post URL (provide post_id or post_url).
             limit: Maximum number of comments to return.
             after: Pagination cursor for the next page of comments.
@@ -1678,9 +1687,15 @@ class UploadPostClient:
         """
         Create a comment on a post, or reply to an existing comment.
 
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
         Args:
             user: Profile username.
-            platform: Platform name (instagram, facebook, youtube, linkedin).
+            platform: Platform name (instagram, facebook, youtube, linkedin,
+                tiktok).
             message: Comment text.
             post_id: Post/media ID to comment on.
             post_url: Full post URL to comment on.
@@ -1714,9 +1729,15 @@ class UploadPostClient:
         """
         Delete a comment on a post.
 
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
         Args:
             user: Profile username.
-            platform: Platform name (instagram, facebook, youtube, linkedin).
+            platform: Platform name (instagram, facebook, youtube, linkedin,
+                tiktok).
             comment_id: Comment ID to delete.
             post_id: Post URN (required for LinkedIn).
 
@@ -1860,6 +1881,239 @@ class UploadPostClient:
             "GET",
             params={"profile": profile, "q": query}
         )
+
+    def get_tiktok_comment_replies(
+        self,
+        profile: str,
+        post_id: str,
+        comment_id: str,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None
+    ) -> Dict:
+        """
+        Get the replies hanging from one TikTok comment.
+
+        Top-level comments are listed and written with the multi-platform
+        methods (get_post_comments, create_comment, delete_comment with
+        platform="tiktok"). Replies have their own call because no other
+        platform models them as a separate resource.
+
+        Needs the `comments` capability on the connection (see `capabilities`
+        on the TikTok account returned by list_users()). TikTok grants it at
+        connect time, so an account connected earlier has to be reconnected.
+
+        Args:
+            profile: Profile username.
+            post_id: Native TikTok video id the comment belongs to.
+            comment_id: Comment whose replies you want.
+            limit: Replies per page. Defaults to 20 upstream.
+            cursor: Cursor from a previous response's
+                pagination["next_cursor"].
+
+        Returns:
+            {"success": True, "comments": [...],
+             "pagination": {"next_cursor": ..., "has_next": ...}}
+        """
+        params: Dict[str, Any] = {
+            "profile": profile, "post_id": post_id, "comment_id": comment_id
+        }
+        if limit is not None:
+            params["limit"] = limit
+        if cursor:
+            params["cursor"] = cursor
+        return self._request(
+            "/uploadposts/tiktok/comments/replies", "GET", params=params
+        )
+
+    def tiktok_comment_action(
+        self,
+        profile: str,
+        action_type: str,
+        comment_id: str,
+        action: str,
+        post_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Hide, like or pin a TikTok comment - and undo any of the three.
+
+        One method instead of three because the toggles differ only in the
+        values they take:
+
+            type    action            post_id
+            hide    HIDE / UNHIDE     required
+            like    LIKE / UNLIKE     not sent (TikTok likes the comment alone)
+            pin     PIN / UNPIN       required
+
+        Needs the `comments` capability on the connection (see `capabilities`
+        on the TikTok account returned by list_users()). TikTok grants it at
+        connect time, so an account connected earlier has to be reconnected.
+
+        Args:
+            profile: Profile username.
+            action_type: Which toggle to flip: "hide", "like" or "pin". Goes
+                out as the request's "type".
+            comment_id: Comment to act on.
+            action: The value for that toggle.
+            post_id: Native TikTok video id. Required to hide or pin.
+
+        Returns:
+            {"success": True, "type": ..., "action": ..., "comment_id": ...,
+             "result": {...}}
+        """
+        json_data: Dict[str, Any] = {
+            "profile": profile,
+            "type": action_type,
+            "comment_id": comment_id,
+            "action": action,
+        }
+        # Liking takes the comment alone; hiding and pinning need the video too.
+        if action_type != "like" and post_id:
+            json_data["post_id"] = post_id
+        return self._request(
+            "/uploadposts/tiktok/comments/action", "POST", json_data=json_data
+        )
+
+    def search_tiktok_keywords(self, profile: str, query: str) -> Dict:
+        """
+        Search what people look for on TikTok around a keyword.
+
+        Needs the `trend_search` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
+        Args:
+            profile: Profile username.
+            query: Keyword to search around.
+
+        Returns:
+            {"success": True, "query": ..., "data": {"search_keywords": [...]}}
+        """
+        return self._request(
+            "/uploadposts/tiktok/search/keywords",
+            "GET",
+            params={"profile": profile, "q": query}
+        )
+
+    def get_tiktok_insights(
+        self,
+        profile: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> Dict:
+        """
+        Get who follows the account, when they are online and what they tap.
+
+        Complements the post analytics: those say how a post did, this says who
+        the audience is. Available on any recent TikTok connection - the one
+        that declares the `profile_analytics` capability.
+
+        Args:
+            profile: Profile username.
+            start_date: Window start, ISO "YYYY-MM-DD".
+            end_date: Window end, ISO "YYYY-MM-DD". TikTok refuses today or
+                later. The window is at most 60 days and defaults to the 30
+                that ended yesterday; a wider one is trimmed to what TikTok
+                accepts instead of failing.
+
+        Returns:
+            'range', 'audience' (countries, cities, ages, genders),
+            'activity_by_hour', 'followers_daily', 'profile_actions' and
+            'bio_description'.
+        """
+        params: Dict[str, Any] = {"profile": profile}
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        return self._request("/uploadposts/tiktok/insights", "GET", params=params)
+
+    def get_tiktok_video_insights(
+        self,
+        profile: str,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None
+    ) -> Dict:
+        """
+        Get the per-video breakdown of the account's most recent posts.
+
+        Retention curve, where the impressions came from, who watched,
+        followers gained and watch times, one entry per video. Available on any
+        recent TikTok connection - the one that declares the
+        `profile_analytics` capability.
+
+        Args:
+            profile: Profile username.
+            limit: Videos per page, max 20. Defaults to 10 upstream.
+            cursor: Cursor from a previous response's
+                pagination["next_cursor"].
+
+        Returns:
+            {"success": True, "videos": [...],
+             "pagination": {"next_cursor": ..., "has_next": ...}}
+        """
+        params: Dict[str, Any] = {"profile": profile}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor:
+            params["cursor"] = cursor
+        return self._request(
+            "/uploadposts/tiktok/videos/insights", "GET", params=params
+        )
+
+    def get_tiktok_hashtags(
+        self,
+        profile: str,
+        query: str,
+        country_code: Optional[str] = None,
+        language: Optional[str] = None
+    ) -> Dict:
+        """
+        Get the hashtags TikTok suggests pairing with a keyword.
+
+        Available on any recent TikTok connection - the one that declares the
+        `profile_analytics` capability.
+
+        Args:
+            profile: Profile username.
+            query: Keyword to get hashtags for.
+            country_code: ISO country code to bias the suggestions.
+            language: Language code to bias the suggestions.
+
+        Returns:
+            {"success": True, "query": ...,
+             "hashtags": [{"name": ..., "view_count": ...}, ...]}
+        """
+        params: Dict[str, Any] = {"profile": profile, "q": query}
+        if country_code:
+            params["country_code"] = country_code
+        if language:
+            params["language"] = language
+        return self._request("/uploadposts/tiktok/hashtags", "GET", params=params)
+
+    def get_tiktok_benchmark(
+        self, profile: str, category: Optional[str] = None
+    ) -> Dict:
+        """
+        Compare the account against the average of its category.
+
+        Called without a category it answers the list of categories alone, so a
+        UI can render the picker without a second call. Available on any recent
+        TikTok connection - the one that declares the `profile_analytics`
+        capability.
+
+        Args:
+            profile: Profile username.
+            category: Category to compare against (e.g. "SOFTWARE_AND_APPS").
+
+        Returns:
+            {"success": True, "categories": [...]} without a category,
+            {"success": True, "category": ..., "benchmark": {...}} with one.
+        """
+        params: Dict[str, Any] = {"profile": profile}
+        if category:
+            params["category"] = category
+        return self._request("/uploadposts/tiktok/benchmark", "GET", params=params)
 
     # ==================== Google Business ====================
 

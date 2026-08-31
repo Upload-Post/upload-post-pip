@@ -284,17 +284,160 @@ found = client.search_tiktok_music("my-profile", q="bad bunny", country_code="ES
 locations = client.get_tiktok_locations("my-profile", "Madrid")
 ```
 
+### Comments
+
+The same three methods cover every platform that has comments — Instagram,
+Facebook, YouTube, LinkedIn and TikTok:
+
+```python
+# Read the comments on a post. TikTok has no post-URL lookup: pass the video id.
+comments = client.get_post_comments(
+    user="my-profile",
+    platform="tiktok",
+    post_id="7412345678901234567",
+    limit=20,
+)
+
+# Comment on the post, or reply to a comment
+client.create_comment(
+    user="my-profile",
+    platform="tiktok",
+    post_id="7412345678901234567",
+    message="Thanks for watching!",
+)
+client.create_comment(
+    user="my-profile",
+    platform="tiktok",
+    comment_id="7412345678909999999",
+    message="Glad you liked it",
+)
+
+# Delete one
+client.delete_comment(
+    user="my-profile", platform="tiktok", comment_id="7412345678909999999"
+)
+```
+
+You can also have the first comment posted for you right after publishing, with
+`first_comment` for every platform or `tiktok_first_comment` for TikTok alone.
+
+On TikTok all of this needs the `comments` capability, which the account grants
+when it connects — see
+[What a TikTok connection can do](#what-a-tiktok-connection-can-do-capabilities).
+
+#### TikTok replies, hide, like and pin
+
+Replies live in their own call because no other platform models them as a
+separate resource:
+
+```python
+replies = client.get_tiktok_comment_replies(
+    "my-profile", post_id="7412345678901234567",
+    comment_id="7412345678909999999", limit=20,
+)
+print(replies["comments"], replies["pagination"]["next_cursor"])
+```
+
+Hiding, liking and pinning share one method. `post_id` is required to hide and
+to pin; liking takes the comment alone:
+
+```python
+client.tiktok_comment_action(
+    "my-profile", action_type="hide", action="HIDE",
+    comment_id="7412345678909999999", post_id="7412345678901234567",
+)
+client.tiktok_comment_action(
+    "my-profile", action_type="like", action="LIKE",
+    comment_id="7412345678909999999",
+)
+client.tiktok_comment_action(
+    "my-profile", action_type="pin", action="UNPIN",
+    comment_id="7412345678909999999", post_id="7412345678901234567",
+)
+```
+
+| `action_type` | `action` | `post_id` |
+| --- | --- | --- |
+| `hide` | `HIDE` / `UNHIDE` | required |
+| `like` | `LIKE` / `UNLIKE` | not sent |
+| `pin` | `PIN` / `UNPIN` | required |
+
+### TikTok audience insights and discovery
+
+Where the analytics methods answer *how did my posts do*, these answer *who is
+my audience* and *what is worth posting about*. All four work on any recent
+TikTok connection — the ones that list the `profile_analytics` capability.
+
+```python
+# Who follows the account, when they are online, what they tap on the profile
+insights = client.get_tiktok_insights(
+    "my-profile", start_date="2026-07-01", end_date="2026-07-30"
+)
+print(insights["audience"]["countries"], insights["audience"]["ages"])
+print(insights["activity_by_hour"], insights["followers_daily"])
+print(insights["profile_actions"])  # bio link, address, email, phone, leads
+
+# Per-video breakdown: retention curve, impression sources, audience types,
+# followers gained and watch times
+videos = client.get_tiktok_video_insights("my-profile", limit=20)
+print(videos["videos"][0]["video_view_retention"])
+print(videos["videos"][0]["impression_sources"])
+
+# Hashtags to pair with a keyword
+hashtags = client.get_tiktok_hashtags(
+    "my-profile", "pilates", country_code="ES", language="es"
+)
+print(hashtags["hashtags"])  # [{"name": ..., "view_count": ...}, ...]
+
+# The account against the average of its category
+categories = client.get_tiktok_benchmark("my-profile")["categories"]
+benchmark = client.get_tiktok_benchmark("my-profile", "SOFTWARE_AND_APPS")
+```
+
+The window for `get_tiktok_insights()` is at most 60 days and has to end before
+today; it defaults to the 30 days ending yesterday. A wider window is trimmed to
+what TikTok accepts instead of failing.
+
+Searching what people look for on TikTok is a separate capability,
+`trend_search`, which also needs the account to have been reconnected:
+
+```python
+data = client.search_tiktok_keywords("my-profile", "pilates")["data"]
+print(data["search_keywords"])
+```
+
+## What a TikTok connection can do (`capabilities`)
+
+Not every TikTok connection can do the same things. `client.list_users()`
+(`GET /api/uploadposts/users`) returns a `capabilities` array on each profile's
+TikTok account; check it before offering a feature.
+
+| Capability | What it unlocks |
+| --- | --- |
+| `music` | `tiktok_music_id` and the volume/trim fields, plus `get_tiktok_trending_music()` and `search_tiktok_music()` |
+| `location` | `tiktok_location_id` / `tiktok_location_name`, plus `get_tiktok_locations()` |
+| `cover_image` | `tiktok_cover_image_url` |
+| `cover_timestamp` | `cover_timestamp` |
+| `draft` | `tiktok_upload_to_draft` |
+| `video_privacy` | `privacy_level` on video |
+| `photo_privacy` | `privacy_level` on photo posts |
+| `profile_analytics` | `get_tiktok_insights()`, `get_tiktok_video_insights()`, `get_tiktok_hashtags()`, `get_tiktok_benchmark()` |
+| `comments` | Comments on TikTok: `get_post_comments()`, `create_comment()`, `delete_comment()`, `get_tiktok_comment_replies()`, `tiktok_comment_action()` and `tiktok_first_comment` |
+| `trend_search` | `search_tiktok_keywords()` |
+
+> **`comments` and `trend_search` need the account to be reconnected.** TikTok
+> grants them at connect time, so an account linked before they existed keeps
+> working for everything else but will not list them — reconnect it from Manage
+> Users to enable them.
+
+If a connection lacks a capability the upload field is simply ignored: the post
+still publishes and the response carries a per-field `warnings` string. The
+methods above answer with an error asking for a reconnection.
+
 ## TikTok music, location, cover and drafts
 
-> **Capabilities.** These options are available on connections that declare the
-> matching capability (`music`, `location`, `cover_image`, `draft`) — see the
-> `capabilities` array on the TikTok account returned by
-> `GET /api/uploadposts/users` (`client.list_users()`). Other values that can
-> appear there: `cover_timestamp`, `photo_privacy`, `video_privacy`,
-> `inbox_fallback` and `profile_analytics`. If your connection does
-> not have the capability, the field is ignored, the post still publishes, and
-> the response includes a per-field `warnings` string — reconnect the TikTok
-> account to enable it.
+> Needs the `music`, `location`, `cover_image` or `draft` capability — see
+> [What a TikTok connection can do](#what-a-tiktok-connection-can-do-capabilities).
 
 ```python
 # 1. Pick a track and a place
@@ -487,6 +630,7 @@ These options work across all upload methods:
 | `user` | Profile name (required) |
 | `platforms` | Target platforms list (required) |
 | `first_comment` | First comment to post |
+| `tiktok_first_comment` | First comment for TikTok only (needs the `comments` capability) |
 | `alt_text` | Alt text for accessibility |
 | `scheduled_date` | ISO date for scheduling |
 | `timezone` | Timezone for scheduled date |
