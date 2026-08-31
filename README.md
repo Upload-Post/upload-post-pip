@@ -38,6 +38,8 @@ print(response)
 - ✅ **Posting Queue** - Add posts to your configured queue
 - ✅ **First Comments** - Auto-post first comment after publishing
 - ✅ **Analytics** - Get engagement metrics
+- ✅ **Audience** - Who follows a profile, per platform
+- ✅ **Suggestions** - Hashtags and searches to post about, per platform
 - ✅ **Full Type Hints**
 
 ## API Reference
@@ -286,8 +288,9 @@ locations = client.get_tiktok_locations("my-profile", "Madrid")
 
 ### Comments
 
-The same three methods cover every platform that has comments — Instagram,
-Facebook, YouTube, LinkedIn and TikTok:
+The same methods cover every platform that has comments — Instagram, Facebook,
+YouTube, LinkedIn and TikTok. There is no per-network method: the endpoint
+answers one question and `platform` says who to ask.
 
 ```python
 # Read the comments on a post. TikTok has no post-URL lookup: pass the video id.
@@ -296,6 +299,14 @@ comments = client.get_post_comments(
     platform="tiktok",
     post_id="7412345678901234567",
     limit=20,
+)
+
+# Read the replies hanging from one of them — same question, one more parameter
+replies = client.get_post_comments(
+    user="my-profile",
+    platform="tiktok",
+    post_id="7412345678901234567",
+    comment_id="7412345678909999999",
 )
 
 # Comment on the post, or reply to a comment
@@ -325,86 +336,100 @@ On TikTok all of this needs the `comments` capability, which the account grants
 when it connects — see
 [What a TikTok connection can do](#what-a-tiktok-connection-can-do-capabilities).
 
-#### TikTok replies, hide, like and pin
+#### Moderating a comment: hide, like, pin
 
-Replies live in their own call because no other platform models them as a
-separate resource:
-
-```python
-replies = client.get_tiktok_comment_replies(
-    "my-profile", post_id="7412345678901234567",
-    comment_id="7412345678909999999", limit=20,
-)
-print(replies["comments"], replies["pagination"]["next_cursor"])
-```
-
-Hiding, liking and pinning share one method. `post_id` is required to hide and
-to pin; liking takes the comment alone:
+`comment_action()` does the three and undoes them, on any platform that
+supports it. Each action carries its own inverse, and `post_id` is only sent
+when the platform needs it:
 
 ```python
-client.tiktok_comment_action(
-    "my-profile", action_type="hide", action="HIDE",
+client.comment_action(
+    user="my-profile", platform="tiktok", action="hide",
     comment_id="7412345678909999999", post_id="7412345678901234567",
 )
-client.tiktok_comment_action(
-    "my-profile", action_type="like", action="LIKE",
+client.comment_action(
+    user="my-profile", platform="tiktok", action="like",
     comment_id="7412345678909999999",
 )
-client.tiktok_comment_action(
-    "my-profile", action_type="pin", action="UNPIN",
+client.comment_action(
+    user="my-profile", platform="tiktok", action="unpin",
     comment_id="7412345678909999999", post_id="7412345678901234567",
 )
 ```
 
-| `action_type` | `action` | `post_id` |
+| `action` | Undo | `post_id` |
 | --- | --- | --- |
-| `hide` | `HIDE` / `UNHIDE` | required |
-| `like` | `LIKE` / `UNLIKE` | not sent |
-| `pin` | `PIN` / `UNPIN` | required |
+| `hide` | `unhide` | required |
+| `like` | `unlike` | not sent |
+| `pin` | `unpin` | required |
 
-### TikTok audience insights and discovery
+### Audience
 
-Where the analytics methods answer *how did my posts do*, these answer *who is
-my audience* and *what is worth posting about*. All four work on any recent
-TikTok connection — the ones that list the `profile_analytics` capability.
-
-```python
-# Who follows the account, when they are online, what they tap on the profile
-insights = client.get_tiktok_insights(
-    "my-profile", start_date="2026-07-01", end_date="2026-07-30"
-)
-print(insights["audience"]["countries"], insights["audience"]["ages"])
-print(insights["activity_by_hour"], insights["followers_daily"])
-print(insights["profile_actions"])  # bio link, address, email, phone, leads
-
-# Per-video breakdown: retention curve, impression sources, audience types,
-# followers gained and watch times
-videos = client.get_tiktok_video_insights("my-profile", limit=20)
-print(videos["videos"][0]["video_view_retention"])
-print(videos["videos"][0]["impression_sources"])
-
-# Hashtags to pair with a keyword
-hashtags = client.get_tiktok_hashtags(
-    "my-profile", "pilates", country_code="ES", language="es"
-)
-print(hashtags["hashtags"])  # [{"name": ..., "view_count": ...}, ...]
-
-# The account against the average of its category
-categories = client.get_tiktok_benchmark("my-profile")["categories"]
-benchmark = client.get_tiktok_benchmark("my-profile", "SOFTWARE_AND_APPS")
-```
-
-The window for `get_tiktok_insights()` is at most 60 days and has to end before
-today; it defaults to the 30 days ending yesterday. A wider window is trimmed to
-what TikTok accepts instead of failing.
-
-Searching what people look for on TikTok is a separate capability,
-`trend_search`, which also needs the account to have been reconnected:
+Where the analytics methods answer *how did my posts do*, `get_audience()`
+answers *who is following me*. One endpoint, one `platform` parameter, like
+every other question in the API.
 
 ```python
-data = client.search_tiktok_keywords("my-profile", "pilates")["data"]
-print(data["search_keywords"])
+audience = client.get_audience(
+    user="my-profile",
+    platform="tiktok",
+    start_date="2026-07-01",
+    end_date="2026-07-30",
+)
+
+print(audience["range"])                 # the window actually used
+print(audience["audience"]["countries"])  # and "cities", "ages", "genders"
+print(audience["activity_by_hour"])       # [{"hour": "14", "followers_online": 1494}, ...]
+print(audience["followers_daily"])        # [{"date", "total", "new", "lost"}, ...]
+print(audience["profile_actions"])        # bio link, address, email, phone, leads
+print(audience["bio_description"])
 ```
+
+The window is clamped on the server: at most 60 days, and `end_date` always
+before today. A wider window is trimmed to what the platform accepts instead of
+failing.
+
+Ask for a `benchmark_category` and the same call also returns how the account
+compares with the average of that category. The accepted categories come back in
+`benchmark_categories` on every response, so a picker needs no second call:
+
+```python
+categories = client.get_audience(
+    user="my-profile", platform="tiktok"
+)["benchmark_categories"]
+
+benchmark = client.get_audience(
+    user="my-profile", platform="tiktok",
+    benchmark_category="SOFTWARE_AND_APPS",
+)["benchmark"]
+print(benchmark["average_engagement_rate"], benchmark["average_video_views"])
+```
+
+### Suggestions
+
+`get_suggestions()` answers *what is worth posting about*: the hashtags or the
+searches a platform suggests around a keyword. One endpoint for both, told apart
+by `type`.
+
+```python
+hashtags = client.get_suggestions(
+    user="my-profile", platform="tiktok", type="hashtags",
+    q="pilates", country_code="ES", language="es",
+)["hashtags"]
+print(hashtags)  # [{"name": ..., "view_count": ...}, ...]
+
+keywords = client.get_suggestions(
+    user="my-profile", platform="tiktok", type="keywords", q="pilates",
+)["keywords"]
+```
+
+Per-post numbers stay in `get_post_analytics()`. On TikTok that response carries
+more than the usual counters: `retention` (the curve, second by second),
+`impression_sources` (For You, search, profile...), `audience_types` (followers
+vs non-followers), `new_followers`, `reach` and the watch times.
+
+Asking a platform a question it cannot answer fails with
+`platform_not_supported` and the list of the ones that can.
 
 ## What a TikTok connection can do (`capabilities`)
 
@@ -421,9 +446,9 @@ TikTok account; check it before offering a feature.
 | `draft` | `tiktok_upload_to_draft` |
 | `video_privacy` | `privacy_level` on video |
 | `photo_privacy` | `privacy_level` on photo posts |
-| `profile_analytics` | `get_tiktok_insights()`, `get_tiktok_video_insights()`, `get_tiktok_hashtags()`, `get_tiktok_benchmark()` |
-| `comments` | Comments on TikTok: `get_post_comments()`, `create_comment()`, `delete_comment()`, `get_tiktok_comment_replies()`, `tiktok_comment_action()` and `tiktok_first_comment` |
-| `trend_search` | `search_tiktok_keywords()` |
+| `profile_analytics` | `get_audience()` and `get_suggestions(type="hashtags")` with `platform="tiktok"` |
+| `comments` | Comments on TikTok: `get_post_comments()` (top-level and replies), `create_comment()`, `delete_comment()`, `comment_action()` and `tiktok_first_comment` |
+| `trend_search` | `get_suggestions(type="keywords")` with `platform="tiktok"` |
 
 > **`comments` and `trend_search` need the account to be reconnected.** TikTok
 > grants them at connect time, so an account linked before they existed keeps

@@ -1195,6 +1195,13 @@ class UploadPostClient:
         """
         Get analytics for a specific post across all platforms it was published to.
 
+        'post_metrics' carries whatever the platform reports, so it is not the
+        same shape everywhere: on TikTok it also brings 'retention' (the curve,
+        second by second), 'impression_sources' (For You, search, profile...),
+        'audience_types' (followers vs non-followers), 'new_followers', 'reach'
+        and the watch times ('average_time_watched', 'total_time_watched',
+        'full_video_watched_rate').
+
         Args:
             request_id: The request_id from the upload.
 
@@ -1264,6 +1271,95 @@ class UploadPostClient:
         if until:
             params["until"] = until
         return self._request("/uploadposts/post-analytics/cached", "GET", params=params)
+
+    def get_audience(
+        self,
+        user: str,
+        platform: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        benchmark_category: Optional[str] = None
+    ) -> Dict:
+        """
+        Get who the audience is: where they are, how old they are, when they
+        are online and what they tap on the profile.
+
+        Where the post-analytics methods answer how did my posts do, this one
+        answers who is following me. It is one endpoint for every platform,
+        chosen with `platform`; a platform that cannot answer it comes back
+        with "platform_not_supported" and the list of the ones that can.
+
+        The window is clamped server-side: at most 60 days, and end_date always
+        before today. A wider window is trimmed rather than rejected.
+
+        Args:
+            user: Profile username.
+            platform: Platform to ask (tiktok).
+            start_date: Window start, ISO "YYYY-MM-DD".
+            end_date: Window end, ISO "YYYY-MM-DD".
+            benchmark_category: Compare the account against this category's
+                averages, e.g. "SOFTWARE_AND_APPS". Every accepted value comes
+                back in "benchmark_categories" on any response, so a picker
+                needs no second call.
+
+        Returns:
+            'range', 'audience' (countries, cities, ages, genders),
+            'activity_by_hour', 'followers_daily', 'profile_actions',
+            'bio_description', 'benchmark_categories' and, with a category,
+            'benchmark'.
+        """
+        params: Dict[str, Any] = {"user": user, "platform": platform}
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if benchmark_category:
+            params["benchmark_category"] = benchmark_category
+        return self._request("/uploadposts/audience", "GET", params=params)
+
+    def get_suggestions(
+        self,
+        user: str,
+        platform: str,
+        type: str,
+        q: Optional[str] = None,
+        country_code: Optional[str] = None,
+        language: Optional[str] = None
+    ) -> Dict:
+        """
+        Get what to write about: the hashtags or the searches a platform
+        suggests around a keyword.
+
+        One endpoint for both questions, told apart by `type`:
+
+            type        answers
+            hashtags    {"hashtags": [{"name": ..., "view_count": ...}]}
+            keywords    {"keywords": [...]}
+
+        Chosen with `platform`, like every other question in the API; a
+        platform that cannot answer it comes back with
+        "platform_not_supported" and the list of the ones that can.
+
+        Args:
+            user: Profile username.
+            platform: Platform to ask (tiktok).
+            type: Which suggestions you want: "hashtags" or "keywords".
+            q: Keyword to get suggestions around.
+            country_code: ISO country code to bias the suggestions.
+            language: Language code to bias the suggestions.
+
+        Returns:
+            {"success": True, "platform": ..., "type": ..., "hashtags": [...]}
+            or {"success": True, "platform": ..., "type": ..., "keywords": [...]}
+        """
+        params: Dict[str, Any] = {"user": user, "platform": platform, "type": type}
+        if q:
+            params["q"] = q
+        if country_code:
+            params["country_code"] = country_code
+        if language:
+            params["language"] = language
+        return self._request("/uploadposts/suggestions", "GET", params=params)
 
     def get_platform_metrics(self) -> Dict:
         """
@@ -1587,10 +1683,15 @@ class UploadPostClient:
         post_id: Optional[str] = None,
         post_url: Optional[str] = None,
         limit: Optional[int] = None,
-        after: Optional[str] = None
+        after: Optional[str] = None,
+        comment_id: Optional[str] = None
     ) -> Dict:
         """
-        Get comments on a post.
+        Get comments on a post, or the replies hanging from one of them.
+
+        Pass comment_id to read that comment's replies instead of the post's
+        top-level comments. It is the same question - what was said here - so it
+        is the same endpoint with one more parameter, not a method per platform.
 
         On TikTok this needs the `comments` capability on the connection (see
         `capabilities` on the TikTok account returned by list_users()). TikTok
@@ -1606,6 +1707,9 @@ class UploadPostClient:
             post_url: Full post URL (provide post_id or post_url).
             limit: Maximum number of comments to return.
             after: Pagination cursor for the next page of comments.
+            comment_id: Read the replies to this comment instead of the post's
+                top-level comments. Keyword-only in practice: it goes last so
+                the existing positional order keeps working.
 
         Returns:
             Comments data including comment IDs, text, timestamps, and user info.
@@ -1615,6 +1719,8 @@ class UploadPostClient:
             params["post_id"] = post_id
         if post_url:
             params["post_url"] = post_url
+        if comment_id:
+            params["comment_id"] = comment_id
         if limit is not None:
             params["limit"] = limit
         if after is not None:
@@ -1753,6 +1859,56 @@ class UploadPostClient:
             json_data["post_id"] = post_id
         return self._request("/uploadposts/comments/delete", "DELETE", json_data=json_data)
 
+    def comment_action(
+        self,
+        user: str,
+        platform: str,
+        comment_id: str,
+        action: str,
+        post_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Moderate a comment: hide, like or pin it - and undo any of the three.
+
+        One method for every platform, because it is one question: do this to
+        that comment. Each action carries its own inverse:
+
+            action              post_id
+            hide / unhide       required
+            like / unlike       not sent (the platform likes the comment alone)
+            pin / unpin         required
+
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (tiktok).
+            comment_id: Comment to act on.
+            action: What to do: "hide", "unhide", "like", "unlike", "pin" or
+                "unpin".
+            post_id: Native post ID. Required for hide/unhide and pin/unpin;
+                never sent for like/unlike.
+
+        Returns:
+            {"success": True, "platform": ..., "action": ...,
+             "comment_id": ..., "result": {...}}
+        """
+        json_data: Dict[str, Any] = {
+            "platform": platform,
+            "user": user,
+            "comment_id": comment_id,
+            "action": action,
+        }
+        # Liking takes the comment alone; hiding and pinning need the post too.
+        if action not in ("like", "unlike") and post_id:
+            json_data["post_id"] = post_id
+        return self._request(
+            "/uploadposts/comments/action", "POST", json_data=json_data
+        )
+
     # ==================== TikTok ====================
 
     def get_tiktok_trending_music(
@@ -1881,239 +2037,6 @@ class UploadPostClient:
             "GET",
             params={"profile": profile, "q": query}
         )
-
-    def get_tiktok_comment_replies(
-        self,
-        profile: str,
-        post_id: str,
-        comment_id: str,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None
-    ) -> Dict:
-        """
-        Get the replies hanging from one TikTok comment.
-
-        Top-level comments are listed and written with the multi-platform
-        methods (get_post_comments, create_comment, delete_comment with
-        platform="tiktok"). Replies have their own call because no other
-        platform models them as a separate resource.
-
-        Needs the `comments` capability on the connection (see `capabilities`
-        on the TikTok account returned by list_users()). TikTok grants it at
-        connect time, so an account connected earlier has to be reconnected.
-
-        Args:
-            profile: Profile username.
-            post_id: Native TikTok video id the comment belongs to.
-            comment_id: Comment whose replies you want.
-            limit: Replies per page. Defaults to 20 upstream.
-            cursor: Cursor from a previous response's
-                pagination["next_cursor"].
-
-        Returns:
-            {"success": True, "comments": [...],
-             "pagination": {"next_cursor": ..., "has_next": ...}}
-        """
-        params: Dict[str, Any] = {
-            "profile": profile, "post_id": post_id, "comment_id": comment_id
-        }
-        if limit is not None:
-            params["limit"] = limit
-        if cursor:
-            params["cursor"] = cursor
-        return self._request(
-            "/uploadposts/tiktok/comments/replies", "GET", params=params
-        )
-
-    def tiktok_comment_action(
-        self,
-        profile: str,
-        action_type: str,
-        comment_id: str,
-        action: str,
-        post_id: Optional[str] = None
-    ) -> Dict:
-        """
-        Hide, like or pin a TikTok comment - and undo any of the three.
-
-        One method instead of three because the toggles differ only in the
-        values they take:
-
-            type    action            post_id
-            hide    HIDE / UNHIDE     required
-            like    LIKE / UNLIKE     not sent (TikTok likes the comment alone)
-            pin     PIN / UNPIN       required
-
-        Needs the `comments` capability on the connection (see `capabilities`
-        on the TikTok account returned by list_users()). TikTok grants it at
-        connect time, so an account connected earlier has to be reconnected.
-
-        Args:
-            profile: Profile username.
-            action_type: Which toggle to flip: "hide", "like" or "pin". Goes
-                out as the request's "type".
-            comment_id: Comment to act on.
-            action: The value for that toggle.
-            post_id: Native TikTok video id. Required to hide or pin.
-
-        Returns:
-            {"success": True, "type": ..., "action": ..., "comment_id": ...,
-             "result": {...}}
-        """
-        json_data: Dict[str, Any] = {
-            "profile": profile,
-            "type": action_type,
-            "comment_id": comment_id,
-            "action": action,
-        }
-        # Liking takes the comment alone; hiding and pinning need the video too.
-        if action_type != "like" and post_id:
-            json_data["post_id"] = post_id
-        return self._request(
-            "/uploadposts/tiktok/comments/action", "POST", json_data=json_data
-        )
-
-    def search_tiktok_keywords(self, profile: str, query: str) -> Dict:
-        """
-        Search what people look for on TikTok around a keyword.
-
-        Needs the `trend_search` capability on the connection (see
-        `capabilities` on the TikTok account returned by list_users()). TikTok
-        grants it at connect time, so an account connected earlier has to be
-        reconnected.
-
-        Args:
-            profile: Profile username.
-            query: Keyword to search around.
-
-        Returns:
-            {"success": True, "query": ..., "data": {"search_keywords": [...]}}
-        """
-        return self._request(
-            "/uploadposts/tiktok/search/keywords",
-            "GET",
-            params={"profile": profile, "q": query}
-        )
-
-    def get_tiktok_insights(
-        self,
-        profile: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> Dict:
-        """
-        Get who follows the account, when they are online and what they tap.
-
-        Complements the post analytics: those say how a post did, this says who
-        the audience is. Available on any recent TikTok connection - the one
-        that declares the `profile_analytics` capability.
-
-        Args:
-            profile: Profile username.
-            start_date: Window start, ISO "YYYY-MM-DD".
-            end_date: Window end, ISO "YYYY-MM-DD". TikTok refuses today or
-                later. The window is at most 60 days and defaults to the 30
-                that ended yesterday; a wider one is trimmed to what TikTok
-                accepts instead of failing.
-
-        Returns:
-            'range', 'audience' (countries, cities, ages, genders),
-            'activity_by_hour', 'followers_daily', 'profile_actions' and
-            'bio_description'.
-        """
-        params: Dict[str, Any] = {"profile": profile}
-        if start_date:
-            params["start_date"] = start_date
-        if end_date:
-            params["end_date"] = end_date
-        return self._request("/uploadposts/tiktok/insights", "GET", params=params)
-
-    def get_tiktok_video_insights(
-        self,
-        profile: str,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None
-    ) -> Dict:
-        """
-        Get the per-video breakdown of the account's most recent posts.
-
-        Retention curve, where the impressions came from, who watched,
-        followers gained and watch times, one entry per video. Available on any
-        recent TikTok connection - the one that declares the
-        `profile_analytics` capability.
-
-        Args:
-            profile: Profile username.
-            limit: Videos per page, max 20. Defaults to 10 upstream.
-            cursor: Cursor from a previous response's
-                pagination["next_cursor"].
-
-        Returns:
-            {"success": True, "videos": [...],
-             "pagination": {"next_cursor": ..., "has_next": ...}}
-        """
-        params: Dict[str, Any] = {"profile": profile}
-        if limit is not None:
-            params["limit"] = limit
-        if cursor:
-            params["cursor"] = cursor
-        return self._request(
-            "/uploadposts/tiktok/videos/insights", "GET", params=params
-        )
-
-    def get_tiktok_hashtags(
-        self,
-        profile: str,
-        query: str,
-        country_code: Optional[str] = None,
-        language: Optional[str] = None
-    ) -> Dict:
-        """
-        Get the hashtags TikTok suggests pairing with a keyword.
-
-        Available on any recent TikTok connection - the one that declares the
-        `profile_analytics` capability.
-
-        Args:
-            profile: Profile username.
-            query: Keyword to get hashtags for.
-            country_code: ISO country code to bias the suggestions.
-            language: Language code to bias the suggestions.
-
-        Returns:
-            {"success": True, "query": ...,
-             "hashtags": [{"name": ..., "view_count": ...}, ...]}
-        """
-        params: Dict[str, Any] = {"profile": profile, "q": query}
-        if country_code:
-            params["country_code"] = country_code
-        if language:
-            params["language"] = language
-        return self._request("/uploadposts/tiktok/hashtags", "GET", params=params)
-
-    def get_tiktok_benchmark(
-        self, profile: str, category: Optional[str] = None
-    ) -> Dict:
-        """
-        Compare the account against the average of its category.
-
-        Called without a category it answers the list of categories alone, so a
-        UI can render the picker without a second call. Available on any recent
-        TikTok connection - the one that declares the `profile_analytics`
-        capability.
-
-        Args:
-            profile: Profile username.
-            category: Category to compare against (e.g. "SOFTWARE_AND_APPS").
-
-        Returns:
-            {"success": True, "categories": [...]} without a category,
-            {"success": True, "category": ..., "benchmark": {...}} with one.
-        """
-        params: Dict[str, Any] = {"profile": profile}
-        if category:
-            params["category"] = category
-        return self._request("/uploadposts/tiktok/benchmark", "GET", params=params)
 
     # ==================== Google Business ====================
 
