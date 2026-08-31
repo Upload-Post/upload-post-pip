@@ -59,7 +59,7 @@ response = client.upload_video(
     first_comment="Thanks for watching! 🙏",
     
     # Optional: Platform-specific settings
-    privacy_level="PUBLIC_TO_EVERYONE",  # TikTok
+    disable_comment=False,  # TikTok
     media_type="REELS",  # Instagram
     privacyStatus="public",  # YouTube
     tags=["tutorial", "coding"],  # YouTube
@@ -271,12 +271,81 @@ li_pages = client.get_linkedin_pages("my-profile")
 
 # Get Pinterest boards for a profile
 boards = client.get_pinterest_boards("my-profile")
+
+# TikTok: trending Commercial Music Library tracks
+music = client.get_tiktok_trending_music(
+    "my-profile", genre="POP", country_code="ES", date_range="7DAY"
+)
+
+# TikTok: find a track by song or artist
+found = client.search_tiktok_music("my-profile", q="bad bunny", country_code="ES")
+
+# TikTok: search locations to tag
+locations = client.get_tiktok_locations("my-profile", "Madrid")
 ```
+
+## TikTok music, location, cover and drafts
+
+> **Capabilities.** These options are available on connections that declare the
+> matching capability (`music`, `location`, `cover_image`, `draft`) — see the
+> `capabilities` array on the TikTok account returned by
+> `GET /api/uploadposts/users` (`client.list_users()`). Other values that can
+> appear there: `cover_timestamp`, `photo_privacy`, `video_privacy`,
+> `inbox_fallback` and `profile_analytics`. If your connection does
+> not have the capability, the field is ignored, the post still publishes, and
+> the response includes a per-field `warnings` string — reconnect the TikTok
+> account to enable it.
+
+```python
+# 1. Pick a track and a place
+tracks = client.get_tiktok_trending_music("my-profile", country_code="ES")["tracks"]
+# ...or find one by name. TikTok has no music search endpoint, so this searches
+# the trending charts Upload-Post caches, not TikTok's whole catalogue.
+tracks = client.search_tiktok_music("my-profile", q="bossa", country_code="ES")["tracks"]
+places = client.get_tiktok_locations("my-profile", "Madrid")["locations"]
+
+# 2. Publish with them
+client.upload_video(
+    "video.mp4",
+    title="Shot in Madrid",
+    user="my-profile",
+    platforms=["tiktok"],
+
+    tiktok_music_id=tracks[0]["id"],
+    tiktok_music_volume=70,             # 0-100, defaults to 50 when music is set
+    tiktok_music_start=0,               # ms
+    tiktok_music_end=15000,             # ms
+    tiktok_original_sound_volume=30,    # 0-100, defaults to 50 so the original audio is not muted
+
+    tiktok_location_id=places[0]["location_id"],
+    tiktok_location_name=places[0]["location_name"],  # required together with the id
+
+    tiktok_cover_image_url="https://example.com/cover.jpg",
+    tiktok_is_ai_generated=False,
+    tiktok_upload_to_draft=False,       # True sends it to drafts and ignores the rest
+)
+```
+
+### TikTok music, location, cover and draft options
+
+| Option | Type | Capability | Notes |
+| --- | --- | --- | --- |
+| `tiktok_music_id` | str | `music` | Video + photos. The track `id` from `get_tiktok_trending_music()` or `search_tiktok_music()` (not `commercial_music_id`) |
+| `tiktok_music_volume` | int | `music` | Video only. 0-100, defaults to 50 when music is set |
+| `tiktok_music_start` | int | `music` | Video only. Music start offset in ms |
+| `tiktok_music_end` | int | `music` | Video only. Music end offset in ms |
+| `tiktok_original_sound_volume` | int | `music` | Video only. 0-100, defaults to 50 when music is set, so the original audio is not muted |
+| `tiktok_location_id` | str | `location` | Video + photos. `location_id` from `get_tiktok_locations()` |
+| `tiktok_location_name` | str | `location` | Required whenever `tiktok_location_id` is set |
+| `tiktok_cover_image_url` | str | `cover_image` | Video only. Custom cover image URL |
+| `tiktok_is_ai_generated` | bool | — | Video + photos. AI-generated content disclosure |
+| `tiktok_upload_to_draft` | bool | `draft` | Video only. Publish to drafts; TikTok ignores the rest of the post settings |
+| `photo_cover_index` | int | — | Cover photo index for photo posts (0-based) |
+| `privacy_level` | str | `photo_privacy` / `video_privacy` | Accepted on video and photo posts alike; which values the account may use is decided by TikTok, see the note below |
 
 ## Platform-Specific Options
 
 ### TikTok (Video)
-- `privacy_level` - PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR, SELF_ONLY
 - `disable_duet` - Disable duet
 - `disable_comment` - Disable comments
 - `disable_stitch` - Disable stitch
@@ -286,10 +355,34 @@ boards = client.get_pinterest_boards("my-profile")
 - `brand_content_toggle` - Branded content toggle
 - `brand_organic_toggle` - Brand organic toggle
 
+> **TikTok particularity:** `privacy_level` works on video and photo posts
+> alike, but **TikTok decides per account which values are available**. A
+> private account, for example, is offered `FOLLOWER_OF_CREATOR`,
+> `MUTUAL_FOLLOW_FRIENDS` and `SELF_ONLY`, with no `PUBLIC_TO_EVERYONE`; asking
+> for one the account does not have fails with
+> `error_code="tiktok_privacy_unavailable"` and an error listing the ones it
+> does have. Omit it on video and TikTok applies the account's own default; on
+> photo posts it defaults to `PUBLIC_TO_EVERYONE`. To offer only the values that
+> will actually work, ask the account with
+> `client.get_tiktok_publishing_settings(profile)` and read
+> `privacy_level_options`.
+
+See [TikTok music, location, cover and drafts](#tiktok-music-location-cover-and-drafts)
+for the music, location, cover and draft options.
+
 ### TikTok (Photos)
+- `privacy_level` - PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR, SELF_ONLY
+- `post_mode` - DIRECT_POST or MEDIA_UPLOAD
 - `auto_add_music` - Auto add music
 - `photo_cover_index` - Index of photo for cover (0-based)
 - `disable_comment` - Disable comments
+- `tiktok_music_id` - Commercial Music Library track id
+- `tiktok_location_id` / `tiktok_location_name` - Location tag, both required together
+- `tiktok_is_ai_generated` - AI-generated content disclosure
+
+> TikTok's photo contract takes the music track id alone: `tiktok_music_volume`,
+> `tiktok_music_start`, `tiktok_music_end`, `tiktok_original_sound_volume`,
+> `tiktok_cover_image_url` and `tiktok_upload_to_draft` are video-only.
 
 ### Instagram
 - `media_type` - REELS, STORIES, IMAGE

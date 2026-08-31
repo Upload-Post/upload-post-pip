@@ -161,38 +161,62 @@ class UploadPostClient:
             if kwargs.get(key):
                 data.append((key, kwargs[key]))
 
+    # TikTok form fields, by where they apply. Booleans go out lowercased
+    # ("true"/"false"), everything else as a plain string.
+    #
+    # The shared block is shared on purpose: the backend reads privacy_level and
+    # post_mode on both /upload and /upload_photos, and the photo endpoint also
+    # accepts the music track id, the location pair and is_ai_generated. They
+    # used to sit behind the `is_video` gate, so photo carousels silently
+    # published as PUBLIC_TO_EVERYONE / DIRECT_POST (issue #24) and could not
+    # carry music or a location tag at all.
+    #
+    # The music/location/cover/draft fields need the matching capability on the
+    # connection (see `capabilities` on the TikTok account returned by
+    # list_users()). Without it the field is ignored, the post still publishes,
+    # and the response includes a per-field `warnings` entry.
+    _TIKTOK_SHARED_FIELDS = (
+        ("disable_comment", True),
+        ("brand_content_toggle", True),
+        ("brand_organic_toggle", True),
+        ("privacy_level", False),
+        ("post_mode", False),
+        ("tiktok_music_id", False),
+        ("tiktok_location_id", False),
+        ("tiktok_location_name", False),
+        ("tiktok_is_ai_generated", True),
+    )
+    # Video-only: TikTok's photo contract takes the track id alone, with no
+    # volume or trim, and has no custom cover or draft switch.
+    _TIKTOK_VIDEO_FIELDS = (
+        ("disable_duet", True),
+        ("disable_stitch", True),
+        ("cover_timestamp", False),
+        ("is_aigc", True),
+        ("tiktok_music_volume", False),
+        ("tiktok_music_start", False),
+        ("tiktok_music_end", False),
+        ("tiktok_original_sound_volume", False),
+        ("tiktok_cover_image_url", False),
+        ("tiktok_upload_to_draft", True),
+    )
+    _TIKTOK_PHOTO_FIELDS = (
+        ("auto_add_music", True),
+        ("photo_cover_index", False),
+    )
+
     def _add_tiktok_params(self, data: List[tuple], is_video: bool = True, **kwargs):
         """Add TikTok-specific parameters."""
-        if kwargs.get("disable_comment") is not None:
-            data.append(("disable_comment", str(kwargs["disable_comment"]).lower()))
-        if kwargs.get("brand_content_toggle") is not None:
-            data.append(("brand_content_toggle", str(kwargs["brand_content_toggle"]).lower()))
-        if kwargs.get("brand_organic_toggle") is not None:
-            data.append(("brand_organic_toggle", str(kwargs["brand_organic_toggle"]).lower()))
-
-        # Shared by TikTok video AND photo uploads: the backend reads privacy_level and
-        # post_mode for both /upload (video) and /upload_photos. They used to sit behind
-        # the `if is_video` gate, so photo carousels silently published as
-        # PUBLIC_TO_EVERYONE / DIRECT_POST regardless of what the caller passed (issue #24).
-        if kwargs.get("privacy_level"):
-            data.append(("privacy_level", kwargs["privacy_level"]))
-        if kwargs.get("post_mode"):
-            data.append(("post_mode", kwargs["post_mode"]))
-
-        if is_video:
-            if kwargs.get("disable_duet") is not None:
-                data.append(("disable_duet", str(kwargs["disable_duet"]).lower()))
-            if kwargs.get("disable_stitch") is not None:
-                data.append(("disable_stitch", str(kwargs["disable_stitch"]).lower()))
-            if kwargs.get("cover_timestamp") is not None:
-                data.append(("cover_timestamp", str(kwargs["cover_timestamp"])))
-            if kwargs.get("is_aigc") is not None:
-                data.append(("is_aigc", str(kwargs["is_aigc"]).lower()))
-        else:
-            if kwargs.get("auto_add_music") is not None:
-                data.append(("auto_add_music", str(kwargs["auto_add_music"]).lower()))
-            if kwargs.get("photo_cover_index") is not None:
-                data.append(("photo_cover_index", str(kwargs["photo_cover_index"])))
+        fields = self._TIKTOK_SHARED_FIELDS + (
+            self._TIKTOK_VIDEO_FIELDS if is_video else self._TIKTOK_PHOTO_FIELDS
+        )
+        for key, is_bool in fields:
+            value = kwargs.get(key)
+            # privacy_level and post_mode keep their historical truthiness check:
+            # an empty string means "not set", not "send an empty value".
+            if value is None or (not is_bool and value == ""):
+                continue
+            data.append((key, str(value).lower() if is_bool else str(value)))
 
     def _add_instagram_params(self, data: List[tuple], is_video: bool = True, files: List[tuple] | None = None, **kwargs):
         """Add Instagram-specific parameters."""
@@ -474,8 +498,14 @@ class UploadPostClient:
                           the language (omit to auto-detect from the media).
             
             TikTok:
-                privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, 
-                              FOLLOWER_OF_CREATOR, SELF_ONLY
+                privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
+                              FOLLOWER_OF_CREATOR, SELF_ONLY. TikTok decides
+                              per account which of these are available (a
+                              private account has no PUBLIC_TO_EVERYONE);
+                              asking for another one fails with
+                              error_code="tiktok_privacy_unavailable" listing
+                              the allowed ones. Omit it to keep the account's
+                              own default.
                 disable_duet: Disable duet
                 disable_comment: Disable comments
                 disable_stitch: Disable stitch
@@ -484,7 +514,30 @@ class UploadPostClient:
                 post_mode: DIRECT_POST or MEDIA_UPLOAD
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
-            
+
+            TikTok music, location, cover and draft options. Available on
+            connections that declare the matching capability (`music`,
+            `location`, `cover_image`, `draft`) - see `capabilities` on the
+            TikTok account returned by list_users(). If your connection does
+            not have it, the field is ignored, the post still publishes, and
+            the response includes a per-field `warnings` entry; reconnect the
+            TikTok account to enable it.
+                tiktok_music_id: Commercial Music Library track id
+                                 (see get_tiktok_trending_music)
+                tiktok_music_volume: Music volume 0-100 (defaults to 50 when
+                                     music is set)
+                tiktok_music_start: Music start offset in ms
+                tiktok_music_end: Music end offset in ms
+                tiktok_original_sound_volume: Original audio volume 0-100
+                                              (defaults to 50 when music is set,
+                                              so the original audio is not muted)
+                tiktok_location_id: Location id (see get_tiktok_locations)
+                tiktok_location_name: Location name, required together with the id
+                tiktok_cover_image_url: Custom cover image URL
+                tiktok_is_ai_generated: AI-generated content disclosure
+                tiktok_upload_to_draft: Publish to drafts. When True TikTok
+                                        ignores the rest of the post settings
+
             Instagram:
                 media_type: REELS or STORIES
                 share_to_feed: Share to feed
@@ -641,9 +694,26 @@ class UploadPostClient:
             async_upload: Process asynchronously
             
             TikTok:
+                privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
+                              FOLLOWER_OF_CREATOR, SELF_ONLY. TikTok requires
+                              one on photo posts, so it defaults to
+                              PUBLIC_TO_EVERYONE. Which values the account may
+                              use is decided by TikTok (a private account has
+                              no PUBLIC_TO_EVERYONE). Available on connections
+                              that declare the `photo_privacy` capability - see
+                              `capabilities` on the TikTok account returned by
+                              list_users().
+                post_mode: DIRECT_POST or MEDIA_UPLOAD
                 auto_add_music: Auto add music
                 disable_comment: Disable comments
                 photo_cover_index: Index of photo for cover (0-based)
+                tiktok_music_id: Commercial Music Library track id
+                                 (see get_tiktok_trending_music). TikTok's photo
+                                 contract takes the id alone - the volume, trim,
+                                 cover-image and draft fields are video-only.
+                tiktok_location_id / tiktok_location_name: Location tag, both
+                                 required together.
+                tiktok_is_ai_generated: AI-generated content disclosure.
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
             
@@ -1292,6 +1362,13 @@ class UploadPostClient:
         """
         List all users/profiles.
 
+        The TikTok account object carries a `capabilities` array with the
+        values the connection supports: `music`, `location`, `cover_image`,
+        `cover_timestamp`, `draft`, `photo_privacy`, `video_privacy`,
+        `inbox_fallback` and `profile_analytics`. Fields whose
+        capability is missing are ignored on upload (the post still publishes)
+        and reported as plain strings in the response `warnings`.
+
         Returns:
             List of users.
         """
@@ -1654,6 +1731,135 @@ class UploadPostClient:
         if post_id is not None:
             json_data["post_id"] = post_id
         return self._request("/uploadposts/comments/delete", "DELETE", json_data=json_data)
+
+    # ==================== TikTok ====================
+
+    def get_tiktok_trending_music(
+        self,
+        profile: str,
+        genre: Optional[str] = None,
+        country_code: Optional[str] = None,
+        date_range: Optional[str] = None
+    ) -> Dict:
+        """
+        Get trending tracks from the TikTok Commercial Music Library.
+
+        Available on connections that declare the `music` capability (see
+        `capabilities` on the TikTok account returned by list_users()). The
+        returned track 'id' is what you pass as 'tiktok_music_id' on an upload
+        - not 'commercial_music_id', which TikTok rejects on public posts.
+
+        Args:
+            profile: Profile username.
+            genre: Genre filter (e.g. "ALL", "POP"). Defaults to ALL upstream.
+            country_code: ISO country code. Defaults to US upstream.
+            date_range: Trending window: "1DAY", "7DAY", "30DAY" or "90DAY".
+                        Defaults to 7DAY upstream.
+
+        Returns:
+            Trending tracks.
+        """
+        params: Dict[str, Any] = {"profile": profile}
+        if genre:
+            params["genre"] = genre
+        if country_code:
+            params["country_code"] = country_code
+        if date_range:
+            params["date_range"] = date_range
+        return self._request("/uploadposts/tiktok/music/trending", "GET", params=params)
+
+    def search_tiktok_music(
+        self,
+        profile: str,
+        q: Optional[str] = None,
+        genre: Optional[str] = None,
+        country_code: Optional[str] = None,
+        date_range: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> Dict:
+        """
+        Search the TikTok Commercial Music Library by song title or artist.
+
+        TikTok itself has no music search endpoint - its only catalogue read is
+        the trending chart for a genre/country/period. Upload-Post caches those
+        charts and matches your text against them, so this searches the trending
+        charts rather than TikTok's entire catalogue. Matching is case- and
+        accent-insensitive and every word must match.
+
+        Returns the same track objects as get_tiktok_trending_music(), so the
+        'id' is again what you pass as 'tiktok_music_id' on an upload.
+
+        Args:
+            profile: Profile username.
+            q: Text to match against titles and artists (max 80 characters).
+               Omit it to get the chart in trending order.
+            genre: Genre filter (e.g. "ALL", "POP"). Defaults to ALL upstream.
+            country_code: ISO country code choosing which chart is searched.
+                          Defaults to US upstream.
+            date_range: Chart window: "1DAY", "7DAY", "30DAY" or "90DAY".
+                        Defaults to 7DAY upstream.
+            limit: Maximum tracks to return (capped at 100 upstream).
+
+        Returns:
+            Matching tracks, plus a 'catalog' block describing how many tracks
+            the search actually ran against.
+        """
+        params: Dict[str, Any] = {"profile": profile}
+        if q:
+            params["q"] = q
+        if genre:
+            params["genre"] = genre
+        if country_code:
+            params["country_code"] = country_code
+        if date_range:
+            params["date_range"] = date_range
+        if limit is not None:
+            params["limit"] = limit
+        return self._request("/uploadposts/tiktok/music/search", "GET", params=params)
+
+    def get_tiktok_publishing_settings(self, profile: str) -> Dict:
+        """
+        Get what the connected TikTok account is allowed to publish.
+
+        The point of this call is 'privacy_level_options': TikTok narrows the
+        four privacy values per account (a private account has no
+        PUBLIC_TO_EVERYONE), and sending one the account does not have fails the
+        upload with error_code="tiktok_privacy_unavailable". Ask here to offer
+        only the values that will work, instead of the full enum.
+
+        Args:
+            profile: Profile username.
+
+        Returns:
+            'privacy_level_options', 'max_video_post_duration_sec' and the
+            account's comment/duet/stitch switches.
+        """
+        return self._request(
+            "/uploadposts/tiktok/settings", "GET", params={"profile": profile}
+        )
+
+    def get_tiktok_locations(self, profile: str, query: str) -> Dict:
+        """
+        Search TikTok locations (places) to tag on a post.
+
+        Available on connections that declare the `location` capability (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        requires the id and the name together, so pass the returned
+        'location_id' as 'tiktok_location_id' and 'location_name' as
+        'tiktok_location_name' on the upload.
+
+        Args:
+            profile: Profile username.
+            query: Search query (max 100 characters).
+
+        Returns:
+            Matching locations (up to 20).
+        """
+        return self._request(
+            "/uploadposts/tiktok/locations",
+            "GET",
+            params={"profile": profile, "q": query}
+        )
 
     # ==================== Google Business ====================
 
