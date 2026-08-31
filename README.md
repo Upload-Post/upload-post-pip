@@ -38,6 +38,8 @@ print(response)
 - ✅ **Posting Queue** - Add posts to your configured queue
 - ✅ **First Comments** - Auto-post first comment after publishing
 - ✅ **Analytics** - Get engagement metrics
+- ✅ **Audience** - Who follows a profile, per platform
+- ✅ **Suggestions** - Hashtags and searches to post about, per platform
 - ✅ **Full Type Hints**
 
 ## API Reference
@@ -284,17 +286,183 @@ found = client.search_tiktok_music("my-profile", q="bad bunny", country_code="ES
 locations = client.get_tiktok_locations("my-profile", "Madrid")
 ```
 
+### Comments
+
+The same methods cover every platform that has comments — Instagram, Facebook,
+YouTube, LinkedIn and TikTok. There is no per-network method: the endpoint
+answers one question and `platform` says who to ask.
+
+```python
+# Read the comments on a post. TikTok has no post-URL lookup: pass the video id.
+comments = client.get_post_comments(
+    user="my-profile",
+    platform="tiktok",
+    post_id="7412345678901234567",
+    limit=20,
+)
+
+# Read the replies hanging from one of them — same question, one more parameter
+replies = client.get_post_comments(
+    user="my-profile",
+    platform="tiktok",
+    post_id="7412345678901234567",
+    comment_id="7412345678909999999",
+)
+
+# Comment on the post, or reply to a comment
+client.create_comment(
+    user="my-profile",
+    platform="tiktok",
+    post_id="7412345678901234567",
+    message="Thanks for watching!",
+)
+client.create_comment(
+    user="my-profile",
+    platform="tiktok",
+    comment_id="7412345678909999999",
+    message="Glad you liked it",
+)
+
+# Delete one
+client.delete_comment(
+    user="my-profile", platform="tiktok", comment_id="7412345678909999999"
+)
+```
+
+You can also have the first comment posted for you right after publishing, with
+`first_comment` for every platform or `tiktok_first_comment` for TikTok alone.
+
+On TikTok all of this needs the `comments` capability, which the account grants
+when it connects — see
+[What a TikTok connection can do](#what-a-tiktok-connection-can-do-capabilities).
+
+#### Moderating a comment: hide, like, pin
+
+`comment_action()` does the three and undoes them, on any platform that
+supports it. Each action carries its own inverse, and `post_id` is only sent
+when the platform needs it:
+
+```python
+client.comment_action(
+    user="my-profile", platform="tiktok", action="hide",
+    comment_id="7412345678909999999", post_id="7412345678901234567",
+)
+client.comment_action(
+    user="my-profile", platform="tiktok", action="like",
+    comment_id="7412345678909999999",
+)
+client.comment_action(
+    user="my-profile", platform="tiktok", action="unpin",
+    comment_id="7412345678909999999", post_id="7412345678901234567",
+)
+```
+
+| `action` | Undo | `post_id` |
+| --- | --- | --- |
+| `hide` | `unhide` | required |
+| `like` | `unlike` | not sent |
+| `pin` | `unpin` | required |
+
+### Audience
+
+Where the analytics methods answer *how did my posts do*, `get_audience()`
+answers *who is following me*. One endpoint, one `platform` parameter, like
+every other question in the API.
+
+```python
+audience = client.get_audience(
+    user="my-profile",
+    platform="tiktok",
+    start_date="2026-07-01",
+    end_date="2026-07-30",
+)
+
+print(audience["range"])                 # the window actually used
+print(audience["audience"]["countries"])  # and "cities", "ages", "genders"
+print(audience["activity_by_hour"])       # [{"hour": "14", "followers_online": 1494}, ...]
+print(audience["followers_daily"])        # [{"date", "total", "new", "lost"}, ...]
+print(audience["profile_actions"])        # bio link, address, email, phone, leads
+print(audience["bio_description"])
+```
+
+The window is clamped on the server: at most 60 days, and `end_date` always
+before today. A wider window is trimmed to what the platform accepts instead of
+failing.
+
+Ask for a `benchmark_category` and the same call also returns how the account
+compares with the average of that category. The accepted categories come back in
+`benchmark_categories` on every response, so a picker needs no second call:
+
+```python
+categories = client.get_audience(
+    user="my-profile", platform="tiktok"
+)["benchmark_categories"]
+
+benchmark = client.get_audience(
+    user="my-profile", platform="tiktok",
+    benchmark_category="SOFTWARE_AND_APPS",
+)["benchmark"]
+print(benchmark["average_engagement_rate"], benchmark["average_video_views"])
+```
+
+### Suggestions
+
+`get_suggestions()` answers *what is worth posting about*: the hashtags or the
+searches a platform suggests around a keyword. One endpoint for both, told apart
+by `type`.
+
+```python
+hashtags = client.get_suggestions(
+    user="my-profile", platform="tiktok", type="hashtags",
+    q="pilates", country_code="ES", language="es",
+)["hashtags"]
+print(hashtags)  # [{"name": ..., "view_count": ...}, ...]
+
+keywords = client.get_suggestions(
+    user="my-profile", platform="tiktok", type="keywords", q="pilates",
+)["keywords"]
+```
+
+Per-post numbers stay in `get_post_analytics()`. On TikTok that response carries
+more than the usual counters: `retention` (the curve, second by second),
+`impression_sources` (For You, search, profile...), `audience_types` (followers
+vs non-followers), `new_followers`, `reach` and the watch times.
+
+Asking a platform a question it cannot answer fails with
+`platform_not_supported` and the list of the ones that can.
+
+## What a TikTok connection can do (`capabilities`)
+
+Not every TikTok connection can do the same things. `client.list_users()`
+(`GET /api/uploadposts/users`) returns a `capabilities` array on each profile's
+TikTok account; check it before offering a feature.
+
+| Capability | What it unlocks |
+| --- | --- |
+| `music` | `tiktok_music_id` and the volume/trim fields, plus `get_tiktok_trending_music()` and `search_tiktok_music()` |
+| `location` | `tiktok_location_id` / `tiktok_location_name`, plus `get_tiktok_locations()` |
+| `cover_image` | `tiktok_cover_image_url` |
+| `cover_timestamp` | `cover_timestamp` |
+| `draft` | `tiktok_upload_to_draft` |
+| `video_privacy` | `privacy_level` on video |
+| `photo_privacy` | `privacy_level` on photo posts |
+| `profile_analytics` | `get_audience()` and `get_suggestions(type="hashtags")` with `platform="tiktok"` |
+| `comments` | Comments on TikTok: `get_post_comments()` (top-level and replies), `create_comment()`, `delete_comment()`, `comment_action()` and `tiktok_first_comment` |
+| `trend_search` | `get_suggestions(type="keywords")` with `platform="tiktok"` |
+
+> **`comments` and `trend_search` need the account to be reconnected.** TikTok
+> grants them at connect time, so an account linked before they existed keeps
+> working for everything else but will not list them — reconnect it from Manage
+> Users to enable them.
+
+If a connection lacks a capability the upload field is simply ignored: the post
+still publishes and the response carries a per-field `warnings` string. The
+methods above answer with an error asking for a reconnection.
+
 ## TikTok music, location, cover and drafts
 
-> **Capabilities.** These options are available on connections that declare the
-> matching capability (`music`, `location`, `cover_image`, `draft`) — see the
-> `capabilities` array on the TikTok account returned by
-> `GET /api/uploadposts/users` (`client.list_users()`). Other values that can
-> appear there: `cover_timestamp`, `photo_privacy`, `video_privacy`,
-> `inbox_fallback` and `profile_analytics`. If your connection does
-> not have the capability, the field is ignored, the post still publishes, and
-> the response includes a per-field `warnings` string — reconnect the TikTok
-> account to enable it.
+> Needs the `music`, `location`, `cover_image` or `draft` capability — see
+> [What a TikTok connection can do](#what-a-tiktok-connection-can-do-capabilities).
 
 ```python
 # 1. Pick a track and a place
@@ -487,6 +655,7 @@ These options work across all upload methods:
 | `user` | Profile name (required) |
 | `platforms` | Target platforms list (required) |
 | `first_comment` | First comment to post |
+| `tiktok_first_comment` | First comment for TikTok only (needs the `comments` capability) |
 | `alt_text` | Alt text for accessibility |
 | `scheduled_date` | ISO date for scheduling |
 | `timezone` | Timezone for scheduled date |

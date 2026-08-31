@@ -151,11 +151,13 @@ class UploadPostClient:
             if kwargs.get(key):
                 data.append((key, kwargs[key]))
         
-        # Platform-specific first comment overrides
+        # Platform-specific first comment overrides. TikTok needs the
+        # `comments` capability on the connection: without it the post still
+        # publishes and the response carries a warning instead of the comment.
         comment_overrides = [
             "instagram_first_comment", "facebook_first_comment", "x_first_comment",
             "threads_first_comment", "youtube_first_comment", "reddit_first_comment",
-            "bluesky_first_comment", "linkedin_first_comment"
+            "bluesky_first_comment", "linkedin_first_comment", "tiktok_first_comment"
         ]
         for key in comment_overrides:
             if kwargs.get(key):
@@ -1193,6 +1195,13 @@ class UploadPostClient:
         """
         Get analytics for a specific post across all platforms it was published to.
 
+        'post_metrics' carries whatever the platform reports, so it is not the
+        same shape everywhere: on TikTok it also brings 'retention' (the curve,
+        second by second), 'impression_sources' (For You, search, profile...),
+        'audience_types' (followers vs non-followers), 'new_followers', 'reach'
+        and the watch times ('average_time_watched', 'total_time_watched',
+        'full_video_watched_rate').
+
         Args:
             request_id: The request_id from the upload.
 
@@ -1262,6 +1271,95 @@ class UploadPostClient:
         if until:
             params["until"] = until
         return self._request("/uploadposts/post-analytics/cached", "GET", params=params)
+
+    def get_audience(
+        self,
+        user: str,
+        platform: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        benchmark_category: Optional[str] = None
+    ) -> Dict:
+        """
+        Get who the audience is: where they are, how old they are, when they
+        are online and what they tap on the profile.
+
+        Where the post-analytics methods answer how did my posts do, this one
+        answers who is following me. It is one endpoint for every platform,
+        chosen with `platform`; a platform that cannot answer it comes back
+        with "platform_not_supported" and the list of the ones that can.
+
+        The window is clamped server-side: at most 60 days, and end_date always
+        before today. A wider window is trimmed rather than rejected.
+
+        Args:
+            user: Profile username.
+            platform: Platform to ask (tiktok).
+            start_date: Window start, ISO "YYYY-MM-DD".
+            end_date: Window end, ISO "YYYY-MM-DD".
+            benchmark_category: Compare the account against this category's
+                averages, e.g. "SOFTWARE_AND_APPS". Every accepted value comes
+                back in "benchmark_categories" on any response, so a picker
+                needs no second call.
+
+        Returns:
+            'range', 'audience' (countries, cities, ages, genders),
+            'activity_by_hour', 'followers_daily', 'profile_actions',
+            'bio_description', 'benchmark_categories' and, with a category,
+            'benchmark'.
+        """
+        params: Dict[str, Any] = {"user": user, "platform": platform}
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if benchmark_category:
+            params["benchmark_category"] = benchmark_category
+        return self._request("/uploadposts/audience", "GET", params=params)
+
+    def get_suggestions(
+        self,
+        user: str,
+        platform: str,
+        type: str,
+        q: Optional[str] = None,
+        country_code: Optional[str] = None,
+        language: Optional[str] = None
+    ) -> Dict:
+        """
+        Get what to write about: the hashtags or the searches a platform
+        suggests around a keyword.
+
+        One endpoint for both questions, told apart by `type`:
+
+            type        answers
+            hashtags    {"hashtags": [{"name": ..., "view_count": ...}]}
+            keywords    {"keywords": [...]}
+
+        Chosen with `platform`, like every other question in the API; a
+        platform that cannot answer it comes back with
+        "platform_not_supported" and the list of the ones that can.
+
+        Args:
+            user: Profile username.
+            platform: Platform to ask (tiktok).
+            type: Which suggestions you want: "hashtags" or "keywords".
+            q: Keyword to get suggestions around.
+            country_code: ISO country code to bias the suggestions.
+            language: Language code to bias the suggestions.
+
+        Returns:
+            {"success": True, "platform": ..., "type": ..., "hashtags": [...]}
+            or {"success": True, "platform": ..., "type": ..., "keywords": [...]}
+        """
+        params: Dict[str, Any] = {"user": user, "platform": platform, "type": type}
+        if q:
+            params["q"] = q
+        if country_code:
+            params["country_code"] = country_code
+        if language:
+            params["language"] = language
+        return self._request("/uploadposts/suggestions", "GET", params=params)
 
     def get_platform_metrics(self) -> Dict:
         """
@@ -1576,7 +1674,7 @@ class UploadPostClient:
         params = {"profile": profile} if profile else None
         return self._request("/uploadposts/pinterest/boards", "GET", params=params)
 
-    # ==================== Instagram Comments ====================
+    # ==================== Comments ====================
 
     def get_post_comments(
         self,
@@ -1585,18 +1683,33 @@ class UploadPostClient:
         post_id: Optional[str] = None,
         post_url: Optional[str] = None,
         limit: Optional[int] = None,
-        after: Optional[str] = None
+        after: Optional[str] = None,
+        comment_id: Optional[str] = None
     ) -> Dict:
         """
-        Get comments on a post.
+        Get comments on a post, or the replies hanging from one of them.
+
+        Pass comment_id to read that comment's replies instead of the post's
+        top-level comments. It is the same question - what was said here - so it
+        is the same endpoint with one more parameter, not a method per platform.
+
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
 
         Args:
             user: Profile username.
-            platform: Platform name (instagram, facebook, youtube, linkedin).
-            post_id: Post/media ID (provide post_id or post_url).
+            platform: Platform name (instagram, facebook, youtube, linkedin,
+                tiktok).
+            post_id: Post/media ID (provide post_id or post_url). Required on
+                TikTok, which has no post URL lookup.
             post_url: Full post URL (provide post_id or post_url).
             limit: Maximum number of comments to return.
             after: Pagination cursor for the next page of comments.
+            comment_id: Read the replies to this comment instead of the post's
+                top-level comments. Keyword-only in practice: it goes last so
+                the existing positional order keeps working.
 
         Returns:
             Comments data including comment IDs, text, timestamps, and user info.
@@ -1606,6 +1719,8 @@ class UploadPostClient:
             params["post_id"] = post_id
         if post_url:
             params["post_url"] = post_url
+        if comment_id:
+            params["comment_id"] = comment_id
         if limit is not None:
             params["limit"] = limit
         if after is not None:
@@ -1678,9 +1793,15 @@ class UploadPostClient:
         """
         Create a comment on a post, or reply to an existing comment.
 
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
         Args:
             user: Profile username.
-            platform: Platform name (instagram, facebook, youtube, linkedin).
+            platform: Platform name (instagram, facebook, youtube, linkedin,
+                tiktok).
             message: Comment text.
             post_id: Post/media ID to comment on.
             post_url: Full post URL to comment on.
@@ -1714,9 +1835,15 @@ class UploadPostClient:
         """
         Delete a comment on a post.
 
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
         Args:
             user: Profile username.
-            platform: Platform name (instagram, facebook, youtube, linkedin).
+            platform: Platform name (instagram, facebook, youtube, linkedin,
+                tiktok).
             comment_id: Comment ID to delete.
             post_id: Post URN (required for LinkedIn).
 
@@ -1731,6 +1858,56 @@ class UploadPostClient:
         if post_id is not None:
             json_data["post_id"] = post_id
         return self._request("/uploadposts/comments/delete", "DELETE", json_data=json_data)
+
+    def comment_action(
+        self,
+        user: str,
+        platform: str,
+        comment_id: str,
+        action: str,
+        post_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Moderate a comment: hide, like or pin it - and undo any of the three.
+
+        One method for every platform, because it is one question: do this to
+        that comment. Each action carries its own inverse:
+
+            action              post_id
+            hide / unhide       required
+            like / unlike       not sent (the platform likes the comment alone)
+            pin / unpin         required
+
+        On TikTok this needs the `comments` capability on the connection (see
+        `capabilities` on the TikTok account returned by list_users()). TikTok
+        grants it at connect time, so an account connected earlier has to be
+        reconnected.
+
+        Args:
+            user: Profile username.
+            platform: Platform name (tiktok).
+            comment_id: Comment to act on.
+            action: What to do: "hide", "unhide", "like", "unlike", "pin" or
+                "unpin".
+            post_id: Native post ID. Required for hide/unhide and pin/unpin;
+                never sent for like/unlike.
+
+        Returns:
+            {"success": True, "platform": ..., "action": ...,
+             "comment_id": ..., "result": {...}}
+        """
+        json_data: Dict[str, Any] = {
+            "platform": platform,
+            "user": user,
+            "comment_id": comment_id,
+            "action": action,
+        }
+        # Liking takes the comment alone; hiding and pinning need the post too.
+        if action not in ("like", "unlike") and post_id:
+            json_data["post_id"] = post_id
+        return self._request(
+            "/uploadposts/comments/action", "POST", json_data=json_data
+        )
 
     # ==================== TikTok ====================
 
