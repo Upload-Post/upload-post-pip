@@ -443,7 +443,7 @@ TikTok account; check it before offering a feature.
 | `location` | `tiktok_location_id` / `tiktok_location_name`, plus `get_tiktok_locations()` |
 | `cover_image` | `tiktok_cover_image_url` |
 | `cover_timestamp` | `cover_timestamp` |
-| `draft` | `tiktok_upload_to_draft` |
+| `draft` | `tiktok_upload_to_draft` or `post_mode="MEDIA_UPLOAD"` (same draft) |
 | `video_privacy` | `privacy_level` on video |
 | `photo_privacy` | `privacy_level` on photo posts |
 | `profile_analytics` | `get_audience()` and `get_suggestions(type="hashtags")` with `platform="tiktok"` |
@@ -490,7 +490,7 @@ client.upload_video(
 
     tiktok_cover_image_url="https://example.com/cover.jpg",
     tiktok_is_ai_generated=False,
-    tiktok_upload_to_draft=False,       # True sends it to drafts and ignores the rest
+    tiktok_upload_to_draft=False,  # same draft as post_mode="MEDIA_UPLOAD"
 )
 ```
 
@@ -506,10 +506,13 @@ client.upload_video(
 | `tiktok_location_id` | str | `location` | Video + photos. `location_id` from `get_tiktok_locations()` |
 | `tiktok_location_name` | str | `location` | Required whenever `tiktok_location_id` is set |
 | `tiktok_cover_image_url` | str | `cover_image` | Video only. Custom cover image URL |
-| `tiktok_is_ai_generated` | bool | — | Video + photos. AI-generated content disclosure |
-| `tiktok_upload_to_draft` | bool | `draft` | Video only. Publish to drafts; TikTok ignores the rest of the post settings |
+| `tiktok_is_ai_generated` | bool | — | Video + photos. AI-generated content disclosure (aliases: `is_ai_generated`) |
+| `tiktok_upload_to_draft` | bool | `draft` | Video + photos. Same draft as `post_mode="MEDIA_UPLOAD"` (aliases: `upload_to_draft`, `is_draft`). TikTok ignores the rest of the post settings |
+| `tiktok_is_ads_only` | bool | — | Video. Only show in ads (alias: `is_ads_only`) |
+| `tiktok_tto_invite_link` | str | — | Video. TikTok One invite link; needs branded content (alias: `tto_invite_link`) |
 | `photo_cover_index` | int | — | Cover photo index for photo posts (0-based) |
 | `privacy_level` | str | `photo_privacy` / `video_privacy` | Accepted on video and photo posts alike; which values the account may use is decided by TikTok, see the note below |
+| `post_mode` | str | `draft` | `DIRECT_POST` or `MEDIA_UPLOAD`. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True` |
 
 ## Platform-Specific Options
 
@@ -519,9 +522,11 @@ client.upload_video(
 - `disable_stitch` - Disable stitch
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
-- `post_mode` - DIRECT_POST or MEDIA_UPLOAD
+- `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
 - `brand_content_toggle` - Branded content toggle
 - `brand_organic_toggle` - Brand organic toggle
+- `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
+- `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
 
 > **TikTok particularity:** `privacy_level` works on video and photo posts
 > alike, but **TikTok decides per account which values are available**. A
@@ -540,17 +545,19 @@ for the music, location, cover and draft options.
 
 ### TikTok (Photos)
 - `privacy_level` - PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR, SELF_ONLY
-- `post_mode` - DIRECT_POST or MEDIA_UPLOAD
+- `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
 - `auto_add_music` - Auto add music
 - `photo_cover_index` - Index of photo for cover (0-based)
 - `disable_comment` - Disable comments
 - `tiktok_music_id` - Commercial Music Library track id
 - `tiktok_location_id` / `tiktok_location_name` - Location tag, both required together
 - `tiktok_is_ai_generated` - AI-generated content disclosure
+- `tiktok_upload_to_draft` - Same draft as `post_mode="MEDIA_UPLOAD"` (aliases: `upload_to_draft`, `is_draft`)
 
 > TikTok's photo contract takes the music track id alone: `tiktok_music_volume`,
-> `tiktok_music_start`, `tiktok_music_end`, `tiktok_original_sound_volume`,
-> `tiktok_cover_image_url` and `tiktok_upload_to_draft` are video-only.
+> `tiktok_music_start`, `tiktok_music_end`, `tiktok_original_sound_volume` and
+> `tiktok_cover_image_url` are video-only. `post_mode="MEDIA_UPLOAD"` and
+> `tiktok_upload_to_draft=True` are aliases of the same draft.
 
 ### Instagram
 - `media_type` - REELS, STORIES, IMAGE
@@ -561,6 +568,7 @@ for the music, location, cover and draft options.
 - `user_tags` - Comma-separated user tags
 - `location_id` - Location ID
 - `thumb_offset` - Thumbnail offset
+- `instagram_alt_text` - Alt text (string, or JSON list / one per carousel item)
 
 ### YouTube
 - `tags` - List or comma-separated tags
@@ -578,10 +586,19 @@ for the music, location, cover and draft options.
 - `hasPaidProductPlacement` - Paid placement flag
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
+- `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
+- `youtube_publish_at` - RFC3339 time; uploads as private and schedules on YouTube
 
 ### LinkedIn
-- `visibility` - PUBLIC, CONNECTIONS, LOGGED_IN, CONTAINER
+- `visibility` / `linkedin_visibility` - PUBLIC, CONNECTIONS, LOGGED_IN, CONTAINER
 - `target_linkedin_page_id` - Page ID for organization posts
+- `linkedin_alt_text` - Alt text per image (string, JSON list, or repeated)
+- `linkedin_disable_reshare` - Disable reshare by others
+- `linkedin_link_title` / `linkedin_link_description` / `linkedin_thumbnail_alt_text` - Article/link-share overrides
+- `linkedin_target_geo_locations` / `linkedin_target_industries` / `linkedin_target_seniorities` / `linkedin_target_job_functions` / `linkedin_target_staff_count_ranges` / `linkedin_target_interface_locales` / `linkedin_target_degrees` / `linkedin_target_fields_of_study` / `linkedin_target_organizations` - Page targeting (needs `target_linkedin_page_id`)
+- `linkedin_target_entities` - Raw targeting JSON instead of the fields above
+- `linkedin_target_check_audience` - Reject if LinkedIn reports fewer than 300 followers in the segment
+- `linkedin_subtitles` / `linkedin_subtitles_url` / `linkedin_subtitles_text` - English SRT captions on video
 
 ### Facebook
 - `facebook_page_id` - Facebook Page ID (required)
@@ -589,13 +606,25 @@ for the music, location, cover and draft options.
 - `facebook_media_type` - REELS, STORIES, or VIDEO (normal page video)
 - `thumbnail_url` - Thumbnail URL for normal page videos (only when `facebook_media_type` is VIDEO)
 - `facebook_link_url` - URL for text posts
+- `facebook_alt_text` - Alt text per photo (string, `facebook_alt_text[]`, or JSON array)
+- `facebook_place_id` - Place id on feed/photos/videos/reels
+- `facebook_targeting` / `facebook_feed_targeting` - JSON audience objects
+- `facebook_call_to_action` / `facebook_child_attachments` / `facebook_multi_share_end_card` - Link post CTA and carousel
+- `facebook_is_ai_generated` - AI-generated flag on Reels
+- `facebook_collaborators` - Page ids to invite on Reels
+- `facebook_unpublished_content_type` - DRAFT / INLINE_CREATED / ADS_POST on page video (`SCHEDULED` is rejected; use `scheduled_date`)
+- `facebook_no_story` / `facebook_secret` - Page video flags
 
 ### Pinterest
 - `pinterest_board_id` - Board ID
 - `pinterest_link` - Destination link
 - `pinterest_alt_text` - Alt text for photos
 - `pinterest_cover_image_url` - Cover image URL (video)
-- `pinterest_cover_image_key_frame_time` - Key frame time in ms
+- `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
+- `pinterest_board_section_id` - Board section id
+- `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
+- `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
+- `pinterest_carousel_index` - 0-based cover slide
 
 ### X (Twitter)
 - `reply_settings` - everyone, following, mentionedUsers, subscribers, verified
@@ -611,15 +640,30 @@ for the music, location, cover and draft options.
 - `card_uri` - Card URI for Twitter Cards
 - `x_long_text_as_post` - Post long text as single post
 - `x_thread_image_layout` - Comma-separated image layout for thread (e.g. "4,4" or "2,3,1"). Each value 1-4, total must equal image count. Auto-chunks into groups of 4 when >4 images.
+- `x_alt_text` - Alt text (string, `x_alt_text[]`, or JSON array; ≤1000 chars)
+- `x_subtitles` / `x_subtitles_url` / `x_subtitles_language` / `x_subtitles_name` - Video SRT captions
+- `x_paid_partnership` - Paid partnership flag on the first post
+- `x_article_title` / `x_article_body` / `x_article_content_state` / `x_article_draft` / `x_article_cover_media` - X Articles (text; Premium)
 
 ### Threads
-- `threads_long_text_as_post` - Post long text as single post (vs thread)
-- `threads_thread_media_layout` - Comma-separated list of how many media items to include in each Threads post (e.g. "5,5" or "3,4,3"). Each value 1-10, total must equal media count. Auto-chunks into groups of 10 when >10 items.
+- `threads_long_text_as_post` - Post long text as single post (vs thread). Over 500 UTF-8 bytes this sends an official long post instead of truncating.
+- `threads_thread_media_layout` - Comma-separated list of how many media items to include in each Threads post (e.g. "5,5" or "3,4,3"). Each value 0-20, total must equal media count. Auto-chunks into groups of 20 when >20 items.
 - `threads_topic_tag` - Topic tag for the Threads post (1-50 characters, no periods or ampersands). One tag per post. Helps increase reach.
+- `threads_reply_control` - Who can reply: `everyone`, `accounts_you_follow`, `mentioned_only`, `parent_post_author_only`, `followers_only`
+- `threads_alt_text` - Alt text per image/video (`threads_alt_text[]`)
+- `threads_reply_to_id` / `threads_quote_post_id` - Reply or quote
+- `threads_link_attachment` - Force link preview (text)
+- `threads_poll_options` - 2–4 poll options (text)
+- `threads_auto_publish_text` - Skip the second publish call on text posts
 
 ### Reddit
+Reddit uploads currently return `error_code=reddit_unavailable` until the Reddit app is restored.
+
 - `subreddit` - Subreddit name (without r/)
 - `flair_id` - Flair template ID
+- `reddit_nsfw` / `reddit_spoiler` / `reddit_resubmit` / `reddit_send_replies` - Booleans
+- `reddit_flair_text` - Custom text for editable flairs
+- `reddit_gallery_captions` / `reddit_gallery_urls` - Per-image gallery caption and outbound URL
 
 ### Google Business
 - `gbp_location_id` - Location, e.g. `"accounts/123/locations/456"` (list them with `get_google_business_locations`). Required when the account has more than one location; the API only auto-selects when exactly one exists.
@@ -630,6 +674,8 @@ for the music, location, cover and draft options.
 - `gbp_cta_type` / `gbp_cta_url` - Call-to-action button
 - `gbp_event_title` / `gbp_event_start_date` / `gbp_event_start_time` / `gbp_event_end_date` / `gbp_event_end_time` - Used with `gbp_topic_type="EVENT"`
 - `gbp_offer_coupon` / `gbp_offer_redeem_url` / `gbp_offer_terms` - Used with `gbp_topic_type="OFFER"`
+- `gbp_coupon_code` / `gbp_redeem_url` / `gbp_terms` - Aliases of the offer fields above (legacy names still win if both are sent)
+- `gbp_language_code` - BCP-47 language (default `en`)
 
 ```python
 locations = client.get_google_business_locations("my-profile")
@@ -644,6 +690,66 @@ client.upload_photos(
     gbp_media_category="EXTERIOR",
 )
 ```
+
+### Bluesky
+- `bluesky_link_url` - External embed link preview (text)
+- `bluesky_alt_text` - Alt text per image/video (JSON array, `||`-separated, or string)
+- `bluesky_langs` - Comma list, max 3 BCP-47 codes
+- `bluesky_labels` - `porn`, `sexual`, `nudity`, `graphic-media`
+- `bluesky_gallery` - Publish up to 20 images as a gallery (`false` keeps the first 4)
+- `bluesky_threadgate` / `bluesky_reply_settings` - Who can reply
+- `bluesky_postgate` / `bluesky_quote_settings` - `disable_quotes` to block quotes
+- `bluesky_quote_uri` / `bluesky_quote_id` / `bluesky_quote_url` - Quote another post
+
+### Discord
+- `discord_thread_id` / `discord_thread_name` / `discord_applied_tags` - Thread or forum post
+- `discord_embeds` / `discord_poll` / `discord_allowed_mentions` - JSON
+- `discord_username` / `discord_avatar_url` - Per-post webhook identity
+- `discord_alt_text` / `discord_flags` / `discord_tts` / `discord_max_file_mb`
+
+### Telegram
+- `telegram_parse_mode` - `MarkdownV2` or `HTML`
+- `telegram_message_thread_id` - Forum topic
+- `telegram_disable_notification` / `telegram_protect_content` / `telegram_has_spoiler` / `telegram_pin`
+- `telegram_link_preview` / `telegram_reply_markup` / `telegram_as_document`
+- `telegram_caption_overflow` - `truncate` (default) or `split`
+- `telegram_media_urls` - Comma-separated public URLs for a mixed album
+
+### Mastodon
+- `mastodon_visibility` / `mastodon_sensitive` / `mastodon_spoiler_text` / `mastodon_language`
+- `mastodon_alt_text` - `|`-separated for albums
+- `mastodon_poll_options` / `mastodon_poll_expires_in` / `mastodon_poll_multiple`
+- `mastodon_scheduled_at` - ISO 8601, at least 5 minutes ahead
+
+### WordPress
+- `wordpress_status` / `wordpress_date` - `publish`, `draft`, `pending`, `future` (`date` required for `future`)
+- `wordpress_categories` / `wordpress_tags` / `wordpress_excerpt` / `wordpress_slug`
+- `wordpress_alt_text` / `wordpress_media_caption` / `wordpress_block_format`
+
+### Lemmy
+- `lemmy_url` / `lemmy_community` / `lemmy_nsfw` / `lemmy_language_id` / `lemmy_alt_text`
+
+### Slack
+- `slack_markdown` / `slack_mrkdwn` / `slack_blocks` / `slack_alt_text`
+- `slack_first_comment_mode` - `separate` (default) or `inline`
+
+### Nostr
+- `nostr_kind` - `1` default, `20` picture, `22` short video, `34235` video, `30023` long-form
+- `nostr_long_form` - Shorthand for kind 30023
+
+### Dev.to
+- `devto_tags` / `devto_canonical_url` / `devto_description` / `devto_main_image` / `devto_series` / `devto_published`
+
+### Hashnode
+- `hashnode_body` / `content` - Article body
+- `hashnode_tags` / `hashnode_original_article_url` / `hashnode_subtitle` / `hashnode_cover_image_url` / `hashnode_draft`
+
+### Whop
+- `whop_body` / `whop_pinned` / `whop_is_mention` / `whop_paywall_amount` / `whop_paywall_currency` / `whop_attachment_ids`
+
+### Listmonk
+- `listmonk_content_type` - `richtext` (default), `markdown`, `html`, `plain`
+- `listmonk_send_at` / `listmonk_lists` / `listmonk_template_id` / `listmonk_media_ids`
 
 ## Common Options
 

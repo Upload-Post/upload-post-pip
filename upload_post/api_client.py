@@ -7,6 +7,7 @@ Facebook, Pinterest, Threads, Reddit, Bluesky, Discord, Telegram, and X (Twitter
 
 from pathlib import Path
 from typing import Dict, List, Union, Optional, Any
+import json
 import requests
 
 
@@ -163,6 +164,133 @@ class UploadPostClient:
             if kwargs.get(key):
                 data.append((key, kwargs[key]))
 
+    @staticmethod
+    def _put(data: List[tuple], key: str, value, kind: str = "str"):
+        """Append one form field. kind: str, bool, json, list, upper."""
+        if value is None:
+            return
+        if kind == "bool":
+            data.append((key, str(value).lower()))
+            return
+        if kind == "json":
+            if isinstance(value, (dict, list)):
+                data.append((key, json.dumps(value)))
+            elif value != "":
+                data.append((key, str(value)))
+            return
+        if kind == "list":
+            if isinstance(value, (list, tuple)):
+                form_key = key if key.endswith("[]") else f"{key}[]"
+                for item in value:
+                    if item is None or item == "":
+                        continue
+                    if isinstance(item, (dict, list)):
+                        data.append((form_key, json.dumps(item)))
+                    else:
+                        data.append((form_key, str(item)))
+            elif value != "":
+                data.append((key, str(value)))
+            return
+        if kind == "upper":
+            if value != "":
+                data.append((key, str(value).upper()))
+            return
+        if value == "":
+            return
+        data.append((key, str(value)))
+
+    def _put_many(self, data: List[tuple], kwargs: dict, spec):
+        """Copy whitelisted kwargs into multipart. spec: (key, kind) pairs."""
+        for key, kind in spec:
+            self._put(data, key, kwargs.get(key), kind)
+
+    def _put_file(
+        self,
+        data: List[tuple],
+        files: Optional[List[tuple]],
+        opened: Optional[List],
+        key: str,
+        value,
+    ):
+        """Attach a local file, or send a URL / media id as a form string."""
+        if value is None or value == "":
+            return
+        val = str(value)
+        if val.lower().startswith(("http://", "https://")):
+            data.append((key, val))
+            return
+        path = Path(val)
+        if files is not None and path.exists():
+            fh = path.open("rb")
+            if opened is not None:
+                opened.append(fh)
+            files.append((key, (path.name, fh)))
+            return
+        data.append((key, val))
+
+    def _add_all_platform_params(
+        self,
+        data: List[tuple],
+        platforms: Optional[List[str]],
+        *,
+        is_video: bool = False,
+        is_text: bool = False,
+        files: Optional[List[tuple]] = None,
+        opened: Optional[List] = None,
+        **kwargs,
+    ):
+        """Dispatch platform whitelists. Fields not listed here are dropped."""
+        if "tiktok" in platforms and not is_text:
+            self._add_tiktok_params(data, is_video=is_video, **kwargs)
+        if "instagram" in platforms and not is_text:
+            self._add_instagram_params(data, is_video=is_video, files=files, **kwargs)
+        if "youtube" in platforms and is_video:
+            self._add_youtube_params(data, files=files, **kwargs)
+        if "linkedin" in platforms:
+            self._add_linkedin_params(
+                data, is_text=is_text, files=files, opened=opened, **kwargs
+            )
+        if "facebook" in platforms:
+            self._add_facebook_params(
+                data, is_video=is_video, is_text=is_text, **kwargs
+            )
+        if "pinterest" in platforms and not is_text:
+            self._add_pinterest_params(data, is_video=is_video, **kwargs)
+        if "x" in platforms:
+            self._add_x_params(
+                data, is_text=is_text, files=files, opened=opened, **kwargs
+            )
+        if "threads" in platforms:
+            self._add_threads_params(data, is_text=is_text, **kwargs)
+        if "reddit" in platforms:
+            self._add_reddit_params(data, is_text=is_text, **kwargs)
+        if "google_business" in platforms:
+            self._add_google_business_params(data, **kwargs)
+        if "bluesky" in platforms:
+            self._add_bluesky_params(data, **kwargs)
+        if "discord" in platforms:
+            self._add_discord_params(data, **kwargs)
+        if "telegram" in platforms:
+            self._add_telegram_params(data, **kwargs)
+        if "mastodon" in platforms:
+            self._add_mastodon_params(data, **kwargs)
+        if "wordpress" in platforms:
+            self._add_wordpress_params(data, **kwargs)
+        if "lemmy" in platforms:
+            self._add_lemmy_params(data, **kwargs)
+        if "slack" in platforms:
+            self._add_slack_params(data, **kwargs)
+        if "nostr" in platforms:
+            self._add_nostr_params(data, **kwargs)
+        if "devto" in platforms:
+            self._add_devto_params(data, **kwargs)
+        if "hashnode" in platforms:
+            self._add_hashnode_params(data, **kwargs)
+        if "whop" in platforms:
+            self._add_whop_params(data, **kwargs)
+        if "listmonk" in platforms:
+            self._add_listmonk_params(data, **kwargs)
+
     # TikTok form fields, by where they apply. Booleans go out lowercased
     # ("true"/"false"), everything else as a plain string.
     #
@@ -187,9 +315,15 @@ class UploadPostClient:
         ("tiktok_location_id", False),
         ("tiktok_location_name", False),
         ("tiktok_is_ai_generated", True),
+        ("is_ai_generated", True),
+        # post_mode="MEDIA_UPLOAD" and tiktok_upload_to_draft=True are the same
+        # draft. Aliases upload_to_draft / is_draft are accepted too.
+        ("tiktok_upload_to_draft", True),
+        ("upload_to_draft", True),
+        ("is_draft", True),
     )
     # Video-only: TikTok's photo contract takes the track id alone, with no
-    # volume or trim, and has no custom cover or draft switch.
+    # volume or trim, and has no custom cover.
     _TIKTOK_VIDEO_FIELDS = (
         ("disable_duet", True),
         ("disable_stitch", True),
@@ -200,7 +334,10 @@ class UploadPostClient:
         ("tiktok_music_end", False),
         ("tiktok_original_sound_volume", False),
         ("tiktok_cover_image_url", False),
-        ("tiktok_upload_to_draft", True),
+        ("tiktok_is_ads_only", True),
+        ("is_ads_only", True),
+        ("tiktok_tto_invite_link", False),
+        ("tto_invite_link", False),
     )
     _TIKTOK_PHOTO_FIELDS = (
         ("auto_add_music", True),
@@ -248,6 +385,10 @@ class UploadPostClient:
                 data.append(("audio_name", kwargs["audio_name"]))
             if kwargs.get("thumb_offset"):
                 data.append(("thumb_offset", kwargs["thumb_offset"]))
+
+        self._put_many(data, kwargs, (
+            ("instagram_alt_text", "list"),
+        ))
 
     def _add_youtube_params(self, data: List[tuple], files: List[tuple] = None, **kwargs):
         """Add YouTube-specific parameters."""
@@ -306,16 +447,57 @@ class UploadPostClient:
                             data.append((f"youtube_subtitle_file_{idx}", str(sub["file"])))
                     elif sub.get("url"):
                         data.append((f"youtube_subtitle_file_{idx}", sub["url"]))
+        self._put_many(data, kwargs, (
+            ("youtube_notify_subscribers", "bool"),
+            ("youtube_publish_at", "str"),
+        ))
 
-    def _add_linkedin_params(self, data: List[tuple], is_text: bool = False, **kwargs):
+    def _add_linkedin_params(
+        self,
+        data: List[tuple],
+        is_text: bool = False,
+        files: Optional[List[tuple]] = None,
+        opened: Optional[List] = None,
+        **kwargs,
+    ):
         """Add LinkedIn-specific parameters."""
-        if kwargs.get("visibility"):
-            data.append(("visibility", kwargs["visibility"]))
+        visibility = (
+            kwargs.get("visibility")
+            or kwargs.get("linkedin_visibility")
+            or kwargs.get("linkedinVisibility")
+        )
+        if visibility:
+            data.append(("visibility", visibility))
+        if kwargs.get("linkedin_visibility"):
+            data.append(("linkedin_visibility", kwargs["linkedin_visibility"]))
+        if kwargs.get("linkedinVisibility"):
+            data.append(("linkedinVisibility", kwargs["linkedinVisibility"]))
         if kwargs.get("target_linkedin_page_id"):
             data.append(("target_linkedin_page_id", kwargs["target_linkedin_page_id"]))
         if is_text and (kwargs.get("linkedin_link_url") or kwargs.get("link_url")):
             link = kwargs.get("linkedin_link_url") or kwargs.get("link_url")
             data.append(("linkedin_link_url", link))
+        self._put_many(data, kwargs, (
+            ("linkedin_alt_text", "list"),
+            ("linkedin_disable_reshare", "bool"),
+            ("linkedin_link_title", "str"),
+            ("linkedin_link_description", "str"),
+            ("linkedin_thumbnail_alt_text", "str"),
+            ("linkedin_target_geo_locations", "list"),
+            ("linkedin_target_industries", "list"),
+            ("linkedin_target_seniorities", "list"),
+            ("linkedin_target_job_functions", "list"),
+            ("linkedin_target_staff_count_ranges", "list"),
+            ("linkedin_target_interface_locales", "list"),
+            ("linkedin_target_degrees", "list"),
+            ("linkedin_target_fields_of_study", "list"),
+            ("linkedin_target_organizations", "list"),
+            ("linkedin_target_entities", "json"),
+            ("linkedin_target_check_audience", "bool"),
+            ("linkedin_subtitles_url", "str"),
+            ("linkedin_subtitles_text", "str"),
+        ))
+        self._put_file(data, files, opened, "linkedin_subtitles", kwargs.get("linkedin_subtitles"))
 
     def _add_facebook_params(self, data: List[tuple], is_video: bool = False, is_text: bool = False, **kwargs):
         """Add Facebook-specific parameters."""
@@ -337,6 +519,27 @@ class UploadPostClient:
         if is_text and kwargs.get("facebook_link_url"):
             data.append(("facebook_link_url", kwargs["facebook_link_url"]))
 
+        self._put_many(data, kwargs, (
+            ("facebook_alt_text", "list"),
+            ("facebook_place_id", "str"),
+            ("facebook_targeting", "json"),
+            ("facebook_feed_targeting", "json"),
+            ("facebook_is_ai_generated", "bool"),
+            ("facebook_collaborators", "list"),
+        ))
+        if is_text:
+            self._put_many(data, kwargs, (
+                ("facebook_call_to_action", "json"),
+                ("facebook_child_attachments", "json"),
+                ("facebook_multi_share_end_card", "bool"),
+            ))
+        if is_video:
+            self._put_many(data, kwargs, (
+                ("facebook_unpublished_content_type", "str"),
+                ("facebook_no_story", "bool"),
+                ("facebook_secret", "bool"),
+            ))
+
     def _add_pinterest_params(self, data: List[tuple], is_video: bool = False, **kwargs):
         """Add Pinterest-specific parameters."""
         if kwargs.get("pinterest_board_id"):
@@ -356,7 +559,23 @@ class UploadPostClient:
             if kwargs.get("pinterest_cover_image_key_frame_time") is not None:
                 data.append(("pinterest_cover_image_key_frame_time", str(kwargs["pinterest_cover_image_key_frame_time"])))
 
-    def _add_x_params(self, data: List[tuple], is_text: bool = False, **kwargs):
+        self._put_many(data, kwargs, (
+            ("pinterest_board_section_id", "str"),
+            ("pinterest_ai_disclosures", "list"),
+            ("pinterest_carousel_titles", "list"),
+            ("pinterest_carousel_descriptions", "list"),
+            ("pinterest_carousel_links", "list"),
+            ("pinterest_carousel_index", "str"),
+        ))
+
+    def _add_x_params(
+        self,
+        data: List[tuple],
+        is_text: bool = False,
+        files: Optional[List[tuple]] = None,
+        opened: Optional[List] = None,
+        **kwargs,
+    ):
         """Add X (Twitter) specific parameters."""
         reply_settings = kwargs.get("reply_settings")
         if reply_settings and reply_settings != "everyone":
@@ -406,7 +625,31 @@ class UploadPostClient:
                 if kwargs.get("poll_reply_settings"):
                     data.append(("poll_reply_settings", kwargs["poll_reply_settings"]))
 
-    def _add_threads_params(self, data: List[tuple], **kwargs):
+        self._put_many(data, kwargs, (
+            ("x_alt_text", "list"),
+            ("x_paid_partnership", "bool"),
+            ("reply_to_id", "str"),
+        ))
+        if not is_text:
+            self._put_many(data, kwargs, (
+                ("x_subtitles", "str"),
+                ("x_subtitles_url", "str"),
+                ("x_subtitles_language", "str"),
+                ("x_subtitles_name", "str"),
+            ))
+        else:
+            self._put_many(data, kwargs, (
+                ("x_article_title", "str"),
+                ("x_article_body", "str"),
+                ("x_article_content_state", "json"),
+                ("x_article_draft", "bool"),
+            ))
+            self._put_file(
+                data, files, opened, "x_article_cover_media",
+                kwargs.get("x_article_cover_media"),
+            )
+
+    def _add_threads_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add Threads-specific parameters."""
         if kwargs.get("threads_long_text_as_post") is not None:
             data.append(("threads_long_text_as_post", str(kwargs["threads_long_text_as_post"]).lower()))
@@ -414,6 +657,18 @@ class UploadPostClient:
             data.append(("threads_thread_media_layout", kwargs["threads_thread_media_layout"]))
         if kwargs.get("threads_topic_tag"):
             data.append(("threads_topic_tag", kwargs["threads_topic_tag"]))
+        self._put_many(data, kwargs, (
+            ("threads_reply_control", "str"),
+            ("threads_alt_text", "list"),
+            ("threads_reply_to_id", "str"),
+            ("threads_quote_post_id", "str"),
+        ))
+        if is_text:
+            self._put_many(data, kwargs, (
+                ("threads_link_attachment", "str"),
+                ("threads_poll_options", "list"),
+                ("threads_auto_publish_text", "bool"),
+            ))
 
     def _add_reddit_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add Reddit-specific parameters."""
@@ -425,6 +680,17 @@ class UploadPostClient:
             reddit_link = kwargs.get("reddit_link_url") or kwargs.get("link_url")
             if reddit_link:
                 data.append(("reddit_link_url", reddit_link))
+        self._put_many(data, kwargs, (
+            ("reddit_nsfw", "bool"),
+            ("nsfw", "bool"),
+            ("reddit_spoiler", "bool"),
+            ("spoiler", "bool"),
+            ("reddit_resubmit", "bool"),
+            ("reddit_send_replies", "bool"),
+            ("reddit_flair_text", "str"),
+            ("reddit_gallery_captions", "list"),
+            ("reddit_gallery_urls", "list"),
+        ))
 
     def _add_google_business_params(self, data: List[tuple], **kwargs):
         """Add Google Business Profile parameters.
@@ -468,6 +734,166 @@ class UploadPostClient:
             data.append(("gbp_offer_redeem_url", kwargs["gbp_offer_redeem_url"]))
         if kwargs.get("gbp_offer_terms"):
             data.append(("gbp_offer_terms", kwargs["gbp_offer_terms"]))
+        self._put_many(data, kwargs, (
+            ("gbp_language_code", "str"),
+            ("language_code", "str"),
+            ("gbp_language", "str"),
+            ("gbp_coupon_code", "str"),
+            ("coupon_code", "str"),
+            ("offer_coupon", "str"),
+            ("gbp_redeem_url", "str"),
+            ("gbp_terms", "str"),
+        ))
+
+    def _add_bluesky_params(self, data: List[tuple], **kwargs):
+        """Add Bluesky-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("bluesky_link_url", "str"),
+            ("bluesky_alt_text", "list"),
+            ("bluesky_alt_texts", "list"),
+            ("bluesky_langs", "str"),
+            ("bluesky_labels", "str"),
+            ("bluesky_gallery", "bool"),
+            ("bluesky_threadgate", "str"),
+            ("bluesky_reply_settings", "str"),
+            ("bluesky_postgate", "str"),
+            ("bluesky_quote_settings", "str"),
+            ("bluesky_quote_uri", "str"),
+            ("bluesky_quote_id", "str"),
+            ("bluesky_quote_url", "str"),
+        ))
+
+    def _add_discord_params(self, data: List[tuple], **kwargs):
+        """Add Discord-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("discord_thread_id", "str"),
+            ("discord_thread_name", "str"),
+            ("discord_applied_tags", "str"),
+            ("discord_embeds", "json"),
+            ("discord_username", "str"),
+            ("discord_avatar_url", "str"),
+            ("discord_allowed_mentions", "json"),
+            ("discord_alt_text", "str"),
+            ("discord_flags", "str"),
+            ("discord_tts", "bool"),
+            ("discord_poll", "json"),
+            ("discord_max_file_mb", "str"),
+        ))
+
+    def _add_telegram_params(self, data: List[tuple], **kwargs):
+        """Add Telegram-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("telegram_parse_mode", "str"),
+            ("telegram_message_thread_id", "str"),
+            ("telegram_disable_notification", "bool"),
+            ("telegram_protect_content", "bool"),
+            ("telegram_has_spoiler", "bool"),
+            ("telegram_link_preview", "bool"),
+            ("telegram_reply_markup", "json"),
+            ("telegram_caption_overflow", "str"),
+            ("telegram_as_document", "bool"),
+            ("telegram_media_urls", "str"),
+            ("telegram_pin", "bool"),
+        ))
+
+    def _add_mastodon_params(self, data: List[tuple], **kwargs):
+        """Add Mastodon-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("mastodon_visibility", "str"),
+            ("mastodon_sensitive", "bool"),
+            ("mastodon_spoiler_text", "str"),
+            ("mastodon_language", "str"),
+            ("mastodon_alt_text", "str"),
+            ("mastodon_poll_options", "str"),
+            ("mastodon_poll_expires_in", "str"),
+            ("mastodon_poll_multiple", "bool"),
+            ("mastodon_scheduled_at", "str"),
+        ))
+
+    def _add_wordpress_params(self, data: List[tuple], **kwargs):
+        """Add WordPress-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("wordpress_status", "str"),
+            ("wordpress_date", "str"),
+            ("wordpress_categories", "str"),
+            ("wordpress_tags", "str"),
+            ("wordpress_excerpt", "str"),
+            ("wordpress_slug", "str"),
+            ("wordpress_alt_text", "str"),
+            ("wordpress_media_caption", "str"),
+            ("wordpress_block_format", "bool"),
+        ))
+
+    def _add_lemmy_params(self, data: List[tuple], **kwargs):
+        """Add Lemmy-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("lemmy_url", "str"),
+            ("lemmy_community", "str"),
+            ("lemmy_nsfw", "bool"),
+            ("lemmy_language_id", "str"),
+            ("lemmy_alt_text", "str"),
+        ))
+
+    def _add_slack_params(self, data: List[tuple], **kwargs):
+        """Add Slack-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("slack_markdown", "bool"),
+            ("slack_blocks", "json"),
+            ("slack_mrkdwn", "bool"),
+            ("slack_alt_text", "str"),
+            ("slack_first_comment_mode", "str"),
+        ))
+
+    def _add_nostr_params(self, data: List[tuple], **kwargs):
+        """Add Nostr-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("nostr_kind", "str"),
+            ("nostr_long_form", "bool"),
+        ))
+
+    def _add_devto_params(self, data: List[tuple], **kwargs):
+        """Add Dev.to-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("devto_tags", "str"),
+            ("devto_canonical_url", "str"),
+            ("devto_description", "str"),
+            ("devto_main_image", "str"),
+            ("devto_series", "str"),
+            ("devto_published", "bool"),
+        ))
+
+    def _add_hashnode_params(self, data: List[tuple], **kwargs):
+        """Add Hashnode-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("hashnode_tags", "str"),
+            ("hashnode_original_article_url", "str"),
+            ("hashnode_subtitle", "str"),
+            ("hashnode_cover_image_url", "str"),
+            ("hashnode_draft", "bool"),
+            ("hashnode_body", "str"),
+            ("content", "str"),
+        ))
+
+    def _add_whop_params(self, data: List[tuple], **kwargs):
+        """Add Whop-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("whop_body", "str"),
+            ("whop_pinned", "bool"),
+            ("whop_is_mention", "bool"),
+            ("whop_paywall_amount", "str"),
+            ("whop_paywall_currency", "str"),
+            ("whop_attachment_ids", "str"),
+        ))
+
+    def _add_listmonk_params(self, data: List[tuple], **kwargs):
+        """Add Listmonk-specific parameters."""
+        self._put_many(data, kwargs, (
+            ("listmonk_content_type", "str"),
+            ("listmonk_send_at", "str"),
+            ("listmonk_lists", "str"),
+            ("listmonk_template_id", "str"),
+            ("listmonk_media_ids", "str"),
+        ))
 
     def upload_video(
         self,
@@ -513,9 +939,12 @@ class UploadPostClient:
                 disable_stitch: Disable stitch
                 cover_timestamp: Timestamp in ms for cover
                 is_aigc: AI-generated content flag
-                post_mode: DIRECT_POST or MEDIA_UPLOAD
+                post_mode: DIRECT_POST or MEDIA_UPLOAD. MEDIA_UPLOAD is the
+                    same draft as tiktok_upload_to_draft=True.
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
+                tiktok_is_ads_only: Only show the video in ads
+                tiktok_tto_invite_link: TikTok One invite link (needs branded content)
 
             TikTok music, location, cover and draft options. Available on
             connections that declare the matching capability (`music`,
@@ -537,8 +966,9 @@ class UploadPostClient:
                 tiktok_location_name: Location name, required together with the id
                 tiktok_cover_image_url: Custom cover image URL
                 tiktok_is_ai_generated: AI-generated content disclosure
-                tiktok_upload_to_draft: Publish to drafts. When True TikTok
-                                        ignores the rest of the post settings
+                tiktok_upload_to_draft: Publish to drafts (alias of
+                    post_mode="MEDIA_UPLOAD"; also upload_to_draft / is_draft).
+                    When True TikTok ignores the rest of the post settings.
 
             Instagram:
                 media_type: REELS or STORIES
@@ -627,6 +1057,7 @@ class UploadPostClient:
         data: List[tuple] = []
         files: List[tuple] = []
         video_file = None
+        opened_files: List = []
         
         try:
             video_str = str(video_path)
@@ -640,31 +1071,18 @@ class UploadPostClient:
                 files.append(("video", (video_p.name, video_file)))
             
             self._add_common_params(data, user, title, platforms, **kwargs)
-            
-            if "tiktok" in platforms:
-                self._add_tiktok_params(data, is_video=True, **kwargs)
-            if "instagram" in platforms:
-                self._add_instagram_params(data, is_video=True, files=files, **kwargs)
-            if "youtube" in platforms:
-                self._add_youtube_params(data, files=files, **kwargs)
-            if "linkedin" in platforms:
-                self._add_linkedin_params(data, **kwargs)
-            if "facebook" in platforms:
-                self._add_facebook_params(data, is_video=True, **kwargs)
-            if "pinterest" in platforms:
-                self._add_pinterest_params(data, is_video=True, **kwargs)
-            if "x" in platforms:
-                self._add_x_params(data, is_text=False, **kwargs)
-            if "threads" in platforms:
-                self._add_threads_params(data, **kwargs)
-            if "google_business" in platforms:
-                self._add_google_business_params(data, **kwargs)
+            self._add_all_platform_params(
+                data, platforms, is_video=True, is_text=False,
+                files=files, opened=opened_files, **kwargs,
+            )
 
             return self._request("/upload", "POST", data=data, files=files if files else None)
             
         finally:
             if video_file:
                 video_file.close()
+            for f in opened_files:
+                f.close()
 
     def upload_photos(
         self,
@@ -705,17 +1123,19 @@ class UploadPostClient:
                               that declare the `photo_privacy` capability - see
                               `capabilities` on the TikTok account returned by
                               list_users().
-                post_mode: DIRECT_POST or MEDIA_UPLOAD
+                post_mode: DIRECT_POST or MEDIA_UPLOAD. MEDIA_UPLOAD is the
+                    same draft as tiktok_upload_to_draft=True.
                 auto_add_music: Auto add music
                 disable_comment: Disable comments
                 photo_cover_index: Index of photo for cover (0-based)
                 tiktok_music_id: Commercial Music Library track id
                                  (see get_tiktok_trending_music). TikTok's photo
-                                 contract takes the id alone - the volume, trim,
-                                 cover-image and draft fields are video-only.
+                                 contract takes the id alone - the volume, trim
+                                 and cover-image fields are video-only.
                 tiktok_location_id / tiktok_location_name: Location tag, both
                                  required together.
                 tiktok_is_ai_generated: AI-generated content disclosure.
+                tiktok_upload_to_draft: Same draft as post_mode="MEDIA_UPLOAD".
                 brand_content_toggle: Branded content toggle
                 brand_organic_toggle: Brand organic toggle
             
@@ -759,6 +1179,10 @@ class UploadPostClient:
             Reddit:
                 subreddit: Subreddit name (without r/)
                 flair_id: Flair template ID
+                reddit_nsfw / reddit_spoiler / reddit_resubmit / reddit_send_replies
+                reddit_flair_text / reddit_gallery_captions / reddit_gallery_urls
+                Uploads currently return error_code=reddit_unavailable until
+                the Reddit app is restored.
 
             Google Business:
                 gbp_location_id: Location, e.g. "accounts/123/locations/456". Required
@@ -799,25 +1223,10 @@ class UploadPostClient:
                     files.append(("photos[]", (photo_p.name, photo_file)))
 
             self._add_common_params(data, user, title, platforms, **kwargs)
-
-            if "tiktok" in platforms:
-                self._add_tiktok_params(data, is_video=False, **kwargs)
-            if "instagram" in platforms:
-                self._add_instagram_params(data, is_video=False, **kwargs)
-            if "linkedin" in platforms:
-                self._add_linkedin_params(data, **kwargs)
-            if "facebook" in platforms:
-                self._add_facebook_params(data, is_video=False, **kwargs)
-            if "pinterest" in platforms:
-                self._add_pinterest_params(data, is_video=False, **kwargs)
-            if "x" in platforms:
-                self._add_x_params(data, is_text=False, **kwargs)
-            if "threads" in platforms:
-                self._add_threads_params(data, **kwargs)
-            if "reddit" in platforms:
-                self._add_reddit_params(data, **kwargs)
-            if "google_business" in platforms:
-                self._add_google_business_params(data, **kwargs)
+            self._add_all_platform_params(
+                data, platforms, is_video=False, is_text=False,
+                files=files, opened=opened_files, **kwargs,
+            )
 
             first_comment_media = kwargs.get("first_comment_media")
             if first_comment_media:
@@ -893,6 +1302,10 @@ class UploadPostClient:
                 reddit_link_url: URL for link post. Creates a Reddit link post
                     (kind: "link") instead of a text post. Overrides `link_url`
                     for Reddit.
+                reddit_nsfw / reddit_spoiler / reddit_resubmit / reddit_send_replies
+                reddit_flair_text / reddit_gallery_captions / reddit_gallery_urls
+                Uploads currently return error_code=reddit_unavailable until
+                the Reddit app is restored.
 
             Google Business:
                 gbp_location_id: Location, e.g. "accounts/123/locations/456". Required
@@ -913,7 +1326,8 @@ class UploadPostClient:
             UploadPostError: If upload fails.
         """
         data: List[tuple] = []
-        files: Optional[List[tuple]] = None
+        files: List[tuple] = []
+        opened_files: List = []
 
         self._add_common_params(data, user, title, platforms, **kwargs)
 
@@ -921,27 +1335,13 @@ class UploadPostClient:
         if kwargs.get("link_url"):
             data.append(("link_url", kwargs["link_url"]))
 
-        if "linkedin" in platforms:
-            self._add_linkedin_params(data, is_text=True, **kwargs)
-        if "facebook" in platforms:
-            self._add_facebook_params(data, is_video=False, is_text=True, **kwargs)
-        if "x" in platforms:
-            self._add_x_params(data, is_text=True, **kwargs)
-        if "threads" in platforms:
-            self._add_threads_params(data, **kwargs)
-        if "reddit" in platforms:
-            self._add_reddit_params(data, is_text=True, **kwargs)
-        if "bluesky" in platforms:
-            bluesky_link = kwargs.get("bluesky_link_url")
-            if bluesky_link:
-                data.append(("bluesky_link_url", bluesky_link))
-        if "google_business" in platforms:
-            self._add_google_business_params(data, **kwargs)
+        self._add_all_platform_params(
+            data, platforms, is_video=False, is_text=True,
+            files=files, opened=opened_files, **kwargs,
+        )
 
         first_comment_media = kwargs.get("first_comment_media")
-        opened_files: List = []
         if first_comment_media:
-            files = []
             for media_path in first_comment_media:
                 p = Path(media_path)
                 if not p.exists():
@@ -951,7 +1351,7 @@ class UploadPostClient:
                 files.append(("first_comment_media[]", (p.name, f)))
 
         try:
-            return self._request("/upload_text", "POST", data=data, files=files)
+            return self._request("/upload_text", "POST", data=data, files=files if files else None)
         finally:
             for f in opened_files:
                 f.close()
@@ -968,6 +1368,7 @@ class UploadPostClient:
         timezone: Optional[str] = None,
         add_to_queue: Optional[bool] = None,
         async_upload: Optional[bool] = None,
+        **kwargs,
     ) -> Dict:
         """
         Upload a document to LinkedIn (PDF, PPT, PPTX, DOC, DOCX).
@@ -983,6 +1384,8 @@ class UploadPostClient:
             timezone: Timezone for scheduled date.
             add_to_queue: Add to posting queue.
             async_upload: Process asynchronously.
+            **kwargs: Extra LinkedIn form fields (linkedin_disable_reshare,
+                linkedin_visibility, targeting, …).
 
         Returns:
             API response.
@@ -993,6 +1396,7 @@ class UploadPostClient:
         data: List[tuple] = []
         files: List[tuple] = []
         doc_file = None
+        opened_files: List = []
         
         try:
             doc_str = str(document_path)
@@ -1023,12 +1427,17 @@ class UploadPostClient:
                 data.append(("add_to_queue", str(add_to_queue).lower()))
             if async_upload is not None:
                 data.append(("async_upload", str(async_upload).lower()))
+            self._add_linkedin_params(
+                data, files=files, opened=opened_files, **kwargs
+            )
             
             return self._request("/upload_document", "POST", data=data, files=files if files else None)
             
         finally:
             if doc_file:
                 doc_file.close()
+            for f in opened_files:
+                f.close()
 
     # ==================== Status & History ====================
 
