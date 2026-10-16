@@ -8,6 +8,7 @@ Facebook, Pinterest, Threads, Reddit, Bluesky, Discord, Telegram, and X (Twitter
 from pathlib import Path
 from typing import Dict, List, Union, Optional, Any
 import json
+from urllib.parse import quote
 import requests
 
 
@@ -1881,17 +1882,44 @@ class UploadPostClient:
         """
         return self._request("/uploadposts/users", "GET")
 
-    def create_user(self, username: str) -> Dict:
+    def create_user(self, username: str, display_name: Optional[str] = None) -> Dict:
         """
         Create a new user/profile.
 
         Args:
-            username: Profile name to create.
+            username: Profile name to create. It is the ``user`` value of
+                every API call and cannot be changed later.
+            display_name: Optional label shown in the dashboard instead of
+                the username (max 100 characters).
 
         Returns:
             Created user.
         """
-        return self._request("/uploadposts/users", "POST", json_data={"username": username})
+        body: Dict[str, Any] = {"username": username}
+        if display_name is not None:
+            body["display_name"] = display_name
+        return self._request("/uploadposts/users", "POST", json_data=body)
+
+    def rename_user(self, username: str, display_name: Optional[str]) -> Dict:
+        """
+        Rename a user/profile by setting its display name.
+
+        Only the label shown in the dashboard changes: the username stays the
+        ``user`` value of every API call, so existing integrations keep working.
+
+        Args:
+            username: Profile username (unchanged).
+            display_name: New label (max 100 characters). ``None`` or an empty
+                string clears it and the dashboard shows the username again.
+
+        Returns:
+            ``{"success": True, "profile": {"username": ..., "display_name": ...}}``.
+        """
+        return self._request(
+            f"/uploadposts/users/{quote(username, safe='')}",
+            "PATCH",
+            json_data={"display_name": display_name},
+        )
 
     def delete_user(self, username: str) -> Dict:
         """

@@ -163,8 +163,14 @@ client.cancel_scheduled("job-id")
 # List all profiles
 users = client.list_users()
 
-# Create a new profile
+# Create a new profile (the username is the `user` value of every API call)
 client.create_user("new-profile")
+client.create_user("client-acme", display_name="Acme Corp")
+
+# Rename a profile: only the label shown in the dashboard changes,
+# the username stays the same so existing integrations keep working
+client.rename_user("client-acme", "Acme Corporation")
+client.rename_user("client-acme", None)  # back to showing the username
 
 # Delete a profile
 client.delete_user("old-profile")
