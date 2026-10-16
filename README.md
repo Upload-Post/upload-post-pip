@@ -153,6 +153,16 @@ client.edit_scheduled(
     timezone="America/New_York",
 )
 
+# Change the text or any other option without uploading the video again
+client.edit_scheduled(
+    "job-id",
+    platform_content={"youtube": {"title": "New title"}},
+    fields={"cover_timestamp": 4200, "is_aigc": True},
+)
+
+# What a scheduled post was scheduled with, and whether it is still editable
+post = client.get_scheduled("job-id")
+
 # Cancel a scheduled post
 client.cancel_scheduled("job-id")
 ```

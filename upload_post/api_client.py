@@ -1843,25 +1843,59 @@ class UploadPostClient:
         self,
         job_id: str,
         scheduled_date: Optional[str] = None,
-        timezone: Optional[str] = None
+        timezone: Optional[str] = None,
+        title: Optional[str] = None,
+        caption: Optional[str] = None,
+        platform_content: Optional[Dict[str, Dict[str, str]]] = None,
+        fields: Optional[Dict[str, Any]] = None,
     ) -> Dict:
         """
-        Edit a scheduled post.
+        Edit a scheduled post. The media, profile and platforms cannot change.
 
         Args:
             job_id: Scheduled job ID.
             scheduled_date: New scheduled date (ISO 8601).
             timezone: New timezone.
+            title: New title for every platform of the post.
+            caption: New caption/description for every platform of the post.
+            platform_content: Per-platform text, e.g.
+                {"youtube": {"title": "..."}, "tiktok": {"caption": "..."}}.
+            fields: Any other upload option by its API form name, e.g.
+                {"cover_timestamp": 4200, "is_aigc": True, "thumb_offset": "4200"}.
+                None as a value removes the option. Sent as given.
 
         Returns:
-            Edit result.
+            Edit result. A post that is publishing (or due within 60 s) is
+            rejected with HTTP 409, error_code "scheduled_post_in_progress".
         """
         body = {}
         if scheduled_date:
             body["scheduled_date"] = scheduled_date
         if timezone:
             body["timezone"] = timezone
+        if title is not None:
+            body["title"] = title
+        if caption is not None:
+            body["caption"] = caption
+        if platform_content:
+            body["platform_content"] = platform_content
+        if fields:
+            body["fields"] = fields
         return self._request(f"/uploadposts/schedule/{job_id}", "PATCH", json_data=body)
+
+    def get_scheduled(self, job_id: str) -> Dict:
+        """
+        Get one scheduled post: its options (as edit_scheduled ``fields`` takes
+        them), signed media URLs and whether it can still be edited.
+        """
+        return self._request(f"/uploadposts/schedule/{job_id}", "GET")
+
+    def get_scheduled_thumbnail(self, job_id: str) -> Dict:
+        """
+        Thumbnail of a scheduled post, built once if it has none yet.
+        HTTP 202/429 carry ``retry_after`` seconds.
+        """
+        return self._request(f"/uploadposts/schedule/{job_id}/thumbnail", "GET")
 
     # ==================== User Management ====================
 
