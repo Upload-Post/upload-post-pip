@@ -153,6 +153,21 @@ client.edit_scheduled(
     timezone="America/New_York",
 )
 
+# Fix the text in place (only the platforms listed change)
+client.edit_scheduled(
+    "job-id",
+    platform_content={"instagram": {"caption": "New Instagram caption"}},
+)
+
+# Change any other option by its API form name (None removes it), schedule the
+# video natively on YouTube, or replace the Reels cover
+client.edit_scheduled(
+    "job-id",
+    fields={"privacyStatus": "unlisted", "disable_comment": True},
+    youtube_publish_at="2026-11-01T09:00:00Z",
+    cover_image_base64="data:image/jpeg;base64,...",  # or remove_cover=True
+)
+
 # Cancel a scheduled post
 client.cancel_scheduled("job-id")
 ```

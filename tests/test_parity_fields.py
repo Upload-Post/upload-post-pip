@@ -38,7 +38,6 @@ class TestVersions(unittest.TestCase):
         match = re.search(r'version="([^"]*)"', text)
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1), __version__)
-        self.assertEqual(__version__, "2.13.0")
 
 
 class TestTikTokDraftAliases(unittest.TestCase):

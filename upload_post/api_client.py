@@ -1843,24 +1843,78 @@ class UploadPostClient:
         self,
         job_id: str,
         scheduled_date: Optional[str] = None,
-        timezone: Optional[str] = None
+        timezone: Optional[str] = None,
+        *,
+        title: Optional[str] = None,
+        caption: Optional[str] = None,
+        description: Optional[str] = None,
+        platform_content: Optional[Dict[str, Dict[str, str]]] = None,
+        fields: Optional[Dict[str, Any]] = None,
+        youtube_publish_at: Optional[str] = None,
+        cover_image_base64: Optional[str] = None,
+        cover_filename: Optional[str] = None,
+        cover_content_type: Optional[str] = None,
+        remove_cover: bool = False,
     ) -> Dict:
         """
-        Edit a scheduled post.
+        Edit a scheduled post (``PATCH /api/uploadposts/schedule/<job_id>``).
+
+        Every argument is optional; only what you pass is changed. The media,
+        profile and platforms of a scheduled post cannot be edited.
 
         Args:
             job_id: Scheduled job ID.
-            scheduled_date: New scheduled date (ISO 8601).
-            timezone: New timezone.
+            scheduled_date: New scheduled date (ISO 8601), future and within 1 year.
+            timezone: IANA timezone ``scheduled_date`` is read in (default UTC).
+            title: New title for every platform of the post.
+            caption: New caption/description for every platform of the post.
+            description: Alias of ``caption`` (``caption`` wins if both are given).
+            platform_content: Per-platform text, e.g.
+                ``{"instagram": {"caption": "..."}, "youtube": {"title": "..."}}``.
+                Only the platforms listed are touched.
+            fields: Any other editable upload option, keyed by its API form name
+                (``privacyStatus``, ``tags``, ``disable_comment``,
+                ``instagram_first_comment``, ``gbp_cta_url``...). ``None`` as a
+                value removes that option; unknown or internal keys are ignored.
+            youtube_publish_at: Native YouTube scheduling (RFC3339), sent as
+                ``fields["youtube_publish_at"]``; wins over the same key in
+                ``fields``. To remove it pass ``fields={"youtube_publish_at": None}``.
+            cover_image_base64: New cover image (Instagram / Facebook Reels) as
+                base64 or a data URL.
+            cover_filename: File name of the new cover (default ``cover.jpg``).
+            cover_content_type: MIME type of the new cover (default ``image/jpeg``).
+            remove_cover: Remove the custom cover (ignores ``cover_image_base64``).
 
         Returns:
-            Edit result.
+            Edit result (``success``, ``job_id``, and the new ``scheduled_date``,
+            ``title``, ``caption``, ``platform_content`` when they changed).
         """
-        body = {}
+        body: Dict[str, Any] = {}
         if scheduled_date:
             body["scheduled_date"] = scheduled_date
         if timezone:
             body["timezone"] = timezone
+        if title is not None:
+            body["title"] = title
+        if caption is not None:
+            body["caption"] = caption
+        elif description is not None:
+            body["description"] = description
+        if platform_content:
+            body["platform_content"] = platform_content
+        edited_fields = dict(fields or {})
+        if youtube_publish_at is not None:
+            edited_fields["youtube_publish_at"] = youtube_publish_at
+        if edited_fields:
+            body["fields"] = edited_fields
+        if remove_cover:
+            body["remove_cover"] = True
+        elif cover_image_base64:
+            body["cover_image_base64"] = cover_image_base64
+            if cover_filename:
+                body["cover_filename"] = cover_filename
+            if cover_content_type:
+                body["cover_content_type"] = cover_content_type
         return self._request(f"/uploadposts/schedule/{job_id}", "PATCH", json_data=body)
 
     # ==================== User Management ====================
