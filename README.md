@@ -736,7 +736,7 @@ client.upload_video(
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
-- `brand_content_toggle` - Branded content toggle
+- `brand_content_toggle` - Branded content toggle (paid partnership with a third-party brand). Direct posts only, and TikTok does not allow it with `privacy_level="SELF_ONLY"`
 - `brand_organic_toggle` - Brand organic toggle
 - `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
 - `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid promotion declaration. If YouTube visibly did not keep it, the result carries a `warnings` entry
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -825,6 +825,7 @@ for the music, location, cover and draft options.
 - `facebook_call_to_action` / `facebook_child_attachments` / `facebook_multi_share_end_card` - Link post CTA and carousel
 - `facebook_is_ai_generated` - AI-generated flag on Reels
 - `facebook_collaborators` - Page ids to invite on Reels
+- `facebook_sponsor_id` - Sponsor's Page id for Facebook's branded content tag (Page photos, videos and text posts; Reels and Stories have none)
 - `facebook_unpublished_content_type` - DRAFT / INLINE_CREATED / ADS_POST on page video (`SCHEDULED` is rejected; use `scheduled_date`)
 - `facebook_no_story` / `facebook_secret` - Page video flags
 
@@ -836,6 +837,7 @@ for the music, location, cover and draft options.
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
 - `pinterest_board_section_id` - Board section id
 - `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
+- `pinterest_sponsor_id` - Sponsor's Pinterest account id for a paid partnership (closed beta on Pinterest's side)
 - `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
 - `pinterest_carousel_index` - 0-based cover slide
 
@@ -981,6 +983,34 @@ These options work across all upload methods:
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
+| `paid_partnership` | Mark the post as paid or sponsored on every network with a native label (see below) |
+
+### Paid partnerships and branded content
+
+`paid_partnership=True` is one switch for the networks whose API has a native label. A network's own
+option wins when you send both. Anything a network cannot carry comes back as an entry in `warnings`;
+the upload goes on.
+
+| Network | Option | Notes |
+|---------|--------|-------|
+| TikTok | `paid_partnership` or `brand_content_toggle` | Direct posts only. `SELF_ONLY` is refused with `commercial_disclosure_privacy_conflict` |
+| YouTube | `paid_partnership` or `hasPaidProductPlacement` | Read back after the upload; a `warnings` entry if YouTube did not keep it |
+| X | `paid_partnership` or `x_paid_partnership` | First post of a thread |
+| Facebook | `facebook_sponsor_id` | Page photos, videos and text posts; not Reels or Stories |
+| Pinterest | `pinterest_sponsor_id` | Closed beta on Pinterest's side |
+| Instagram, LinkedIn, Threads, others | none | No API field for it: use the app's own label |
+
+```python
+client.upload_video(
+    "clip.mp4",
+    title="Launch day",
+    user="my-profile",
+    platforms=["tiktok", "youtube"],
+    paid_partnership=True,
+)
+```
+
+Full field specification, requirements and verification: [Paid partnerships guide](https://docs.upload-post.com/guides/paid-partnerships).
 
 ## Error Handling
 
