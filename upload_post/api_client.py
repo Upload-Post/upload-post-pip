@@ -1053,7 +1053,8 @@ class UploadPostClient:
                 defaultAudioLanguage: Audio language (BCP-47)
                 allowedCountries: Comma-separated country codes
                 blockedCountries: Comma-separated country codes
-                hasPaidProductPlacement: Paid placement flag
+                hasPaidProductPlacement: Paid placement flag ("Paid promotion"). YouTube does not document it
+                    as settable: check ``youtube_paid_product_placement.applied`` in the YouTube result, not only ``success``
                 recordingDate: Recording date (ISO 8601)
                 youtube_playlist_id: Playlist ID (or list/comma-separated of IDs) to add
                     the uploaded video to after publishing
