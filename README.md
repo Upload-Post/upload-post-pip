@@ -40,6 +40,10 @@ print(response)
 - ✅ **Analytics** - Get engagement metrics
 - ✅ **Audience** - Who follows a profile, per platform
 - ✅ **Suggestions** - Hashtags and searches to post about, per platform
+- ✅ **Comments** - Read, reply, moderate; replies under a comment on TikTok, Threads, YouTube, Instagram, Facebook and LinkedIn
+- ✅ **Direct Messages** - Instagram, Messenger, WhatsApp and Bluesky
+- ✅ **AutoDM rules** - Account-wide Instagram comment/story/keyword DMs
+- ✅ **Webhook deliveries** - 7-day delivery log and redelivery
 - ✅ **Full Type Hints**
 
 ## API Reference
@@ -218,6 +222,33 @@ print(analytics["analytics"]["instagram"]["follower_demographics"])
 print(analytics["analytics"]["instagram"]["engaged_audience_demographics"])
 ```
 
+### Post Analytics and TikTok drafts
+
+```python
+# Every platform the upload went to, or just one of them
+stats = client.get_post_analytics("REQUEST_ID")
+tiktok = client.get_post_analytics("REQUEST_ID", platform="tiktok")
+
+# Any post of the account by its native id (e.g. one returned by get_media)
+client.get_post_analytics_by_platform_id("7412345678901234567", "tiktok", "my-profile")
+```
+
+A TikTok upload sent to drafts (`post_mode="MEDIA_UPLOAD"` or
+`tiktok_upload_to_draft=True`) has no post until the creator publishes it from
+the TikTok app. Call `get_post_analytics(request_id)` after that: Upload-Post
+asks TikTok which post came from the draft, then returns its metrics and fills
+in `platform_post_id` and `post_url`.
+
+- While the draft is still in the inbox, `post_metrics_error` says so. That
+  answer is reused for a while (about 5 minutes for a fresh upload, up to 6
+  hours for one several days old); after 30 days without a post Upload-Post
+  stops asking.
+- TikTok only gives the post id once the post is **public** and moderated. A
+  draft published as private never gets per-post analytics.
+- TikTok rows carry `original_publish_id` (the upload's TikTok `publish_id`),
+  here and in `get_cached_post_analytics`. `post_url` is empty when the
+  account's @username is not known.
+
 ### Cached Post Analytics
 
 Replays per-post metrics already fetched, instead of calling the platforms again. Only contains posts previously fetched through a live per-post endpoint; there is no background refresh, so captured_at is the last time that post was read live. Not subject to the live
@@ -286,6 +317,12 @@ fb_pages = client.get_facebook_pages("my-profile")
 # Get LinkedIn pages for a profile
 li_pages = client.get_linkedin_pages("my-profile")
 
+# Resolve any LinkedIn company Page to the urn + exact name a mention needs
+org = client.resolve_linkedin_organization(
+    "my-profile", "https://www.linkedin.com/company/linkedin/"
+)
+print(org["urn"], org["name"], org["mention"])  # urn:li:organization:1337 LinkedIn @[LinkedIn](urn:li:organization:1337)
+
 # Get Pinterest boards for a profile
 boards = client.get_pinterest_boards("my-profile")
 
@@ -324,6 +361,15 @@ replies = client.get_post_comments(
     comment_id="7412345678909999999",
 )
 
+# Same on Instagram, Facebook and LinkedIn (company Pages). On LinkedIn pass the
+# comment_urn from the listing; a bare id is only looked up in the first 250.
+replies = client.get_post_comments(
+    user="my-profile",
+    platform="linkedin",
+    post_id="urn:li:share:7500811262105264139",
+    comment_id="urn:li:comment:(urn:li:activity:7500811262105264139,7503818768586981376)",
+)
+
 # Comment on the post, or reply to a comment
 client.create_comment(
     user="my-profile",
@@ -351,6 +397,20 @@ On TikTok all of this needs the `comments` capability, which the account grants
 when it connects — see
 [What a TikTok connection can do](#what-a-tiktok-connection-can-do-capabilities).
 
+Replies (`comment_id`) work on TikTok, Threads, YouTube, Instagram, Facebook and
+LinkedIn (company Pages only); `post_id` is still required. X and Bluesky answer
+`platform_not_supported`. Error codes you can branch on with
+`UploadPostError.error_code`:
+
+| `error_code` | Status | Meaning |
+| --- | --- | --- |
+| `invalid_comment_id` | 400 | Wrong format (Instagram: digits; Facebook: `{post}_{comment}`; LinkedIn: digits or the `comment_urn`) |
+| `invalid_cursor` | 400 | LinkedIn replies: `after` must be the number from `next_cursor` |
+| `comment_not_found` | 404 | Instagram/Facebook do not know the comment (one without replies is a 200 with an empty list) |
+| `linkedin_comment_not_found` | 404 | Bare LinkedIn id not among the post's first 250 comments: pass the `comment_urn` |
+| `linkedin_personal_not_supported` | 403 | Personal LinkedIn profile: LinkedIn only lets us read company Pages |
+| `linkedin_page_access_denied` | 403 | The member who connected LinkedIn is no longer an admin of the Page |
+
 #### Moderating a comment: hide, like, pin
 
 `comment_action()` does the three and undoes them, on any platform that
@@ -377,6 +437,98 @@ client.comment_action(
 | `hide` | `unhide` | required |
 | `like` | `unlike` | not sent |
 | `pin` | `unpin` | required |
+
+### Direct Messages
+
+One pair of methods for every messaging platform: `instagram`, `facebook`
+(Messenger), `whatsapp` and `bluesky`.
+
+```python
+# Instagram: by the person's Instagram-scoped id, inside the 24-hour window
+client.send_dm("my-profile", "instagram", recipient_id="1784...", message="Thanks!")
+
+# Bluesky: by handle, DID or profile link. Links, #hashtags and @mentions are clickable
+sent = client.send_dm(
+    "my-profile", "bluesky",
+    recipient_id="alice.bsky.social",
+    message="Our new guide: https://example.com/guide",
+)
+
+# Share a Bluesky post, reply to a message, or act on one (no DM quota used)
+client.send_dm("my-profile", "bluesky", recipient_id="alice.bsky.social",
+               message="Look at this",
+               attachments={"type": "post", "url": "https://bsky.app/profile/alice.bsky.social/post/3l5t..."})
+client.send_dm("my-profile", "bluesky", conversation_id=sent["conversation_id"],
+               sender_action="react", message_id=sent["message_id"], reaction="🔥")
+client.send_dm("my-profile", "bluesky", conversation_id=sent["conversation_id"],
+               sender_action="mark_read")
+
+# Read conversations (Bluesky: at most 25 per page)
+page = client.get_dm_conversations("my-profile", "bluesky", messages_limit=5)
+for convo in page["conversations"]:
+    print(convo["id"], convo.get("status"), convo.get("unread_count"))
+
+# Bluesky-only filters: one conversation and its older messages, requests, unread
+client.get_dm_conversations("my-profile", "bluesky", conversation_id="3l5ttwb6ycx2f",
+                            messages_cursor="...")
+client.get_dm_conversations("my-profile", "bluesky", status="request", read_state="unread")
+```
+
+Any other `/dms/send` field (WhatsApp `template`, `location`, `contacts`,
+`list`, `cta_url`; Messenger `tag`, `template`...) goes through as a keyword
+argument. **Bluesky DMs need an app password created with "Allow access to your
+direct messages"** (Bluesky > Settings > Privacy and security > App passwords),
+then reconnect Bluesky with it; otherwise the API answers 403
+`bluesky_dm_scope_missing`. Other Bluesky codes:
+
+| `error_code` | Status | Meaning |
+| --- | --- | --- |
+| `bluesky_recipient_unavailable` | 403 | The recipient does not accept your DM (`reason`: `MessagesDisabled`, `NotFollowedBySender`, `BlockedActor`...). No quota used |
+| `bluesky_recipient_not_found` / `bluesky_conversation_not_found` / `bluesky_post_not_found` | 404 | Unknown handle, conversation or shared post |
+| `bluesky_message_too_long` | 400 | More than 1000 characters. Nothing sent |
+| `bluesky_rejected` | 400 | Bluesky refused it (e.g. a reaction that is not a single emoji) |
+| `bluesky_reauth_required` | 401 | Reconnect Bluesky |
+| `bluesky_rate_limited` | 429 | Wait `retry_after` seconds |
+| `bluesky_chat_unavailable` / `bluesky_edge_rate_limited` | 502 / 503 | Nothing was sent; retry later |
+| `bluesky_send_unconfirmed` | 504 | **It may have been sent.** Do not retry automatically: read the conversation first |
+
+New DMs (Instagram, Messenger, WhatsApp and Bluesky) can also reach you as the
+opt-in `dm_received` webhook. Bluesky has no push, so Upload-Post checks every
+5 minutes.
+
+### AutoDM rules (whole Instagram account)
+
+A rule answers comments on **every** post and reel of the account (present and
+future), plus story replies, story mentions and keyword DMs. Rules never expire
+and work only from Meta's real-time notifications.
+
+```python
+rule = client.create_autodm_rule(
+    profile_username="my-profile",
+    reply_message="Here is your free guide!",
+    triggers=["comment", "story_reply", "story_mention", "dm_keyword"],
+    trigger_keywords=["guide"],            # required for dm_keyword
+    buttons=[{"title": "Get the guide", "url": "https://example.com/guide"}],
+    per_user_cooldown_hours=24,            # 0-720; never < 24 for story/DM triggers
+)["rule"]
+
+for r in client.list_autodm_rules("my-profile")["rules"]:
+    print(r["rule_id"], r["status"], r["webhook"]["receiving_events"], r["webhook"].get("hint"))
+
+client.pause_autodm_rule(rule["rule_id"])
+client.resume_autodm_rule(rule["rule_id"])
+client.delete_autodm_rule(rule["rule_id"])
+```
+
+- Up to 10 rules per Instagram account; they do not count towards the
+  2-monitors-per-day limit. A post with its own monitor is answered by that
+  monitor only.
+- Pace: 25 DMs per account every 15 minutes plus the plan's daily DM allowance;
+  what does not fit is queued for up to 24 hours.
+- Errors: 409 `duplicate_rule` / `rule_limit_reached` /
+  `rule_creation_in_progress`, 502 `webhook_subscription_failed` (reconnect
+  Instagram), 503 `account_rules_disabled`, 409 `rule_stopped` on resume when
+  the account left its profile.
 
 ### Audience
 
@@ -445,6 +597,52 @@ vs non-followers), `new_followers`, `reach` and the watch times.
 
 Asking a platform a question it cannot answer fails with
 `platform_not_supported` and the list of the ones that can.
+
+## Webhooks: configuration, delivery log and redelivery
+
+```python
+# Turn the webhook on and opt into the inbound events
+client.update_notification_config(
+    webhook_url="https://example.com/upload-post",
+    webhook_events=["upload_completed", "dm_received", "comment_received"],
+    channels={"webhook": True},
+)
+print(client.get_notification_config()["notifications"]["webhook_secret"])
+
+# Did an event reach my server? (7-day history, newest first)
+failed = client.list_webhook_deliveries(status="failed", limit=20, include_payload=True)
+for d in failed["deliveries"]:
+    print(d["delivery_id"], d["event"], d["attempt_count"], d["last_status_code"], d["last_error"])
+
+# One delivery with its exact payload, and send it again
+one = client.get_webhook_delivery(failed["deliveries"][0]["delivery_id"])
+again = client.redeliver_webhook(one["delivery"]["delivery_id"])
+print(again["delivery"]["delivery_id"], again["delivery"]["redelivery_of"])
+```
+
+Webhooks are delivered **at least once**: a timeout, connection error, `5xx`,
+`408` or `429` is retried with the same body and the same
+`X-Upload-Post-Delivery` id (6 attempts over about 8.5 hours, header
+`X-Upload-Post-Attempt` 1-6); other `4xx` answers are final. Deduplicate by
+`X-Upload-Post-Delivery`. A redelivery is a new delivery with its own id and
+`X-Upload-Post-Redelivery-Of`. Filters of `list_webhook_deliveries`: `event`,
+`status` (`pending`, `delivered`, `failed`, `cancelled`), `request_id`,
+`job_id`, `profile_username`, `limit` (1-100), `page` (1-50). `redeliver_webhook`
+answers 409 `webhook_removed` / `event_unsubscribed` / `blocked_url` when there
+is nowhere to send it.
+
+## Team members (acting on the owner's account)
+
+```python
+client = UploadPostClient("MEMBER_API_KEY", act_as_user="owner@example.com")
+client.list_users()  # the owner's profiles
+```
+
+Every request carries `X-Act-As-User`. If the owner's current plan no longer
+covers your seat (the last invited members are suspended after a downgrade,
+never removed), requests fail with `status_code` 403 and `error_code`
+`"TEAM_SEAT_SUSPENDED"`; access comes back by itself when the owner upgrades or
+frees a seat.
 
 ## What a TikTok connection can do (`capabilities`)
 
@@ -658,7 +856,7 @@ for the music, location, cover and draft options.
 - `x_alt_text` - Alt text (string, `x_alt_text[]`, or JSON array; ≤1000 chars)
 - `x_subtitles` / `x_subtitles_url` / `x_subtitles_language` / `x_subtitles_name` - Video SRT captions
 - `x_paid_partnership` - Paid partnership flag on the first post
-- `x_article_title` / `x_article_body` / `x_article_content_state` / `x_article_draft` / `x_article_cover_media` - X Articles (text; Premium)
+- `x_article_title` / `x_article_body` / `x_article_content_state` / `x_article_draft` / `x_article_cover_media` - X Articles (text; Premium). Articles have two heading levels: a `### Heading` in the body, or a `header-three` block in `x_article_content_state`, is published as `header-two`
 
 ### Threads
 - `threads_long_text_as_post` - Post long text as single post (vs thread). Over 500 UTF-8 bytes this sends an official long post instead of truncating.
@@ -711,7 +909,7 @@ client.upload_photos(
 - `bluesky_alt_text` - Alt text per image/video (JSON array, `||`-separated, or string)
 - `bluesky_langs` - Comma list, max 3 BCP-47 codes
 - `bluesky_labels` - `porn`, `sexual`, `nudity`, `graphic-media`
-- `bluesky_gallery` - Publish up to 20 images as a gallery (`false` keeps the first 4)
+- `bluesky_gallery` - Publish up to 10 images as a gallery (`false` keeps the first 4). With more than 10, the first 10 are published and the response carries a `warnings` entry
 - `bluesky_threadgate` / `bluesky_reply_settings` - Who can reply
 - `bluesky_postgate` / `bluesky_quote_settings` - `disable_quotes` to block quotes
 - `bluesky_quote_uri` / `bluesky_quote_id` / `bluesky_quote_url` - Quote another post
@@ -796,6 +994,10 @@ try:
     print("Upload successful:", response)
 except UploadPostError as e:
     print("Upload failed:", str(e))
+    print(e.status_code)   # HTTP status, or None if no answer arrived
+    print(e.error_code)    # stable code, e.g. "bluesky_dm_scope_missing", "TEAM_SEAT_SUSPENDED"
+    print(e.response)      # decoded JSON body of the error
+    print(e.retry_after)   # Retry-After seconds, when the API sent it
 ```
 
 ## Links
