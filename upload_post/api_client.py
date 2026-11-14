@@ -188,6 +188,11 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Native paid-partnership / branded-content label on the networks whose API has
+        # one (TikTok, YouTube, X); the others answer with a `warnings` entry. A
+        # network-specific field (brand_content_toggle, hasPaidProductPlacement,
+        # x_paid_partnership) wins over it.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -581,6 +586,9 @@ class UploadPostClient:
         self._put_many(data, kwargs, (
             ("facebook_alt_text", "list"),
             ("facebook_place_id", "str"),
+            # Sponsor's numeric Page id: Meta's branded content tag on Page photos,
+            # videos and text posts (not Reels or Stories).
+            ("facebook_sponsor_id", "str"),
             ("facebook_targeting", "json"),
             ("facebook_feed_targeting", "json"),
             ("facebook_is_ai_generated", "bool"),
@@ -620,6 +628,8 @@ class UploadPostClient:
 
         self._put_many(data, kwargs, (
             ("pinterest_board_section_id", "str"),
+            # Sponsor's Pinterest account id (paid partnership; Pinterest closed beta).
+            ("pinterest_sponsor_id", "str"),
             ("pinterest_ai_disclosures", "list"),
             ("pinterest_carousel_titles", "list"),
             ("pinterest_carousel_descriptions", "list"),
@@ -1001,6 +1011,9 @@ class UploadPostClient:
                 post_mode: DIRECT_POST or MEDIA_UPLOAD. MEDIA_UPLOAD is the
                     same draft as tiktok_upload_to_draft=True.
                 brand_content_toggle: Branded content toggle
+                paid_partnership: Cross-network paid-partnership flag (see the
+                    common options): TikTok brand_content_toggle, YouTube
+                    hasPaidProductPlacement, X x_paid_partnership.
                 brand_organic_toggle: Brand organic toggle
                 tiktok_is_ads_only: Only show the video in ads
                 tiktok_tto_invite_link: TikTok One invite link (needs branded content)
@@ -1196,6 +1209,9 @@ class UploadPostClient:
                 tiktok_is_ai_generated: AI-generated content disclosure.
                 tiktok_upload_to_draft: Same draft as post_mode="MEDIA_UPLOAD".
                 brand_content_toggle: Branded content toggle
+                paid_partnership: Cross-network paid-partnership flag (see the
+                    common options): TikTok brand_content_toggle, YouTube
+                    hasPaidProductPlacement, X x_paid_partnership.
                 brand_organic_toggle: Brand organic toggle
             
             Instagram:

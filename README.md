@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid promotion declaration. YouTube may ignore it, so the result carries `youtube_paid_placement` (what YouTube stored) and a `warnings` entry when it was dropped
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -821,6 +821,7 @@ for the music, location, cover and draft options.
 - `facebook_link_url` - URL for text posts
 - `facebook_alt_text` - Alt text per photo (string, `facebook_alt_text[]`, or JSON array)
 - `facebook_place_id` - Place id on feed/photos/videos/reels
+- `facebook_sponsor_id` - Sponsor's numeric Page id: Meta's branded content tag on Page photos, Page videos (`facebook_media_type="VIDEO"`) and text posts. Reels and Stories have no sponsor field (the result has a `warnings` entry)
 - `facebook_targeting` / `facebook_feed_targeting` - JSON audience objects
 - `facebook_call_to_action` / `facebook_child_attachments` / `facebook_multi_share_end_card` - Link post CTA and carousel
 - `facebook_is_ai_generated` - AI-generated flag on Reels
@@ -835,6 +836,7 @@ for the music, location, cover and draft options.
 - `pinterest_cover_image_url` - Cover image URL (video)
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
 - `pinterest_board_section_id` - Board section id
+- `pinterest_sponsor_id` - Sponsor's Pinterest account id for a paid partnership Pin (Pinterest closed beta)
 - `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
 - `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
 - `pinterest_carousel_index` - 0-based cover slide
@@ -976,6 +978,7 @@ These options work across all upload methods:
 | `first_comment` | First comment to post |
 | `tiktok_first_comment` | First comment for TikTok only (needs the `comments` capability) |
 | `alt_text` | Alt text for accessibility |
+| `paid_partnership` | Mark the post as paid / sponsored with each network's native label (TikTok `brand_content_toggle`, YouTube `hasPaidProductPlacement`, X `x_paid_partnership`). Networks without a native field get a `warnings` entry; a network-specific option wins. See [Paid Partnership & Branded Content Labels](https://docs.upload-post.com/guides/commercial-disclosure) |
 | `scheduled_date` | ISO date for scheduling |
 | `timezone` | Timezone for scheduled date |
 | `add_to_queue` | Add to posting queue |

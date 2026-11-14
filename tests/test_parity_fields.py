@@ -287,5 +287,62 @@ class TestUploadTextForwardsNewFields(unittest.TestCase):
         self.assertEqual(last["x_article_title"], "Article")
 
 
+class TestCommercialDisclosure(unittest.TestCase):
+    """paid_partnership, facebook_sponsor_id and pinterest_sponsor_id reach the API."""
+
+    def setUp(self):
+        self.client = UploadPostClient("test-key")
+        self.post = patch.object(
+            self.client.session, "post", return_value=_response()
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def _sent(self):
+        return _form(self.post.call_args[1]["data"])[0]
+
+    def test_paid_partnership_on_text_photo_and_video(self):
+        self.client.upload_text(title="t", user="u", platforms=["x"], paid_partnership=True)
+        self.assertEqual(self._sent()["paid_partnership"], "true")
+        self.client.upload_photos(
+            photos=["https://example.com/a.jpg"], title="t", user="u",
+            platforms=["tiktok"], paid_partnership=False)
+        self.assertEqual(self._sent()["paid_partnership"], "false")
+        self.client.upload_video(
+            video_path="https://example.com/v.mp4", title="t", user="u",
+            platforms=["youtube"], paid_partnership=True)
+        self.assertEqual(self._sent()["paid_partnership"], "true")
+
+    def test_nothing_is_sent_without_the_new_fields(self):
+        self.client.upload_text(title="t", user="u", platforms=["facebook", "x"], facebook_page_id="1")
+        sent = self._sent()
+        for key in ("paid_partnership", "facebook_sponsor_id", "pinterest_sponsor_id"):
+            self.assertNotIn(key, sent)
+
+    def test_facebook_sponsor_id_on_text_photo_and_video(self):
+        for is_video, is_text in ((False, False), (True, False), (False, True)):
+            data = []
+            self.client._add_facebook_params(
+                data, is_video=is_video, is_text=is_text,
+                facebook_page_id="1", facebook_sponsor_id="123456789")
+            self.assertEqual(_form(data)[0]["facebook_sponsor_id"], "123456789")
+
+    def test_pinterest_sponsor_id(self):
+        for is_video in (False, True):
+            data = []
+            self.client._add_pinterest_params(
+                data, is_video=is_video, pinterest_board_id="b", pinterest_sponsor_id="5555")
+            self.assertEqual(_form(data)[0]["pinterest_sponsor_id"], "5555")
+
+    def test_network_fields_still_map_as_before(self):
+        data = []
+        self.client._add_youtube_params(data, hasPaidProductPlacement=True)
+        self.assertEqual(_form(data)[0]["hasPaidProductPlacement"], "true")
+        data = []
+        self.client._add_tiktok_params(data, is_video=True, brand_content_toggle=True, brand_organic_toggle=False)
+        sent = _form(data)[0]
+        self.assertEqual(sent["brand_content_toggle"], "true")
+        self.assertEqual(sent["brand_organic_toggle"], "false")
+
+
 if __name__ == "__main__":
     unittest.main()
