@@ -736,7 +736,7 @@ client.upload_video(
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
-- `brand_content_toggle` - Branded content toggle
+- `brand_content_toggle` - TikTok branded content: native "Paid partnership" label (sent as is_branded_content). Not readable afterwards; check the post in the TikTok app
 - `brand_organic_toggle` - Brand organic toggle
 - `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
 - `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - YouTube "Includes paid promotion". Read back and, if it did not stick, set with one extra videos.update (50 quota units); the result reports youtube_paid_product_placement (applied, not_applied or unverified)
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
