@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid placement flag. YouTube may ignore it (its API reference does not list it as settable): check `results.youtube.warnings` and see [Commercial disclosure](#commercial-disclosure)
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -815,6 +815,7 @@ for the music, location, cover and draft options.
 
 ### Facebook
 - `facebook_page_id` - Facebook Page ID (required)
+- `facebook_sponsor_id` - Sponsor's Facebook Page ID for the branded content tag (Page videos, photos and text, not Reels/Stories)
 - `video_state` - PUBLISHED, DRAFT
 - `facebook_media_type` - REELS, STORIES, or VIDEO (normal page video)
 - `thumbnail_url` - Thumbnail URL for normal page videos (only when `facebook_media_type` is VIDEO)
@@ -830,6 +831,7 @@ for the music, location, cover and draft options.
 
 ### Pinterest
 - `pinterest_board_id` - Board ID
+- `pinterest_sponsor_id` - Sponsor's Pinterest account ID for a paid partnership Pin (closed beta)
 - `pinterest_link` - Destination link
 - `pinterest_alt_text` - Alt text for photos
 - `pinterest_cover_image_url` - Cover image URL (video)
@@ -981,6 +983,32 @@ These options work across all upload methods:
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
+| `paid_partnership` | Mark the post as paid/sponsored on TikTok, YouTube and X (see [Commercial disclosure](#commercial-disclosure)) |
+
+## Commercial Disclosure
+
+Fields for the networks' native paid-partnership labels:
+
+| Network | Option | Notes |
+|---------|--------|-------|
+| TikTok | `brand_content_toggle`, `brand_organic_toggle` | Branded content cannot be private: `paid_partnership` together with a `SELF_ONLY` TikTok post is rejected. TikTok's Music Usage Confirmation is a consent line, not an API field. |
+| YouTube | `hasPaidProductPlacement` | YouTube may ignore it. Check `results.youtube.warnings`, or read the video back with YouTube's `videos.list` (`part=paidProductPlacementDetails`). |
+| X | `x_paid_partnership` | Applied to the first post. |
+| Facebook | `facebook_sponsor_id` | Sponsor's Page ID. Page videos, photos and text; Reels and Stories have no sponsor field. |
+| Pinterest | `pinterest_sponsor_id` | Pinterest closed beta. |
+| Instagram | - | Not supported through Upload-Post's Instagram connection. |
+
+`paid_partnership=True` maps to the TikTok, YouTube and X fields at once (a network-specific option always wins). Other networks in the request return a `warnings` entry and the post is still published. Details: https://docs.upload-post.com/guides/commercial-disclosure
+
+```python
+client.upload_video(
+    video_path="clip.mp4",
+    title="Spring collection",
+    user="my_profile",
+    platforms=["tiktok", "youtube"],
+    paid_partnership=True,
+)
+```
 
 ## Error Handling
 

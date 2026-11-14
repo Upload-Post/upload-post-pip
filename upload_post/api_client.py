@@ -188,6 +188,9 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Paid partnership / branded content on the networks with a native label
+        # (TikTok, YouTube, X); the network-specific field wins when both are sent.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -562,6 +565,9 @@ class UploadPostClient:
         """Add Facebook-specific parameters."""
         if kwargs.get("facebook_page_id"):
             data.append(("facebook_page_id", kwargs["facebook_page_id"]))
+        # Branded content tag: the sponsor's Page id (Page videos, photos and text;
+        # Reels and Stories have no sponsor field, the API answers with a warning).
+        self._put(data, "facebook_sponsor_id", kwargs.get("facebook_sponsor_id"))
 
         # facebook_media_type (POSTS/STORIES/REELS) is honored for BOTH photos and video
         # (backend uploadphotos.py reads request.form.get('facebook_media_type')). Gating it
@@ -603,6 +609,8 @@ class UploadPostClient:
         """Add Pinterest-specific parameters."""
         if kwargs.get("pinterest_board_id"):
             data.append(("pinterest_board_id", kwargs["pinterest_board_id"]))
+        # Paid partnership Pin: the sponsor's account id (Pinterest closed beta).
+        self._put(data, "pinterest_sponsor_id", kwargs.get("pinterest_sponsor_id"))
         if kwargs.get("pinterest_alt_text"):
             data.append(("pinterest_alt_text", kwargs["pinterest_alt_text"]))
         if kwargs.get("pinterest_link"):
@@ -981,6 +989,7 @@ class UploadPostClient:
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously (default: True)
+            paid_partnership: Mark the post as paid/sponsored on TikTok, YouTube and X (native labels); other networks return a warning
                           title/description from the media and fills any platform field
                           the language (omit to auto-detect from the media).
             
@@ -1066,12 +1075,14 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Facebook Page ID for the branded content tag (Page videos, photos and text; not Reels/Stories)
                 video_state: PUBLISHED or DRAFT
                 facebook_media_type: REELS, STORIES, or VIDEO
                 thumbnail_url: Thumbnail URL for normal page videos (VIDEO type only)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Sponsor's Pinterest account ID (closed beta)
                 pinterest_link: Destination link
                 pinterest_cover_image_url: Cover image URL
                 pinterest_cover_image_key_frame_time: Key frame time in ms
@@ -1171,6 +1182,7 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as paid/sponsored on TikTok, YouTube and X (native labels); other networks return a warning
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
@@ -1210,9 +1222,11 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Facebook Page ID for the branded content tag (Page videos, photos and text; not Reels/Stories)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Sponsor's Pinterest account ID (closed beta)
                 pinterest_alt_text: Alt text
                 pinterest_link: Destination link
             
@@ -1327,6 +1341,7 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as paid/sponsored on TikTok, YouTube and X (native labels); other networks return a warning
             link_url: Generic URL for link preview card (works for LinkedIn,
                 Bluesky, Facebook). Platform-specific params take priority.
 
@@ -1336,6 +1351,7 @@ class UploadPostClient:
 
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Facebook Page ID for the branded content tag (Page videos, photos and text; not Reels/Stories)
                 facebook_link_url: URL to attach as link preview on Facebook
 
             Bluesky:
