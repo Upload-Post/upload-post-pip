@@ -176,6 +176,12 @@ class UploadPostClient:
 
         if first_comment:
             data.append(("first_comment", first_comment))
+        # Paid partnership / branded content: one switch, mapped by the API to each
+        # network's native field (TikTok brand_content_toggle, YouTube
+        # hasPaidProductPlacement, X paid_partnership). Networks without a native
+        # label ignore it and the response carries a `warnings` entry. False is
+        # sent as "false" so it can switch the label off.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         if alt_text:
             data.append(("alt_text", alt_text))
         if scheduled_date:
@@ -585,6 +591,8 @@ class UploadPostClient:
             ("facebook_feed_targeting", "json"),
             ("facebook_is_ai_generated", "bool"),
             ("facebook_collaborators", "list"),
+            # Branded content: the sponsor's numeric Page id (not on Reels/Stories).
+            ("facebook_sponsor_id", "str"),
         ))
         if is_text:
             self._put_many(data, kwargs, (
@@ -621,6 +629,8 @@ class UploadPostClient:
         self._put_many(data, kwargs, (
             ("pinterest_board_section_id", "str"),
             ("pinterest_ai_disclosures", "list"),
+            # Paid partnership: the sponsor's account id (Pinterest closed beta).
+            ("pinterest_sponsor_id", "str"),
             ("pinterest_carousel_titles", "list"),
             ("pinterest_carousel_descriptions", "list"),
             ("pinterest_carousel_links", "list"),
@@ -977,6 +987,8 @@ class UploadPostClient:
         Keyword Args:
             description: Video description
             first_comment: First comment to post
+            paid_partnership: Mark the post as paid/sponsored; sets each network's native field
+                (TikTok, YouTube, X). Networks without one add a `warnings` entry
             scheduled_date: ISO date for scheduling (e.g., "2024-12-25T10:00:00Z")
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
@@ -1166,6 +1178,8 @@ class UploadPostClient:
         Keyword Args:
             description: Photo description
             first_comment: First comment to post
+            paid_partnership: Mark the post as paid/sponsored; sets each network's native field
+                (TikTok, YouTube, X). Networks without one add a `warnings` entry
             alt_text: Alt text for accessibility
             scheduled_date: ISO date for scheduling
             timezone: Timezone for scheduled date
@@ -1323,6 +1337,8 @@ class UploadPostClient:
 
         Keyword Args:
             first_comment: First comment to post
+            paid_partnership: Mark the post as paid/sponsored; sets each network's native field
+                (TikTok, YouTube, X). Networks without one add a `warnings` entry
             scheduled_date: ISO date for scheduling
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
