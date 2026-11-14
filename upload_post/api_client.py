@@ -188,6 +188,10 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Native paid-partnership / branded-content label on every network that has one
+        # (TikTok, YouTube, X). A platform field (brand_content_toggle,
+        # hasPaidProductPlacement, x_paid_partnership) wins over this switch.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -585,6 +589,8 @@ class UploadPostClient:
             ("facebook_feed_targeting", "json"),
             ("facebook_is_ai_generated", "bool"),
             ("facebook_collaborators", "list"),
+            # Sponsor's Page ID for Meta's branded content tag (not on Reels/Stories).
+            ("facebook_sponsor_id", "str"),
         ))
         if is_text:
             self._put_many(data, kwargs, (
@@ -621,6 +627,8 @@ class UploadPostClient:
         self._put_many(data, kwargs, (
             ("pinterest_board_section_id", "str"),
             ("pinterest_ai_disclosures", "list"),
+            # Sponsor's account ID for Pinterest's paid partnership (closed beta).
+            ("pinterest_sponsor_id", "str"),
             ("pinterest_carousel_titles", "list"),
             ("pinterest_carousel_descriptions", "list"),
             ("pinterest_carousel_links", "list"),
@@ -1001,6 +1009,8 @@ class UploadPostClient:
                 post_mode: DIRECT_POST or MEDIA_UPLOAD. MEDIA_UPLOAD is the
                     same draft as tiktok_upload_to_draft=True.
                 brand_content_toggle: Branded content toggle
+                paid_partnership: Native paid-partnership label on TikTok, YouTube and X (a platform
+                    field wins); other networks publish normally and add a warning
                 brand_organic_toggle: Brand organic toggle
                 tiktok_is_ads_only: Only show the video in ads
                 tiktok_tto_invite_link: TikTok One invite link (needs branded content)
@@ -1066,12 +1076,15 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Page ID for Meta's branded content tag
+                    (photos, facebook_media_type=VIDEO and text posts; not Reels/Stories)
                 video_state: PUBLISHED or DRAFT
                 facebook_media_type: REELS, STORIES, or VIDEO
                 thumbnail_url: Thumbnail URL for normal page videos (VIDEO type only)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Sponsor's account ID for Pinterest's paid partnership
                 pinterest_link: Destination link
                 pinterest_cover_image_url: Cover image URL
                 pinterest_cover_image_key_frame_time: Key frame time in ms
@@ -1196,6 +1209,8 @@ class UploadPostClient:
                 tiktok_is_ai_generated: AI-generated content disclosure.
                 tiktok_upload_to_draft: Same draft as post_mode="MEDIA_UPLOAD".
                 brand_content_toggle: Branded content toggle
+                paid_partnership: Native paid-partnership label on TikTok, YouTube and X (a platform
+                    field wins); other networks publish normally and add a warning
                 brand_organic_toggle: Brand organic toggle
             
             Instagram:
@@ -1210,9 +1225,12 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Page ID for Meta's branded content tag
+                    (photos, facebook_media_type=VIDEO and text posts; not Reels/Stories)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Sponsor's account ID for Pinterest's paid partnership
                 pinterest_alt_text: Alt text
                 pinterest_link: Destination link
             
@@ -1323,6 +1341,8 @@ class UploadPostClient:
 
         Keyword Args:
             first_comment: First comment to post
+            paid_partnership: X paid partnership flag on the first post; other
+                networks have no native label for text posts and add a warning
             scheduled_date: ISO date for scheduling
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
@@ -1336,6 +1356,8 @@ class UploadPostClient:
 
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Page ID for Meta's branded content tag
+                    (photos, facebook_media_type=VIDEO and text posts; not Reels/Stories)
                 facebook_link_url: URL to attach as link preview on Facebook
 
             Bluesky:

@@ -736,8 +736,8 @@ client.upload_video(
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
-- `brand_content_toggle` - Branded content toggle
-- `brand_organic_toggle` - Brand organic toggle
+- `brand_content_toggle` - Branded content toggle ("Paid partnership"). Direct posts only; TikTok does not allow it with `privacy_level="SELF_ONLY"`
+- `brand_organic_toggle` - Brand organic toggle ("Promotional content", your own business)
 - `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
 - `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
 
@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid promotion declaration (`paidProductPlacementDetails.hasPaidProductPlacement`). YouTube does not list it as settable, so check the result's `warnings` and read it back with `videos.list` (`part=paidProductPlacementDetails`)
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -825,6 +825,7 @@ for the music, location, cover and draft options.
 - `facebook_call_to_action` / `facebook_child_attachments` / `facebook_multi_share_end_card` - Link post CTA and carousel
 - `facebook_is_ai_generated` - AI-generated flag on Reels
 - `facebook_collaborators` - Page ids to invite on Reels
+- `facebook_sponsor_id` - Sponsor's Page ID for Meta's branded content tag (photos, `facebook_media_type="VIDEO"` videos and text/link posts; Reels and Stories have no sponsor field)
 - `facebook_unpublished_content_type` - DRAFT / INLINE_CREATED / ADS_POST on page video (`SCHEDULED` is rejected; use `scheduled_date`)
 - `facebook_no_story` / `facebook_secret` - Page video flags
 
@@ -836,6 +837,7 @@ for the music, location, cover and draft options.
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
 - `pinterest_board_section_id` - Board section id
 - `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
+- `pinterest_sponsor_id` - Sponsor's account ID for Pinterest's paid partnership (closed beta)
 - `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
 - `pinterest_carousel_index` - 0-based cover slide
 
@@ -980,7 +982,31 @@ These options work across all upload methods:
 | `timezone` | Timezone for scheduled date |
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
+| `paid_partnership` | Native paid-partnership label: TikTok `brand_content_toggle`, YouTube `hasPaidProductPlacement` and X `x_paid_partnership` for the targets that did not get their own option. Other networks publish normally and add a `warnings` entry |
 | `async_upload` | Process asynchronously (default: True) |
+
+## Paid partnerships and branded content
+
+```python
+client.upload_video(
+    "video.mp4",
+    title="Sponsored: my honest review",
+    user="my-profile",
+    platforms=["tiktok", "youtube", "x", "facebook"],
+    paid_partnership=True,           # TikTok, YouTube and X, where a native label exists
+    facebook_page_id="123456789",
+    facebook_media_type="VIDEO",
+    facebook_sponsor_id="987654321",  # Facebook's branded content tag needs the sponsor's Page ID
+)
+```
+
+- **Instagram** has no API field for the Paid partnership label (it exists only in Instagram's API with Facebook Login): the post publishes and the result carries a `warnings` entry. Turn the label on in the Instagram app.
+- **Facebook Reels and Stories** have no sponsor field; use `facebook_media_type="VIDEO"` or a photo/text post.
+- **TikTok** needs a direct post that is not `SELF_ONLY`; the label is not returned by TikTok's API, so check it in the app. TikTok's Music Usage Confirmation is a consent notice shown by the publishing interface, not an API parameter.
+- **YouTube** may ignore `hasPaidProductPlacement` (Google does not list it as a settable property); the result's `warnings` tells you when it did not stick.
+- To change it on a scheduled post: `client.edit_scheduled(job_id, fields={"paid_partnership": True})`.
+
+See [Paid Partnerships and Branded Content](https://docs.upload-post.com/guides/commercial-disclosure) for the full matrix.
 
 ## Error Handling
 

@@ -287,5 +287,91 @@ class TestUploadTextForwardsNewFields(unittest.TestCase):
         self.assertEqual(last["x_article_title"], "Article")
 
 
+class TestPaidPartnership(unittest.TestCase):
+    """Native commercial disclosure: paid_partnership, facebook_sponsor_id, pinterest_sponsor_id."""
+
+    def setUp(self):
+        self.client = UploadPostClient("test-key")
+
+    def _common(self, **kwargs):
+        data = []
+        self.client._add_common_params(data, "u", "t", ["tiktok"], **kwargs)
+        return _form(data)[0]
+
+    def test_paid_partnership_true_and_false_are_sent(self):
+        self.assertEqual(self._common(paid_partnership=True)["paid_partnership"], "true")
+        # False is a real value (it switches the alias off explicitly), not "not set".
+        self.assertEqual(self._common(paid_partnership=False)["paid_partnership"], "false")
+
+    def test_no_paid_partnership_without_the_kwarg(self):
+        self.assertNotIn("paid_partnership", self._common())
+
+    def test_facebook_sponsor_id_on_video_photo_and_text(self):
+        for is_video, is_text in ((True, False), (False, False), (False, True)):
+            data = []
+            self.client._add_facebook_params(
+                data, is_video=is_video, is_text=is_text,
+                facebook_page_id="1", facebook_sponsor_id="1234567890",
+            )
+            self.assertEqual(_form(data)[0]["facebook_sponsor_id"], "1234567890")
+
+    def test_numeric_sponsor_ids_are_stringified(self):
+        data = []
+        self.client._add_facebook_params(data, facebook_sponsor_id=42)
+        self.assertEqual(_form(data)[0]["facebook_sponsor_id"], "42")
+        data = []
+        self.client._add_pinterest_params(data, pinterest_board_id="b", pinterest_sponsor_id=555)
+        self.assertEqual(_form(data)[0]["pinterest_sponsor_id"], "555")
+
+    def test_no_sponsor_ids_when_not_given(self):
+        data = []
+        self.client._add_facebook_params(data, facebook_page_id="1")
+        self.client._add_pinterest_params(data, pinterest_board_id="b")
+        last, _ = _form(data)
+        self.assertNotIn("facebook_sponsor_id", last)
+        self.assertNotIn("pinterest_sponsor_id", last)
+
+    def test_alias_and_platform_field_go_out_side_by_side(self):
+        # The API lets the platform field win; the SDK must not decide for it.
+        data = []
+        self.client._add_common_params(data, "u", "t", ["x"], paid_partnership=True)
+        self.client._add_x_params(data, is_text=True, x_paid_partnership=False)
+        last, _ = _form(data)
+        self.assertEqual(last["paid_partnership"], "true")
+        self.assertEqual(last["x_paid_partnership"], "false")
+
+    def test_upload_video_photos_and_text_forward_the_new_fields(self):
+        post = patch.object(self.client.session, "post", return_value=_response()).start()
+        self.addCleanup(patch.stopall)
+
+        self.client.upload_video(
+            "https://example.com/v.mp4", title="t", user="u",
+            platforms=["tiktok", "facebook", "pinterest"],
+            paid_partnership=True, facebook_page_id="1", facebook_media_type="VIDEO",
+            facebook_sponsor_id="99", pinterest_board_id="b", pinterest_sponsor_id="55",
+        )
+        last, _ = _form(post.call_args[1]["data"])
+        self.assertEqual(last["paid_partnership"], "true")
+        self.assertEqual(last["facebook_sponsor_id"], "99")
+        self.assertEqual(last["pinterest_sponsor_id"], "55")
+
+        self.client.upload_photos(
+            ["https://example.com/p.jpg"], title="t", user="u",
+            platforms=["facebook", "tiktok"], paid_partnership=True,
+            facebook_page_id="1", facebook_sponsor_id="99",
+        )
+        last, _ = _form(post.call_args[1]["data"])
+        self.assertEqual(last["paid_partnership"], "true")
+        self.assertEqual(last["facebook_sponsor_id"], "99")
+
+        self.client.upload_text(
+            title="t", user="u", platforms=["x", "facebook"],
+            paid_partnership=True, facebook_page_id="1", facebook_sponsor_id="99",
+        )
+        last, _ = _form(post.call_args[1]["data"])
+        self.assertEqual(last["paid_partnership"], "true")
+        self.assertEqual(last["facebook_sponsor_id"], "99")
+
+
 if __name__ == "__main__":
     unittest.main()
