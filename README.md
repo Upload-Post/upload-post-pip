@@ -736,7 +736,7 @@ client.upload_video(
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
-- `brand_content_toggle` - Branded content toggle
+- `brand_content_toggle` - Branded content toggle (Direct Post only, never private; TikTok does not return the label, check it in the app)
 - `brand_organic_toggle` - Brand organic toggle
 - `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
 - `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid placement flag ("Paid promotion"). YouTube may ignore it, so the response carries `youtube_has_paid_product_placement` with what YouTube stored, and a `warnings` entry when it did not keep it
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -824,7 +824,8 @@ for the music, location, cover and draft options.
 - `facebook_targeting` / `facebook_feed_targeting` - JSON audience objects
 - `facebook_call_to_action` / `facebook_child_attachments` / `facebook_multi_share_end_card` - Link post CTA and carousel
 - `facebook_is_ai_generated` - AI-generated flag on Reels
-- `facebook_collaborators` - Page ids to invite on Reels
+- `facebook_collaborators` - Page ids to invite on Reels (a collaboration invite, not the branded-content label)
+- `facebook_sponsor_id` - Sponsor's Page id (digits) for Meta's branded content tag. Page photos, `facebook_media_type="VIDEO"` videos and text/link posts only; Reels and Stories have no sponsor field
 - `facebook_unpublished_content_type` - DRAFT / INLINE_CREATED / ADS_POST on page video (`SCHEDULED` is rejected; use `scheduled_date`)
 - `facebook_no_story` / `facebook_secret` - Page video flags
 
@@ -836,6 +837,7 @@ for the music, location, cover and draft options.
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
 - `pinterest_board_section_id` - Board section id
 - `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
+- `pinterest_sponsor_id` - Sponsor's Pinterest account id (digits) for a paid partnership Pin (Pinterest closed beta)
 - `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
 - `pinterest_carousel_index` - 0-based cover slide
 
@@ -981,6 +983,7 @@ These options work across all upload methods:
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
+| `paid_partnership` | Mark the post as paid or sponsored on TikTok (`brand_content_toggle`), YouTube (`hasPaidProductPlacement`) and X (`x_paid_partnership`). The network's own field wins. Other networks get a `warnings` entry; Instagram and Facebook Reels have no native label through the API |
 
 ## Error Handling
 

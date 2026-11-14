@@ -188,6 +188,9 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Paid partnership / branded content on every selected network with a native
+        # field (TikTok, YouTube, X). The network's own field wins when sent.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -585,6 +588,9 @@ class UploadPostClient:
             ("facebook_feed_targeting", "json"),
             ("facebook_is_ai_generated", "bool"),
             ("facebook_collaborators", "list"),
+            # Sponsor's Page id for Meta's branded content tag (Page photos, VIDEO videos,
+            # text/link posts; the API ignores it with a warning for Reels and Stories).
+            ("facebook_sponsor_id", "str"),
         ))
         if is_text:
             self._put_many(data, kwargs, (
@@ -621,6 +627,8 @@ class UploadPostClient:
         self._put_many(data, kwargs, (
             ("pinterest_board_section_id", "str"),
             ("pinterest_ai_disclosures", "list"),
+            # Sponsor's Pinterest account id (paid partnership; Pinterest closed beta).
+            ("pinterest_sponsor_id", "str"),
             ("pinterest_carousel_titles", "list"),
             ("pinterest_carousel_descriptions", "list"),
             ("pinterest_carousel_links", "list"),
@@ -981,6 +989,8 @@ class UploadPostClient:
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously (default: True)
+            paid_partnership: Mark the post as paid or sponsored on TikTok, YouTube and X
+                (native fields; other networks get a warning in the response)
                           title/description from the media and fills any platform field
                           the language (omit to auto-detect from the media).
             
@@ -1171,6 +1181,8 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as paid or sponsored on the networks with a native
+                field (TikTok, YouTube, X); other networks get a warning in the response
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
@@ -1327,6 +1339,8 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as paid or sponsored on the networks with a native
+                field (TikTok, YouTube, X); other networks get a warning in the response
             link_url: Generic URL for link preview card (works for LinkedIn,
                 Bluesky, Facebook). Platform-specific params take priority.
 
