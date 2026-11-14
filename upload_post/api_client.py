@@ -188,6 +188,11 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Cross-network paid partnership / sponsored content. The backend maps it to
+        # each network's native field (TikTok brand_content_toggle, YouTube
+        # hasPaidProductPlacement, X x_paid_partnership) unless that field is also sent;
+        # networks without a native label answer with a `warnings` entry.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -562,6 +567,9 @@ class UploadPostClient:
         """Add Facebook-specific parameters."""
         if kwargs.get("facebook_page_id"):
             data.append(("facebook_page_id", kwargs["facebook_page_id"]))
+        # Branded content: numeric Page id of the sponsor (Page photos, videos with
+        # facebook_media_type="VIDEO", and text posts; not Reels or Stories).
+        self._put(data, "facebook_sponsor_id", kwargs.get("facebook_sponsor_id"), "str")
 
         # facebook_media_type (POSTS/STORIES/REELS) is honored for BOTH photos and video
         # (backend uploadphotos.py reads request.form.get('facebook_media_type')). Gating it
@@ -603,6 +611,8 @@ class UploadPostClient:
         """Add Pinterest-specific parameters."""
         if kwargs.get("pinterest_board_id"):
             data.append(("pinterest_board_id", kwargs["pinterest_board_id"]))
+        # Paid partnership: numeric id of the sponsor's Pinterest account (closed beta).
+        self._put(data, "pinterest_sponsor_id", kwargs.get("pinterest_sponsor_id"), "str")
         if kwargs.get("pinterest_alt_text"):
             data.append(("pinterest_alt_text", kwargs["pinterest_alt_text"]))
         if kwargs.get("pinterest_link"):
@@ -977,6 +987,12 @@ class UploadPostClient:
         Keyword Args:
             description: Video description
             first_comment: First comment to post
+            paid_partnership: Mark the post as a paid partnership. Mapped to TikTok
+                brand_content_toggle, YouTube hasPaidProductPlacement and X
+                x_paid_partnership (a network-specific field you also send wins).
+                Networks without a native label add a `warnings` entry. TikTok:
+                not with privacy_level="SELF_ONLY" (400). Facebook and Pinterest
+                need facebook_sponsor_id / pinterest_sponsor_id.
             scheduled_date: ISO date for scheduling (e.g., "2024-12-25T10:00:00Z")
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
@@ -1053,7 +1069,9 @@ class UploadPostClient:
                 defaultAudioLanguage: Audio language (BCP-47)
                 allowedCountries: Comma-separated country codes
                 blockedCountries: Comma-separated country codes
-                hasPaidProductPlacement: Paid placement flag
+                hasPaidProductPlacement: Paid placement flag. YouTube may not keep it:
+                    the response carries a ``warnings`` entry when it did not. Set or
+                    check it afterwards with ``edit_post``.
                 recordingDate: Recording date (ISO 8601)
                 youtube_playlist_id: Playlist ID (or list/comma-separated of IDs) to add
                     the uploaded video to after publishing
@@ -1066,12 +1084,17 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Numeric Page id of the sponsor (branded content;
+                    Page photos, videos with facebook_media_type="VIDEO" and text
+                    posts, not Reels or Stories)
                 video_state: PUBLISHED or DRAFT
                 facebook_media_type: REELS, STORIES, or VIDEO
                 thumbnail_url: Thumbnail URL for normal page videos (VIDEO type only)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Numeric id of the sponsor's account (paid
+                    partnership; Pinterest closed beta)
                 pinterest_link: Destination link
                 pinterest_cover_image_url: Cover image URL
                 pinterest_cover_image_key_frame_time: Key frame time in ms
@@ -1166,6 +1189,12 @@ class UploadPostClient:
         Keyword Args:
             description: Photo description
             first_comment: First comment to post
+            paid_partnership: Mark the post as a paid partnership. Mapped to TikTok
+                brand_content_toggle, YouTube hasPaidProductPlacement and X
+                x_paid_partnership (a network-specific field you also send wins).
+                Networks without a native label add a `warnings` entry. TikTok:
+                not with privacy_level="SELF_ONLY" (400). Facebook and Pinterest
+                need facebook_sponsor_id / pinterest_sponsor_id.
             alt_text: Alt text for accessibility
             scheduled_date: ISO date for scheduling
             timezone: Timezone for scheduled date
@@ -1210,9 +1239,14 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Numeric Page id of the sponsor (branded content;
+                    Page photos, videos with facebook_media_type="VIDEO" and text
+                    posts, not Reels or Stories)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Numeric id of the sponsor's account (paid
+                    partnership; Pinterest closed beta)
                 pinterest_alt_text: Alt text
                 pinterest_link: Destination link
             
@@ -1323,6 +1357,12 @@ class UploadPostClient:
 
         Keyword Args:
             first_comment: First comment to post
+            paid_partnership: Mark the post as a paid partnership. Mapped to TikTok
+                brand_content_toggle, YouTube hasPaidProductPlacement and X
+                x_paid_partnership (a network-specific field you also send wins).
+                Networks without a native label add a `warnings` entry. TikTok:
+                not with privacy_level="SELF_ONLY" (400). Facebook and Pinterest
+                need facebook_sponsor_id / pinterest_sponsor_id.
             scheduled_date: ISO date for scheduling
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
@@ -1336,6 +1376,9 @@ class UploadPostClient:
 
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Numeric Page id of the sponsor (branded content;
+                    Page photos, videos with facebook_media_type="VIDEO" and text
+                    posts, not Reels or Stories)
                 facebook_link_url: URL to attach as link preview on Facebook
 
             Bluesky:
@@ -1560,6 +1603,41 @@ class UploadPostClient:
         if job_id is not None:
             json_data["job_id"] = job_id
         return self._request("/uploadposts/posts/retry", "POST", json_data=json_data)
+
+    def edit_post(
+        self,
+        user: str,
+        platform: str,
+        post_id: str,
+        **fields,
+    ) -> Dict:
+        """
+        Edit a published post (``POST /api/uploadposts/posts/edit``).
+
+        Fields you omit are left unchanged. Supported platforms: facebook,
+        linkedin, x, youtube, google_business. Instagram, TikTok and Threads
+        have no edit API.
+
+        Args:
+            user: Profile username.
+            platform: Platform name.
+            post_id: ID of the published post (YouTube: the video id).
+            **fields: What to change, as the endpoint names it. ``None`` values
+                are dropped. Examples: ``message`` (Facebook), ``text`` (X),
+                ``commentary`` (LinkedIn); YouTube: ``title``, ``description``,
+                ``tags``, ``privacyStatus``, ``categoryId``, ``publishAt`` and
+                ``hasPaidProductPlacement`` (alias ``paid_partnership``).
+
+        Returns:
+            Edit result. For YouTube with ``hasPaidProductPlacement``, the
+            response has ``paidProductPlacementDetails.hasPaidProductPlacement``
+            holding the value YouTube stored (``True`` = kept; ``False`` or
+            ``None`` = YouTube did not apply the declaration, so turn on "Paid
+            promotion" in YouTube Studio). The call costs 50 YouTube quota units.
+        """
+        json_data = {"user": user, "platform": platform, "post_id": post_id}
+        json_data.update({k: v for k, v in fields.items() if v is not None})
+        return self._request("/uploadposts/posts/edit", "POST", json_data=json_data)
 
     def unpublish_post(
         self,

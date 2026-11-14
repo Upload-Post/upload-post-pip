@@ -727,6 +727,45 @@ client.upload_video(
 | `privacy_level` | str | `photo_privacy` / `video_privacy` | Accepted on video and photo posts alike; which values the account may use is decided by TikTok, see the note below |
 | `post_mode` | str | `draft` | `DIRECT_POST` or `MEDIA_UPLOAD`. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True` |
 
+## Paid partnerships and branded content
+
+`paid_partnership=True` marks a post as a paid partnership on every target network that has a native field for it. A network-specific field you also send wins.
+
+```python
+client.upload_video(
+    video_path="clip.mp4",
+    title="Launch day",
+    user="my-profile",
+    platforms=["tiktok", "youtube", "x"],
+    paid_partnership=True,
+)
+```
+
+| Network | What is sent |
+|---------|--------------|
+| TikTok | `brand_content_toggle` (direct posts only; not with `privacy_level="SELF_ONLY"`, which is a 400 `commercial_disclosure_privacy_conflict`; drafts take no label) |
+| YouTube | `hasPaidProductPlacement`. YouTube does not document it as writable and may leave it off: the response has a `warnings` entry when it did |
+| X | `x_paid_partnership` on the first post |
+| Facebook | needs the sponsor's Page id: `facebook_sponsor_id` (Page photos, videos with `facebook_media_type="VIDEO"`, text posts; not Reels or Stories) |
+| Pinterest | needs `pinterest_sponsor_id` (closed beta) |
+| Instagram, LinkedIn, Threads, Reddit, Bluesky, Google Business | no native label through the API: the upload goes on with a `warnings` entry. Instagram's "Paid partnership" label has to be turned on in the Instagram app |
+
+A `paid_partnership` that is not a boolean, or a sponsor id that is not numeric, is refused with 400 `commercial_disclosure_invalid_value` before anything is published.
+
+Set or check the YouTube declaration after publishing (50 YouTube quota units); the response returns the value YouTube stored:
+
+```python
+result = client.edit_post(
+    user="my-profile",
+    platform="youtube",
+    post_id="VIDEO_ID",
+    hasPaidProductPlacement=True,
+)
+result["paidProductPlacementDetails"]["hasPaidProductPlacement"]  # True = kept
+```
+
+TikTok's Music Usage Confirmation is a consent line that publishing apps show to the user, not an API field: there is nothing to send. See the [Paid Partnerships guide](https://docs.upload-post.com/guides/paid-partnerships).
+
 ## Platform-Specific Options
 
 ### TikTok (Video)
@@ -796,7 +835,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid placement flag (alias: `paid_partnership`). YouTube may not keep it; check `warnings`, or set it later with `edit_post`
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -825,6 +864,7 @@ for the music, location, cover and draft options.
 - `facebook_call_to_action` / `facebook_child_attachments` / `facebook_multi_share_end_card` - Link post CTA and carousel
 - `facebook_is_ai_generated` - AI-generated flag on Reels
 - `facebook_collaborators` - Page ids to invite on Reels
+- `facebook_sponsor_id` - Numeric Page id of the sponsor (branded content; Page photos/videos/text, not Reels or Stories)
 - `facebook_unpublished_content_type` - DRAFT / INLINE_CREATED / ADS_POST on page video (`SCHEDULED` is rejected; use `scheduled_date`)
 - `facebook_no_story` / `facebook_secret` - Page video flags
 
@@ -835,6 +875,7 @@ for the music, location, cover and draft options.
 - `pinterest_cover_image_url` - Cover image URL (video)
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
 - `pinterest_board_section_id` - Board section id
+- `pinterest_sponsor_id` - Numeric id of the sponsor's account (paid partnership; closed beta)
 - `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
 - `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
 - `pinterest_carousel_index` - 0-based cover slide
@@ -974,6 +1015,7 @@ These options work across all upload methods:
 | `user` | Profile name (required) |
 | `platforms` | Target platforms list (required) |
 | `first_comment` | First comment to post |
+| `paid_partnership` | Paid partnership / sponsored content on TikTok, YouTube and X (see above) |
 | `tiktok_first_comment` | First comment for TikTok only (needs the `comments` capability) |
 | `alt_text` | Alt text for accessibility |
 | `scheduled_date` | ISO date for scheduling |
