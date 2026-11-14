@@ -7,13 +7,40 @@ Facebook, Pinterest, Threads, Reddit, Bluesky, Discord, Telegram, and X (Twitter
 
 from pathlib import Path
 from typing import Dict, List, Union, Optional, Any
+from urllib.parse import quote
 import json
 import requests
 
 
 class UploadPostError(Exception):
-    """Base exception for Upload-Post API errors"""
-    pass
+    """Base exception for Upload-Post API errors.
+
+    ``str(error)`` is the readable message, as before. When the API answered,
+    the error also carries what it said, so code can branch on it instead of
+    parsing text:
+
+    - ``status_code``: HTTP status (``None`` when no answer arrived).
+    - ``error_code``: the stable machine code of the answer, read from
+      ``error_code``, ``code`` or ``reason`` (for example
+      ``"bluesky_dm_scope_missing"``, ``"TEAM_SEAT_SUSPENDED"``,
+      ``"comment_not_found"``, ``"webhook_removed"``).
+    - ``response``: the decoded JSON body (``None`` if it was not JSON).
+    - ``retry_after``: the ``Retry-After`` header in seconds, when present.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        status_code: Optional[int] = None,
+        error_code: Optional[str] = None,
+        response: Optional[Any] = None,
+        retry_after: Optional[float] = None,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_code = error_code
+        self.response = response
+        self.retry_after = retry_after
 
 
 class UploadPostClient:
@@ -35,20 +62,30 @@ class UploadPostClient:
     
     BASE_URL = "https://api.upload-post.com/api"
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, act_as_user: Optional[str] = None):
         """
         Initialize the Upload-Post client.
-        
+
         Args:
             api_key: Your API key from Upload-Post
+            act_as_user: Team members only: the email of the account owner to
+                work on. Every request is sent with ``X-Act-As-User`` and acts
+                on that account. If the owner's current plan no longer covers
+                your team seat, requests fail with ``UploadPostError``
+                (``status_code`` 403, ``error_code`` ``"TEAM_SEAT_SUSPENDED"``);
+                access comes back by itself when the owner upgrades or frees a
+                seat.
         """
         self.api_key = api_key
+        self.act_as_user = act_as_user
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Apikey {self.api_key}",
             "User-Agent": "upload-post-python-client/2.0.0",
             "X-Upload-Post-Source": "pip",
         })
+        if act_as_user:
+            self.session.headers["X-Act-As-User"] = act_as_user
 
     def _request(
         self,
@@ -85,13 +122,35 @@ class UploadPostClient:
             
         except requests.exceptions.RequestException as e:
             error_msg = str(e)
+            status_code = error_code = error_data = retry_after = None
             if hasattr(e, 'response') and e.response is not None:
+                status_code = getattr(e.response, "status_code", None)
                 try:
                     error_data = e.response.json()
-                    error_msg = error_data.get('message') or error_data.get('detail') or str(error_data)
-                except (ValueError, KeyError):
-                    pass
-            raise UploadPostError(f"API request failed: {error_msg}") from e
+                except ValueError:
+                    error_data = None
+                if isinstance(error_data, dict):
+                    error_msg = (error_data.get('message') or error_data.get('detail')
+                                 or error_data.get('error') or str(error_data))
+                    if not isinstance(error_msg, str):
+                        error_msg = str(error_msg)
+                    for key in ("error_code", "code", "reason"):
+                        if isinstance(error_data.get(key), str) and error_data[key]:
+                            error_code = error_data[key]
+                            break
+                headers = getattr(e.response, "headers", None) or {}
+                try:
+                    raw = headers.get("Retry-After")
+                    retry_after = float(raw) if raw not in (None, "") else None
+                except (TypeError, ValueError, AttributeError):
+                    retry_after = None
+            raise UploadPostError(
+                f"API request failed: {error_msg}",
+                status_code=status_code,
+                error_code=error_code,
+                response=error_data,
+                retry_after=retry_after,
+            ) from e
 
     def _add_common_params(
         self,
@@ -1511,10 +1570,17 @@ class UploadPostClient:
         """
         Unpublish (delete) a previously published post.
 
+        Instagram posts cannot be deleted through Upload-Post: Meta only allows
+        it through the Instagram API with Facebook Login, and Upload-Post
+        connects Instagram with Instagram Login, so the API answers 400. TikTok
+        has no delete API, and Threads answers 400 ``platform_not_supported``.
+
         Args:
             user: Profile username.
-            platform: Platform name (facebook, youtube, x, linkedin, threads).
-            post_id: ID of the published post to unpublish.
+            platform: Platform name (facebook, youtube, x, linkedin, pinterest,
+                bluesky, google_business...).
+            post_id: ID of the published post to unpublish. Bluesky: the
+                ``at://`` URI or a bsky.app URL.
 
         Returns:
             Unpublish result.
@@ -1600,7 +1666,7 @@ class UploadPostClient:
             params["metrics"] = ",".join(metrics)
         return self._request(f"/uploadposts/total-impressions/{profile_username}", "GET", params=params if params else None)
 
-    def get_post_analytics(self, request_id: str) -> Dict:
+    def get_post_analytics(self, request_id: str, platform: Optional[str] = None) -> Dict:
         """
         Get analytics for a specific post across all platforms it was published to.
 
@@ -1611,13 +1677,27 @@ class UploadPostClient:
         and the watch times ('average_time_watched', 'total_time_watched',
         'full_video_watched_rate').
 
+        TikTok drafts (``post_mode="MEDIA_UPLOAD"`` / ``tiktok_upload_to_draft``)
+        have no post until the creator publishes them from the TikTok app.
+        Call this again after that: Upload-Post asks TikTok which post came
+        from the draft and fills in ``platform_post_id`` and ``post_url``.
+        While the draft is still in the inbox, ``post_metrics_error`` says so
+        (that answer is reused for a while, from ~5 minutes for a fresh upload
+        up to 6 hours); after 30 days without a post it stops asking. TikTok
+        only gives the post id once the post is public and moderated, so a
+        draft published as private never gets per-post analytics. TikTok rows
+        also carry ``original_publish_id`` (the upload's TikTok ``publish_id``),
+        and ``post_url`` is empty when the account's @username is not known.
+
         Args:
             request_id: The request_id from the upload.
+            platform: Only this platform's row (e.g. ``"tiktok"``).
 
         Returns:
             Post analytics with per-platform metrics, profile snapshots, and post-level metrics.
         """
-        return self._request(f"/uploadposts/post-analytics/{request_id}", "GET")
+        params = {"platform": platform} if platform else None
+        return self._request(f"/uploadposts/post-analytics/{request_id}", "GET", params=params)
 
     def get_post_analytics_by_platform_id(self, platform_post_id: str, platform: str, user: str) -> Dict:
         """
@@ -1666,7 +1746,8 @@ class UploadPostClient:
 
         Returns:
             Cached post metrics with ``source: "snapshot_cache"``, plus
-            ``next_cursor`` and ``has_more`` for pagination.
+            ``next_cursor`` and ``has_more`` for pagination. A TikTok draft
+            appears once, under its real post id, with ``original_publish_id``.
         """
         params: Dict[str, Any] = {"user": user}
         if platform:
@@ -1789,6 +1870,10 @@ class UploadPostClient:
     ) -> Dict:
         """
         Retrieve recent media from a connected social account.
+
+        Instagram leaves ``media_url`` out of videos, reels and video stories
+        with copyrighted or licensed audio (Instagram's audio library included),
+        even on your own media: fall back to ``permalink`` or ``thumbnail_url``.
 
         Args:
             platform: instagram, tiktok, youtube, linkedin, facebook, x,
@@ -2068,23 +2153,33 @@ class UploadPostClient:
         Get notification configuration (including webhook settings).
 
         Returns:
-            Notification config including webhook_events and webhook_url.
+            ``{"success": True, "notifications": {...}}`` with ``channels``,
+            ``webhook_url``, ``webhook_events``, ``webhook_secret`` and
+            ``channel_health``.
         """
-        return self._request("/uploadposts/notification-config", "GET")
+        return self._request("/uploadposts/users/notifications", "GET")
 
     def update_notification_config(
         self,
-        webhook_events: Optional[List[str]] = None,
-        webhook_url: Optional[str] = None
+        webhook_events: Optional[Union[List[str], Dict[str, bool]]] = None,
+        webhook_url: Optional[str] = None,
+        channels: Optional[Dict[str, bool]] = None,
     ) -> Dict:
         """
         Update notification configuration (including webhook settings).
 
+        Only the fields you pass change; the rest are kept.
+
         Args:
-            webhook_events: Webhook event types to subscribe to
-                (upload_completed, social_account_connected,
-                social_account_disconnected, social_account_reauth_required).
+            webhook_events: Webhook event types to subscribe to, as a list of
+                names or a ``{name: bool}`` dict: upload_completed,
+                social_account_connected, social_account_disconnected,
+                social_account_reauth_required, and the opt-in dm_received
+                (Instagram, Facebook Messenger, WhatsApp, Bluesky) and
+                comment_received. The opt-in events are only sent when listed.
             webhook_url: Webhook URL for notifications.
+            channels: Which channels are on, e.g. ``{"webhook": True}``
+                (``telegram``, ``slack``, ``whatsapp``, ``webhook``).
 
         Returns:
             Updated notification config.
@@ -2094,7 +2189,109 @@ class UploadPostClient:
             body["webhook_events"] = webhook_events
         if webhook_url:
             body["webhook_url"] = webhook_url
-        return self._request("/uploadposts/notification-config", "POST", json_data=body)
+        if channels:
+            body["channels"] = channels
+        return self._request("/uploadposts/users/notifications", "POST", json_data=body)
+
+    # ==================== Webhook deliveries ====================
+
+    def list_webhook_deliveries(
+        self,
+        event: Optional[str] = None,
+        status: Optional[str] = None,
+        request_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        profile_username: Optional[str] = None,
+        limit: Optional[int] = None,
+        page: Optional[int] = None,
+        include_payload: Optional[bool] = None,
+    ) -> Dict:
+        """
+        List the webhook deliveries of the account (7-day history), newest first.
+
+        Every outgoing webhook (account and per-profile, every event) is logged
+        with its attempts. Webhooks are delivered at least once: a timeout, a
+        connection error, a 5xx, 408 or 429 is retried with the same body and
+        the same ``X-Upload-Post-Delivery`` id (6 attempts over ~8.5 hours);
+        other 4xx answers are final. Use this to check whether an event reached
+        your server.
+
+        Args:
+            event: Only this event (e.g. ``"upload_completed"``, ``"dm_received"``).
+            status: ``"pending"`` (a retry is scheduled), ``"delivered"``,
+                ``"failed"`` or ``"cancelled"``.
+            request_id: Only the deliveries of one upload.
+            job_id: Only the deliveries of one scheduled/async job.
+            profile_username: Only the deliveries of that profile's webhook.
+            limit: Page size, 1-100 (server default 20).
+            page: Page number, 1-50 (beyond that the API answers 400: narrow
+                the list with ``status``, ``event`` or ``request_id``).
+            include_payload: ``True`` to include each delivery's ``payload``
+                (left out by default to keep the list light).
+
+        Returns:
+            ``{"success": True, "deliveries": [...], "page", "limit", "total",
+            "has_more", "retention_days"}``. Each delivery has ``delivery_id``,
+            ``event``, ``status``, ``target`` (``account``/``profile``),
+            ``url`` (without its query string), ``attempt_count``,
+            ``max_attempts``, ``last_status_code``, ``last_error``,
+            ``next_attempt_at``, ``attempts[]``, ``redelivery_of``, ``test``...
+        """
+        params: Dict[str, Any] = {}
+        for key, value in (("event", event), ("status", status),
+                           ("request_id", request_id), ("job_id", job_id),
+                           ("profile_username", profile_username),
+                           ("limit", limit), ("page", page)):
+            if value is not None:
+                params[key] = value
+        if include_payload is not None:
+            params["include_payload"] = "true" if include_payload else "false"
+        return self._request("/uploadposts/webhooks/deliveries", "GET", params=params)
+
+    def get_webhook_delivery(self, delivery_id: str) -> Dict:
+        """
+        Get one webhook delivery, always with its ``payload`` (the exact body
+        that was signed and sent).
+
+        Raises ``UploadPostError`` with ``status_code`` 404 if it does not
+        exist, is older than 7 days or belongs to another account.
+
+        Args:
+            delivery_id: ``delivery_id`` from list_webhook_deliveries (the
+                ``X-Upload-Post-Delivery`` header your endpoint received).
+
+        Returns:
+            ``{"success": True, "delivery": {...}}``.
+        """
+        return self._request(
+            f"/uploadposts/webhooks/deliveries/{quote(str(delivery_id), safe='')}", "GET"
+        )
+
+    def redeliver_webhook(self, delivery_id: str) -> Dict:
+        """
+        Send a logged webhook delivery again, right away, with the same body.
+
+        It is a new delivery: it gets its own ``X-Upload-Post-Delivery`` id,
+        carries the original in ``X-Upload-Post-Redelivery-Of``, goes to the
+        webhook URL configured now and, if it fails in a retryable way, follows
+        the normal retry schedule.
+
+        Errors (``UploadPostError``): 404 if the delivery does not exist; 409
+        with ``error_code`` ``"webhook_removed"``, ``"event_unsubscribed"`` or
+        ``"blocked_url"`` when there is nowhere to send it; 503
+        ``"delivery_log_disabled"`` while redelivery is switched off.
+
+        Args:
+            delivery_id: ``delivery_id`` from list_webhook_deliveries.
+
+        Returns:
+            ``{"success": True, "delivery": {...}}`` with the new delivery
+            (``redelivery_of`` = the original id).
+        """
+        return self._request(
+            f"/uploadposts/webhooks/deliveries/{quote(str(delivery_id), safe='')}/redeliver",
+            "POST",
+        )
 
     # ==================== Helper Endpoints ====================
 
@@ -2123,6 +2320,43 @@ class UploadPostClient:
         """
         params = {"profile": profile} if profile else None
         return self._request("/uploadposts/linkedin/pages", "GET", params=params)
+
+    def resolve_linkedin_organization(self, user: str, url: str) -> Dict:
+        """
+        Turn any LinkedIn company Page into the ``urn`` and exact ``name`` a
+        mention needs.
+
+        LinkedIn only links a company mention (``@[Name](urn:li:organization:ID)``)
+        when the name matches the Page's full name exactly, capitals included,
+        or it is published as plain text. This works for any company, showcase
+        or school Page, not only the ones you administer. Paste the returned
+        ``mention`` into the post text as is. Cached lookups answer with
+        ``cached: True``; new ones count against 60 per hour per account.
+
+        People cannot be resolved: LinkedIn does not let apps look members up,
+        and person ids are specific to each LinkedIn app.
+
+        Errors (``UploadPostError.error_code``): 400 ``invalid_parameter``,
+        400 ``linkedin_person_not_resolvable`` (a ``/in/`` URL or
+        ``urn:li:person``), 401 ``linkedin_reauth_required``, 403
+        ``linkedin_permission_missing`` (reconnect LinkedIn approving the
+        company Page permission), 404 ``organization_not_found``, 429
+        ``rate_limited`` / ``linkedin_rate_limited``, 502 ``linkedin_unavailable``.
+
+        Args:
+            user: Profile username whose LinkedIn connection makes the lookup.
+            url: The Page URL (``https://www.linkedin.com/company/<vanity>/``,
+                also ``/showcase/`` and ``/school/``), the vanity name (with or
+                without ``@``), the numeric id or ``urn:li:organization:ID``.
+
+        Returns:
+            ``{"success": True, "urn", "id", "name", "vanity_name", "mention",
+            "cached"}``.
+        """
+        return self._request(
+            "/uploadposts/linkedin/resolve-organization", "GET",
+            params={"user": user, "url": url},
+        )
 
     def get_pinterest_boards(self, profile: Optional[str] = None) -> Dict:
         """
@@ -2156,6 +2390,28 @@ class UploadPostClient:
         top-level comments. It is the same question - what was said here - so it
         is the same endpoint with one more parameter, not a method per platform.
 
+        Replies (``comment_id``) work on TikTok, Threads, YouTube, Instagram,
+        Facebook and LinkedIn (company Page posts only); X and Bluesky answer
+        400 ``platform_not_supported``. ``post_id`` is still required with
+        ``comment_id``. Per platform:
+
+        - Instagram: the numeric comment id from the listing.
+        - Facebook: the ``{post}_{comment}`` id from the listing; ``post_id``
+          (``{page_id}_{post_id}``) picks the Page whose token reads it.
+        - LinkedIn: prefer the ``comment_urn`` from the listing
+          (``urn:li:comment:(urn:li:activity:...,...)``, one LinkedIn call). A
+          bare id is looked up among the post's first 250 comments, else 404
+          ``linkedin_comment_not_found``. ``after`` is a number (the offset in
+          ``pagination.next_cursor``).
+
+        Error codes (``UploadPostError.error_code``): 400
+        ``invalid_comment_id`` (wrong format, checked before calling the
+        network), 400 ``invalid_cursor`` (LinkedIn), 404 ``comment_not_found``
+        (Instagram/Facebook do not know the comment; one with no replies is a
+        200 with an empty list), 404 ``linkedin_comment_not_found``, 403
+        ``linkedin_personal_not_supported`` (personal LinkedIn profile), 403
+        ``linkedin_page_access_denied`` (the member lost the Page admin role).
+
         On TikTok this needs the `comments` capability on the connection (see
         `capabilities` on the TikTok account returned by list_users()). TikTok
         grants it at connect time, so an account connected earlier has to be
@@ -2164,18 +2420,21 @@ class UploadPostClient:
         Args:
             user: Profile username.
             platform: Platform name (instagram, facebook, youtube, linkedin,
-                tiktok).
+                tiktok, threads, x, bluesky...).
             post_id: Post/media ID (provide post_id or post_url). Required on
-                TikTok, which has no post URL lookup.
+                TikTok, which has no post URL lookup. LinkedIn: the post URN.
             post_url: Full post URL (provide post_id or post_url).
-            limit: Maximum number of comments to return.
-            after: Pagination cursor for the next page of comments.
+            limit: Maximum number of comments to return (1-50). LinkedIn's
+                top-level listing ignores it; LinkedIn replies apply it.
+            after: Pagination cursor (``pagination.next_cursor``) for the next
+                page of comments.
             comment_id: Read the replies to this comment instead of the post's
                 top-level comments. Keyword-only in practice: it goes last so
                 the existing positional order keeps working.
 
         Returns:
-            Comments data including comment IDs, text, timestamps, and user info.
+            Comments data including comment IDs, text, timestamps, and user
+            info, plus ``pagination``.
         """
         params = {"platform": platform, "user": user}
         if post_id:
@@ -2371,6 +2630,307 @@ class UploadPostClient:
         return self._request(
             "/uploadposts/comments/action", "POST", json_data=json_data
         )
+
+    # ==================== Direct messages ====================
+
+    def send_dm(
+        self,
+        user: str,
+        platform: str,
+        recipient_id: Optional[str] = None,
+        message: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+        attachments: Optional[Union[Dict, List[Dict]]] = None,
+        reply_to: Optional[str] = None,
+        sender_action: Optional[str] = None,
+        message_id: Optional[str] = None,
+        reaction: Optional[Union[str, Dict]] = None,
+        buttons: Optional[List[Dict]] = None,
+        quick_replies: Optional[List[Dict]] = None,
+        **fields: Any,
+    ) -> Dict:
+        """
+        Send a direct message, or a DM action (mark read, react...).
+
+        One method for every messaging platform: ``instagram``, ``facebook``
+        (Messenger), ``whatsapp`` and ``bluesky``. Instagram and Messenger only
+        let you write inside the 24-hour window the person opened by writing to
+        you. Messages count against the plan's daily DM allowance; sender
+        actions do not.
+
+        Bluesky:
+
+        - ``recipient_id`` is a handle (``alice.bsky.social`` or ``@alice...``),
+          a DID (``did:plc:...``) or a bsky.app profile link. Or pass
+          ``conversation_id`` instead (also for group conversations).
+        - ``message`` up to 1000 characters (as Bluesky counts them); links,
+          ``#hashtags`` and ``@handle`` mentions become clickable.
+        - ``attachments``: one Bluesky post to share,
+          ``{"type": "post", "url": "https://bsky.app/profile/<handle>/post/<id>"}``.
+        - ``reply_to``: id of a message in the same conversation.
+        - ``sender_action``: ``mark_seen``/``mark_read`` (up to ``message_id``),
+          ``react``/``unreact`` (``reaction`` emoji on ``message_id``),
+          ``delete`` (for you only), ``accept`` (a message request), ``mute``,
+          ``unmute``, ``leave``.
+        - Needs an app password created with "Allow access to your direct
+          messages"; otherwise 403 ``bluesky_dm_scope_missing``. Other codes:
+          403 ``bluesky_recipient_unavailable`` (with ``reason``), 404
+          ``bluesky_recipient_not_found`` / ``bluesky_conversation_not_found`` /
+          ``bluesky_post_not_found``, 400 ``bluesky_message_too_long`` /
+          ``bluesky_rejected``, 401 ``bluesky_reauth_required``, 429
+          ``bluesky_rate_limited`` (``retry_after``), 502/503
+          ``bluesky_chat_unavailable`` / ``bluesky_edge_rate_limited``.
+        - 504 ``bluesky_send_unconfirmed``: the DM may have gone out. Do NOT
+          retry automatically; read the conversation first
+          (``error.response["conversation_id"]``).
+
+        Buttons, quick replies, templates and typing indicators do not exist in
+        Bluesky chat and are refused with 400.
+
+        Args:
+            user: Profile username.
+            platform: ``instagram``, ``facebook``, ``whatsapp`` or ``bluesky``.
+            recipient_id: Who to write to (Instagram/Messenger scoped id,
+                WhatsApp phone number, Bluesky handle or DID).
+            message: The text. Optional with a sender action, a shared post or
+                another rich body.
+            conversation_id: Bluesky: send to this conversation.
+            attachments: Attachment(s); on Bluesky one shared post.
+            reply_to: Id of the message to reply to.
+            sender_action: Platform action instead of a message (Instagram:
+                ``mark_seen``, ``typing_on``, ``typing_off``, ``react``,
+                ``unreact``; WhatsApp: ``mark_read``, ``typing_on``; Bluesky:
+                see above).
+            message_id: Message the action applies to.
+            reaction: Emoji for a reaction (WhatsApp: a dict with
+                ``message_id`` and ``emoji``).
+            buttons: Up to 3 ``{"title", "url"}`` link buttons (Instagram,
+                Messenger).
+            quick_replies: Quick replies (Instagram, Messenger).
+            **fields: Any other body field of ``/dms/send``, sent as is
+                (``template``, ``tag``, ``generic_template``, ``location``,
+                ``contacts``, ``list``, ``cta_url``, ``header``, ``footer``,
+                ``page_id``...). ``None`` values are dropped.
+
+        Returns:
+            On Bluesky ``{"success": True, "platform": "bluesky",
+            "recipient_id", "conversation_id", "message_id", "created_time",
+            "message"}``; the other platforms return their message id.
+        """
+        body: Dict[str, Any] = {"platform": platform, "user": user}
+        for key, value in (("recipient_id", recipient_id), ("message", message),
+                           ("conversation_id", conversation_id),
+                           ("attachments", attachments), ("reply_to", reply_to),
+                           ("sender_action", sender_action),
+                           ("message_id", message_id), ("reaction", reaction),
+                           ("buttons", buttons), ("quick_replies", quick_replies)):
+            if value is not None:
+                body[key] = value
+        for key, value in fields.items():
+            if value is not None:
+                body[key] = value
+        return self._request("/uploadposts/dms/send", "POST", json_data=body)
+
+    def get_dm_conversations(
+        self,
+        user: str,
+        platform: str,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        since: Optional[Union[str, int]] = None,
+        participant_id: Optional[str] = None,
+        messages_limit: Optional[int] = None,
+        conversation_id: Optional[str] = None,
+        messages_cursor: Optional[str] = None,
+        status: Optional[str] = None,
+        read_state: Optional[str] = None,
+        **params: Any,
+    ) -> Dict:
+        """
+        List DM conversations, newest first, with their latest messages.
+
+        Same shape on every platform: ``conversations[]`` with
+        ``participants.data`` (the connected account flagged ``is_me``) and
+        ``messages.data``, plus ``pagination``.
+
+        Bluesky adds per conversation ``status`` (``accepted``/``request``),
+        ``unread_count``, ``muted``, ``kind`` (``direct``/``group``) and
+        ``account``; per message ``direction`` (``in``/``out``), ``type``,
+        ``attachments`` (shared post), ``reactions`` and ``reply_to``. It
+        returns at most 25 conversations per page; if a page takes too long,
+        the rest come with only their latest message and
+        ``messages_truncated: True`` (read them with ``conversation_id``).
+
+        Args:
+            user: Profile username.
+            platform: ``instagram``, ``facebook``, ``whatsapp`` or ``bluesky``.
+            limit: Conversations per page (1-50; Bluesky caps at 25).
+            cursor: ``pagination.next_cursor`` from the previous page.
+            since: Only conversations active since this Unix timestamp or ISO
+                8601 date.
+            participant_id: Only the 1:1 conversation with this person
+                (Bluesky: handle or DID; never created by reading).
+            messages_limit: Messages per conversation.
+            conversation_id: Bluesky: only this conversation.
+            messages_cursor: Bluesky, with ``conversation_id``: older messages
+                (``messages.paging.next_cursor``).
+            status: Bluesky: ``request`` or ``accepted``.
+            read_state: Bluesky: ``unread`` for conversations with unread
+                messages only.
+            **params: Any other query parameter, sent as is (e.g.
+                ``facebook_page_id``). ``None`` values are dropped.
+
+        Returns:
+            ``{"success": True, "conversations": [...], "pagination": {...}}``.
+        """
+        query: Dict[str, Any] = {"platform": platform, "user": user}
+        for key, value in (("limit", limit), ("cursor", cursor), ("since", since),
+                           ("participant_id", participant_id),
+                           ("messages_limit", messages_limit),
+                           ("conversation_id", conversation_id),
+                           ("messages_cursor", messages_cursor),
+                           ("status", status), ("read_state", read_state)):
+            if value is not None:
+                query[key] = value
+        for key, value in params.items():
+            if value is not None:
+                query[key] = value
+        return self._request("/uploadposts/dms/conversations", "GET", params=query)
+
+    # ==================== AutoDM: account-wide rules (Instagram) ====================
+
+    def create_autodm_rule(
+        self,
+        profile_username: str,
+        reply_message: str,
+        triggers: Optional[List[str]] = None,
+        trigger_keywords: Optional[List[str]] = None,
+        buttons: Optional[List[Dict]] = None,
+        per_user_cooldown_hours: Optional[int] = None,
+    ) -> Dict:
+        """
+        Create an account-wide AutoDM rule for the profile's Instagram account.
+
+        Unlike a per-post monitor, a rule covers every post and reel of the
+        account (present and future), never expires and does not count towards
+        the 2-monitors-per-day limit. Up to 10 rules per Instagram account. It
+        works only from Meta's real-time notifications: creating it subscribes
+        the account; if Meta refuses, nothing is created (502
+        ``webhook_subscription_failed``: reconnect Instagram).
+
+        Triggers:
+
+        - ``comment`` (default): a top-level comment on any post -> private
+          reply. A post with its own monitor is answered by that monitor only.
+        - ``story_reply``: someone replies to one of your stories -> DM.
+        - ``story_mention``: someone mentions you in their story -> DM.
+        - ``dm_keyword``: a DM containing one of ``trigger_keywords`` -> DM
+          (requires ``trigger_keywords``).
+
+        Pace: at most 25 DMs per account every 15 minutes plus the plan's daily
+        DM allowance; what does not fit is queued for up to 24 hours.
+
+        Errors (``UploadPostError.error_code``): 400 (invalid fields,
+        ``reconnect_required``), 409 ``duplicate_rule`` / ``rule_limit_reached``
+        / ``rule_creation_in_progress``, 502 ``webhook_subscription_failed``,
+        503 ``account_rules_disabled``.
+
+        Args:
+            profile_username: Profile with the Instagram account connected.
+            reply_message: The DM text (max 1,000 characters; 640 with buttons).
+            triggers: Any of ``comment``, ``story_reply``, ``story_mention``,
+                ``dm_keyword``. Default ``["comment"]``.
+            trigger_keywords: Up to 20; only events whose text contains one
+                fire the rule (case- and accent-insensitive). Not applied to
+                ``story_mention``. Omit for no filter; blank keywords are
+                rejected.
+            buttons: Up to 3 ``{"title", "url"}`` link buttons.
+            per_user_cooldown_hours: The same person gets at most one DM from
+                this rule in this many hours (whole number 0-720, default 24).
+                For story replies, story mentions and keyword DMs it is never
+                less than 24 (``message_cooldown_hours`` in the response).
+
+        Returns:
+            ``{"success": True, "rule": {...}}`` with ``rule_id``, ``status``,
+            ``stats``, ``pending`` and ``webhook`` (``subscribed``,
+            ``receiving_events``, ``last_event_at``, ``hint``, ``error``).
+        """
+        body: Dict[str, Any] = {
+            "profile_username": profile_username,
+            "reply_message": reply_message,
+        }
+        if triggers is not None:
+            body["triggers"] = triggers
+        if trigger_keywords is not None:
+            body["trigger_keywords"] = trigger_keywords
+        if buttons is not None:
+            body["buttons"] = buttons
+        if per_user_cooldown_hours is not None:
+            body["per_user_cooldown_hours"] = per_user_cooldown_hours
+        return self._request("/uploadposts/autodms/rules", "POST", json_data=body)
+
+    def list_autodm_rules(self, profile_username: Optional[str] = None) -> Dict:
+        """
+        List the account-wide AutoDM rules, with their webhook status.
+
+        ``status`` is ``active``, ``paused``, ``reconnect_required``,
+        ``stopped`` (with ``stop_reason``: ``account_moved``,
+        ``account_disconnected``, ``profile_unlinked``, ``profile_deleted``,
+        ``user_missing``) or ``disabled``. Check ``webhook.receiving_events``
+        and ``webhook.hint``: a rule only acts on notifications Meta delivers.
+
+        Args:
+            profile_username: Only the rules of this profile.
+
+        Returns:
+            ``{"success": True, "enabled": True, "rules": [...], "total": N}``.
+        """
+        params = {"profile_username": profile_username} if profile_username else None
+        return self._request("/uploadposts/autodms/rules", "GET", params=params)
+
+    def pause_autodm_rule(self, rule_id: str) -> Dict:
+        """
+        Pause an account-wide AutoDM rule (it answers nothing while paused).
+
+        Args:
+            rule_id: ``rule_id`` from create_autodm_rule / list_autodm_rules.
+
+        Returns:
+            ``{"success": True, "message": "Rule paused", "rule_id": ...}``.
+        """
+        return self._request("/uploadposts/autodms/rules/pause", "POST",
+                             json_data={"rule_id": rule_id})
+
+    def resume_autodm_rule(self, rule_id: str) -> Dict:
+        """
+        Resume a paused (or stopped) account-wide AutoDM rule.
+
+        Subscribes the account to Meta's notifications again if needed (502
+        ``webhook_subscription_failed`` as on create). A stopped rule whose
+        Instagram account is no longer on its profile answers 409
+        ``rule_stopped`` with ``stop_reason``.
+
+        Args:
+            rule_id: ``rule_id`` of the rule.
+
+        Returns:
+            ``{"success": True, "message": "Rule resumed", "rule_id": ...}``.
+        """
+        return self._request("/uploadposts/autodms/rules/resume", "POST",
+                             json_data={"rule_id": rule_id})
+
+    def delete_autodm_rule(self, rule_id: str) -> Dict:
+        """
+        Delete an account-wide AutoDM rule and its queued events.
+
+        Args:
+            rule_id: ``rule_id`` of the rule.
+
+        Returns:
+            ``{"success": True, "message": "Rule deleted", "rule_id": ...}``.
+        """
+        return self._request("/uploadposts/autodms/rules/delete", "POST",
+                             json_data={"rule_id": rule_id})
 
     # ==================== TikTok ====================
 
