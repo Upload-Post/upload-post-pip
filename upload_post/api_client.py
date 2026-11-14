@@ -188,6 +188,11 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Cross-network commercial disclosure: the API maps it to TikTok branded
+        # content, YouTube paid promotion and X paid partnership. Other networks
+        # answer with a warning and the upload goes on. Per-network fields
+        # (brand_content_toggle, hasPaidProductPlacement, x_paid_partnership) win.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -562,6 +567,9 @@ class UploadPostClient:
         """Add Facebook-specific parameters."""
         if kwargs.get("facebook_page_id"):
             data.append(("facebook_page_id", kwargs["facebook_page_id"]))
+        # Sponsor's Facebook Page id (numeric): branded content tag on Page photos,
+        # Page videos and /feed posts. Reels and Stories have no such field.
+        self._put(data, "facebook_sponsor_id", kwargs.get("facebook_sponsor_id"), "str")
 
         # facebook_media_type (POSTS/STORIES/REELS) is honored for BOTH photos and video
         # (backend uploadphotos.py reads request.form.get('facebook_media_type')). Gating it
@@ -607,6 +615,9 @@ class UploadPostClient:
             data.append(("pinterest_alt_text", kwargs["pinterest_alt_text"]))
         if kwargs.get("pinterest_link"):
             data.append(("pinterest_link", kwargs["pinterest_link"]))
+        # Sponsor's Pinterest account id (numeric). Pinterest keeps paid partnership
+        # to a closed beta, so most accounts will not be able to use it.
+        self._put(data, "pinterest_sponsor_id", kwargs.get("pinterest_sponsor_id"), "str")
         
         if is_video:
             if kwargs.get("pinterest_cover_image_url"):
@@ -976,6 +987,11 @@ class UploadPostClient:
 
         Keyword Args:
             description: Video description
+            paid_partnership: True to mark the post as paid/sponsored. Mapped to TikTok
+                branded content, YouTube paid promotion and X paid partnership;
+                other networks return a warning and still publish. The per-network
+                field (brand_content_toggle, hasPaidProductPlacement,
+                x_paid_partnership) wins when you also send it.
             first_comment: First comment to post
             scheduled_date: ISO date for scheduling (e.g., "2024-12-25T10:00:00Z")
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
@@ -1069,10 +1085,15 @@ class UploadPostClient:
                 video_state: PUBLISHED or DRAFT
                 facebook_media_type: REELS, STORIES, or VIDEO
                 thumbnail_url: Thumbnail URL for normal page videos (VIDEO type only)
+                facebook_sponsor_id: Sponsor's Facebook Page id (numeric). Branded
+                    content tag on Page videos (facebook_media_type=VIDEO); Reels
+                    and Stories have no sponsor field
             
             Pinterest:
                 pinterest_board_id: Board ID
                 pinterest_link: Destination link
+                pinterest_sponsor_id: Sponsor's Pinterest account id (numeric;
+                    Pinterest paid partnership is a closed beta)
                 pinterest_cover_image_url: Cover image URL
                 pinterest_cover_image_key_frame_time: Key frame time in ms
             
@@ -1165,6 +1186,9 @@ class UploadPostClient:
 
         Keyword Args:
             description: Photo description
+            paid_partnership: True to mark the post as paid/sponsored (TikTok branded
+                content, YouTube paid promotion, X paid partnership). Other networks
+                return a warning and still publish.
             first_comment: First comment to post
             alt_text: Alt text for accessibility
             scheduled_date: ISO date for scheduling
@@ -1210,11 +1234,15 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Facebook Page id (numeric) for the
+                    branded content tag on Page photos
             
             Pinterest:
                 pinterest_board_id: Board ID
                 pinterest_alt_text: Alt text
                 pinterest_link: Destination link
+                pinterest_sponsor_id: Sponsor's Pinterest account id (numeric;
+                    closed beta)
             
             X (Twitter):
                 reply_settings: Who can reply
@@ -1322,6 +1350,9 @@ class UploadPostClient:
                       whop, listmonk
 
         Keyword Args:
+            paid_partnership: True to mark the post as paid/sponsored (TikTok branded
+                content, YouTube paid promotion, X paid partnership). Other networks
+                return a warning and still publish.
             first_comment: First comment to post
             scheduled_date: ISO date for scheduling
             timezone: Timezone for scheduled date
@@ -1337,6 +1368,8 @@ class UploadPostClient:
             Facebook:
                 facebook_page_id: Facebook Page ID
                 facebook_link_url: URL to attach as link preview on Facebook
+                facebook_sponsor_id: Sponsor's Facebook Page id (numeric) for the
+                    branded content tag on /feed posts
 
             Bluesky:
                 bluesky_link_url: URL to attach as external embed link preview

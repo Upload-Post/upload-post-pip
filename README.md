@@ -727,6 +727,33 @@ client.upload_video(
 | `privacy_level` | str | `photo_privacy` / `video_privacy` | Accepted on video and photo posts alike; which values the account may use is decided by TikTok, see the note below |
 | `post_mode` | str | `draft` | `DIRECT_POST` or `MEDIA_UPLOAD`. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True` |
 
+## Commercial disclosure (paid partnership / branded content)
+
+`paid_partnership=True` works on `upload_video`, `upload_photos` and `upload_text`.
+The API maps it to each network's native label:
+
+| Network | What it sets | Notes |
+| --- | --- | --- |
+| TikTok | `brand_content_toggle` (branded content) | Direct posts only. Not on drafts. With `privacy_level="SELF_ONLY"` the API answers 400 `commercial_disclosure_privacy_conflict` (TikTok does not allow private branded content). `brand_content_toggle` wins when you send it too |
+| YouTube | `hasPaidProductPlacement` | The result carries a warning if YouTube did not keep it |
+| X | `x_paid_partnership` | First post only |
+| Facebook | `facebook_sponsor_id` (sponsor's numeric Page id) | Page photos, Page videos (`facebook_media_type="VIDEO"`) and `/feed` posts. Reels and Stories have no sponsor field |
+| Pinterest | `pinterest_sponsor_id` (sponsor's numeric account id) | Closed beta on Pinterest's side |
+| Instagram and the rest | not available | The response has a `warnings` entry and the post still publishes |
+
+```python
+client.upload_video(
+    "video.mp4",
+    title="Launch day",
+    user="my-profile",
+    platforms=["tiktok", "youtube", "x"],
+    paid_partnership=True,
+)
+```
+
+A value that is not `true`/`false`, or a non-numeric sponsor id, is rejected with
+`error_code` `commercial_disclosure_invalid_value`.
+
 ## Platform-Specific Options
 
 ### TikTok (Video)
@@ -736,7 +763,7 @@ client.upload_video(
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
-- `brand_content_toggle` - Branded content toggle
+- `brand_content_toggle` - Branded content toggle (`paid_partnership` is the cross-network alias)
 - `brand_organic_toggle` - Brand organic toggle
 - `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
 - `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
@@ -796,7 +823,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid promotion declaration (`paid_partnership` is the cross-network alias)
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -817,6 +844,7 @@ for the music, location, cover and draft options.
 - `facebook_page_id` - Facebook Page ID (required)
 - `video_state` - PUBLISHED, DRAFT
 - `facebook_media_type` - REELS, STORIES, or VIDEO (normal page video)
+- `facebook_sponsor_id` - Sponsor's Page id (numeric): branded content tag on Page photos, Page videos and `/feed` posts. Not for Reels or Stories
 - `thumbnail_url` - Thumbnail URL for normal page videos (only when `facebook_media_type` is VIDEO)
 - `facebook_link_url` - URL for text posts
 - `facebook_alt_text` - Alt text per photo (string, `facebook_alt_text[]`, or JSON array)
@@ -831,6 +859,7 @@ for the music, location, cover and draft options.
 ### Pinterest
 - `pinterest_board_id` - Board ID
 - `pinterest_link` - Destination link
+- `pinterest_sponsor_id` - Sponsor's account id (numeric). Pinterest paid partnership is a closed beta
 - `pinterest_alt_text` - Alt text for photos
 - `pinterest_cover_image_url` - Cover image URL (video)
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
