@@ -736,8 +736,8 @@ client.upload_video(
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
-- `brand_content_toggle` - Branded content toggle
-- `brand_organic_toggle` - Brand organic toggle
+- `brand_content_toggle` - Paid partnership with a third-party brand (TikTok's "Paid partnership" label). Direct Post only; not with `privacy_level="SELF_ONLY"`. Overrides `paid_partnership`
+- `brand_organic_toggle` - Promoting your own business (TikTok's "Promotional content" label)
 - `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
 - `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
 
@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - "Includes paid promotion" declaration (sent as `paidProductPlacementDetails.hasPaidProductPlacement`). The result carries a `warnings` entry if YouTube's reply shows it was not kept; fix it afterwards with `edit_post()` (see [Paid partnerships](#paid-partnerships--branded-content))
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -827,6 +827,7 @@ for the music, location, cover and draft options.
 - `facebook_collaborators` - Page ids to invite on Reels
 - `facebook_unpublished_content_type` - DRAFT / INLINE_CREATED / ADS_POST on page video (`SCHEDULED` is rejected; use `scheduled_date`)
 - `facebook_no_story` / `facebook_secret` - Page video flags
+- `facebook_sponsor_id` - Sponsor's numeric Page id (branded content tag) on Page photos, videos (`facebook_media_type="VIDEO"`) and text posts. Reels and Stories cannot carry it
 
 ### Pinterest
 - `pinterest_board_id` - Board ID
@@ -836,6 +837,7 @@ for the music, location, cover and draft options.
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
 - `pinterest_board_section_id` - Board section id
 - `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
+- `pinterest_sponsor_id` - Sponsor's numeric account id (paid partnership; Pinterest closed beta)
 - `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
 - `pinterest_carousel_index` - 0-based cover slide
 
@@ -855,7 +857,7 @@ for the music, location, cover and draft options.
 - `x_thread_image_layout` - Comma-separated image layout for thread (e.g. "4,4" or "2,3,1"). Each value 1-4, total must equal image count. Auto-chunks into groups of 4 when >4 images.
 - `x_alt_text` - Alt text (string, `x_alt_text[]`, or JSON array; ≤1000 chars)
 - `x_subtitles` / `x_subtitles_url` / `x_subtitles_language` / `x_subtitles_name` - Video SRT captions
-- `x_paid_partnership` - Paid partnership flag on the first post
+- `x_paid_partnership` - Paid partnership flag on the first post. Overrides `paid_partnership`
 - `x_article_title` / `x_article_body` / `x_article_content_state` / `x_article_draft` / `x_article_cover_media` - X Articles (text; Premium). Articles have two heading levels: a `### Heading` in the body, or a `header-three` block in `x_article_content_state`, is published as `header-two`
 
 ### Threads
@@ -964,6 +966,55 @@ client.upload_photos(
 - `listmonk_content_type` - `richtext` (default), `markdown`, `html`, `plain`
 - `listmonk_send_at` / `listmonk_lists` / `listmonk_template_id` / `listmonk_media_ids`
 
+## Paid partnerships & branded content
+
+`paid_partnership=True` marks a post as sponsored on every target network that
+has a native label, instead of a hashtag:
+
+| Network | What is sent | Notes |
+| --- | --- | --- |
+| TikTok | `brand_content_toggle` | Direct Post only; `privacy_level="SELF_ONLY"` is a 400 `commercial_disclosure_privacy_conflict` |
+| YouTube | `hasPaidProductPlacement` | YouTube may ignore it: the result carries a `warnings` entry when its reply shows it was not kept |
+| X | `x_paid_partnership` | First post only |
+| Facebook | `sponsor_id` | Also needs `facebook_sponsor_id`; Page photos, videos and text posts, not Reels or Stories |
+| Pinterest | `sponsor_id` | Also needs `pinterest_sponsor_id` (closed beta) |
+| Instagram, LinkedIn, Threads... | nothing | No native field in their API: the post publishes and `warnings` says so |
+
+A network-specific field (`brand_content_toggle`, `hasPaidProductPlacement`,
+`x_paid_partnership`) always wins over `paid_partnership`. Instagram's native
+"Paid partnership" label and Facebook Reels' branded content tag are not
+available through the API.
+
+```python
+result = client.upload_video(
+    video_path="review.mp4",
+    title="Review: my new favourite bag",
+    user="my-profile",
+    platforms=["tiktok", "youtube", "x"],
+    paid_partnership=True,
+)
+print(result.get("warnings"))  # per-network notes, if any
+```
+
+To fix a video that is already published, declare it with `edit_post()` (50
+YouTube quota units). The result shows what YouTube stored:
+
+```python
+edit = client.edit_post(
+    user="my-profile",
+    platform="youtube",
+    post_id="VIDEO_ID",
+    has_paid_product_placement=True,
+)
+# edit["paidProductPlacementDetails"]["hasPaidProductPlacement"] is True
+# Anything else: YouTube did not accept it through the API; tick "Paid
+# promotion" in YouTube Studio.
+```
+
+See the [Paid Partnerships guide](https://docs.upload-post.com/guides/paid-partnerships)
+for the exact fields, how to verify each label and TikTok's Music Usage
+Confirmation (a notice for posting interfaces, not an API parameter).
+
 ## Common Options
 
 These options work across all upload methods:
@@ -981,6 +1032,7 @@ These options work across all upload methods:
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
+| `paid_partnership` | Mark the post as a paid partnership on every network with a native label (TikTok, YouTube, X; Facebook and Pinterest also need a sponsor id). See [Paid partnerships](#paid-partnerships--branded-content) |
 
 ## Error Handling
 

@@ -165,6 +165,7 @@ class UploadPostClient:
         add_to_queue: Optional[bool] = None,
         max_posts_per_slot: Optional[int] = None,
         async_upload: Optional[bool] = None,
+        paid_partnership: Optional[bool] = None,
         **kwargs
     ):
         """Add common upload parameters."""
@@ -188,6 +189,13 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Cross-network paid partnership / branded content. The API maps it to the
+        # native label of each network that has one (TikTok, YouTube, X; Facebook and
+        # Pinterest also need their sponsor id) and answers with a `warnings` entry
+        # for the rest. A network-specific field (brand_content_toggle,
+        # hasPaidProductPlacement, x_paid_partnership) always wins over it.
+        if paid_partnership is not None:
+            data.append(("paid_partnership", str(paid_partnership).lower()))
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -585,6 +593,9 @@ class UploadPostClient:
             ("facebook_feed_targeting", "json"),
             ("facebook_is_ai_generated", "bool"),
             ("facebook_collaborators", "list"),
+            # Branded content tag: the sponsor's Page id. Page photos, videos and
+            # text posts; the API ignores it (with a warning) for Reels and Stories.
+            ("facebook_sponsor_id", "str"),
         ))
         if is_text:
             self._put_many(data, kwargs, (
@@ -621,6 +632,8 @@ class UploadPostClient:
         self._put_many(data, kwargs, (
             ("pinterest_board_section_id", "str"),
             ("pinterest_ai_disclosures", "list"),
+            # Paid partnership: the sponsor's account id (Pinterest closed beta).
+            ("pinterest_sponsor_id", "str"),
             ("pinterest_carousel_titles", "list"),
             ("pinterest_carousel_descriptions", "list"),
             ("pinterest_carousel_links", "list"),
@@ -981,6 +994,14 @@ class UploadPostClient:
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously (default: True)
+            paid_partnership: Mark the post as a paid partnership / branded content
+                on every network with a native label: TikTok (brand_content_toggle),
+                YouTube (hasPaidProductPlacement) and X (x_paid_partnership).
+                Facebook and Pinterest also need facebook_sponsor_id /
+                pinterest_sponsor_id. Networks without a native field still
+                publish and the response carries a `warnings` entry. A
+                network-specific field always wins. TikTok: direct posts only;
+                privacy_level SELF_ONLY is a 400 commercial_disclosure_privacy_conflict.
                           title/description from the media and fills any platform field
                           the language (omit to auto-detect from the media).
             
@@ -1000,8 +1021,11 @@ class UploadPostClient:
                 is_aigc: AI-generated content flag
                 post_mode: DIRECT_POST or MEDIA_UPLOAD. MEDIA_UPLOAD is the
                     same draft as tiktok_upload_to_draft=True.
-                brand_content_toggle: Branded content toggle
-                brand_organic_toggle: Brand organic toggle
+                brand_content_toggle: Paid partnership with a third-party brand
+                    (TikTok's "Paid partnership" label). Direct Post only; not with
+                    privacy_level SELF_ONLY. Overrides paid_partnership
+                brand_organic_toggle: Promoting your own business (TikTok's
+                    "Promotional content" label)
                 tiktok_is_ads_only: Only show the video in ads
                 tiktok_tto_invite_link: TikTok One invite link (needs branded content)
 
@@ -1053,7 +1077,10 @@ class UploadPostClient:
                 defaultAudioLanguage: Audio language (BCP-47)
                 allowedCountries: Comma-separated country codes
                 blockedCountries: Comma-separated country codes
-                hasPaidProductPlacement: Paid placement flag
+                hasPaidProductPlacement: "Includes paid promotion" declaration, sent
+                    as paidProductPlacementDetails.hasPaidProductPlacement. The
+                    result carries a `warnings` entry if YouTube's reply shows it
+                    was not kept; fix it afterwards with edit_post()
                 recordingDate: Recording date (ISO 8601)
                 youtube_playlist_id: Playlist ID (or list/comma-separated of IDs) to add
                     the uploaded video to after publishing
@@ -1069,10 +1096,14 @@ class UploadPostClient:
                 video_state: PUBLISHED or DRAFT
                 facebook_media_type: REELS, STORIES, or VIDEO
                 thumbnail_url: Thumbnail URL for normal page videos (VIDEO type only)
+                facebook_sponsor_id: Sponsor's numeric Page id (branded content tag)
+                    on Page videos (VIDEO type). Reels and Stories cannot carry it
             
             Pinterest:
                 pinterest_board_id: Board ID
                 pinterest_link: Destination link
+                pinterest_sponsor_id: Sponsor's numeric account id (paid
+                    partnership; Pinterest closed beta)
                 pinterest_cover_image_url: Cover image URL
                 pinterest_cover_image_key_frame_time: Key frame time in ms
             
@@ -1171,6 +1202,14 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as a paid partnership / branded content
+                on every network with a native label: TikTok (brand_content_toggle),
+                YouTube (hasPaidProductPlacement) and X (x_paid_partnership).
+                Facebook and Pinterest also need facebook_sponsor_id /
+                pinterest_sponsor_id. Networks without a native field still
+                publish and the response carries a `warnings` entry. A
+                network-specific field always wins. TikTok: direct posts only;
+                privacy_level SELF_ONLY is a 400 commercial_disclosure_privacy_conflict.
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
@@ -1195,8 +1234,11 @@ class UploadPostClient:
                                  required together.
                 tiktok_is_ai_generated: AI-generated content disclosure.
                 tiktok_upload_to_draft: Same draft as post_mode="MEDIA_UPLOAD".
-                brand_content_toggle: Branded content toggle
-                brand_organic_toggle: Brand organic toggle
+                brand_content_toggle: Paid partnership with a third-party brand
+                    (TikTok's "Paid partnership" label). Direct Post only; not with
+                    privacy_level SELF_ONLY. Overrides paid_partnership
+                brand_organic_toggle: Promoting your own business (TikTok's
+                    "Promotional content" label)
             
             Instagram:
                 media_type: IMAGE or STORIES
@@ -1210,11 +1252,15 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's numeric Page id (branded content tag).
+                    Not available for Stories
             
             Pinterest:
                 pinterest_board_id: Board ID
                 pinterest_alt_text: Alt text
                 pinterest_link: Destination link
+                pinterest_sponsor_id: Sponsor's numeric account id (paid
+                    partnership; Pinterest closed beta)
             
             X (Twitter):
                 reply_settings: Who can reply
@@ -1327,6 +1373,14 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as a paid partnership / branded content
+                on every network with a native label: TikTok (brand_content_toggle),
+                YouTube (hasPaidProductPlacement) and X (x_paid_partnership).
+                Facebook and Pinterest also need facebook_sponsor_id /
+                pinterest_sponsor_id. Networks without a native field still
+                publish and the response carries a `warnings` entry. A
+                network-specific field always wins. TikTok: direct posts only;
+                privacy_level SELF_ONLY is a 400 commercial_disclosure_privacy_conflict.
             link_url: Generic URL for link preview card (works for LinkedIn,
                 Bluesky, Facebook). Platform-specific params take priority.
 
@@ -1337,6 +1391,7 @@ class UploadPostClient:
             Facebook:
                 facebook_page_id: Facebook Page ID
                 facebook_link_url: URL to attach as link preview on Facebook
+                facebook_sponsor_id: Sponsor's numeric Page id (branded content tag)
 
             Bluesky:
                 bluesky_link_url: URL to attach as external embed link preview
@@ -1590,6 +1645,52 @@ class UploadPostClient:
             "platform": platform,
             "post_id": post_id
         })
+
+    def edit_post(
+        self,
+        user: str,
+        platform: str,
+        post_id: str,
+        has_paid_product_placement: Optional[bool] = None,
+        paid_partnership: Optional[bool] = None,
+        fields: Optional[Dict] = None,
+    ) -> Dict:
+        """
+        Edit a published post (POST /api/uploadposts/posts/edit).
+
+        Supported on Facebook, LinkedIn, X, YouTube and Google Business; the
+        accepted fields depend on the platform (see the Edit post docs). Pass
+        them in ``fields`` under the names the API uses (``message``, ``text``,
+        ``commentary``, ``title``, ``description``, ``tags``, ``privacyStatus``...).
+
+        To declare or remove YouTube's "Includes paid promotion" on a video that
+        is already published, pass ``has_paid_product_placement`` (or the
+        cross-network ``paid_partnership``). The result carries
+        ``paidProductPlacementDetails.hasPaidProductPlacement`` as YouTube
+        answered: anything other than ``True`` means YouTube did not accept it
+        through the API. Costs 50 YouTube quota units.
+
+        Args:
+            user: Profile username.
+            platform: facebook, linkedin, x, youtube, google_business.
+            post_id: Native post ID (YouTube: the video ID).
+            has_paid_product_placement: YouTube paid promotion declaration.
+            paid_partnership: Cross-network alias of
+                ``has_paid_product_placement`` (YouTube).
+            fields: Other fields to change, with the API's names.
+
+        Returns:
+            Edit result.
+        """
+        json_data = dict(fields or {})
+        json_data["platform"] = platform
+        json_data["user"] = user
+        json_data["post_id"] = post_id
+        if has_paid_product_placement is not None:
+            json_data["hasPaidProductPlacement"] = bool(has_paid_product_placement)
+        if paid_partnership is not None:
+            json_data["paid_partnership"] = bool(paid_partnership)
+        return self._request("/uploadposts/posts/edit", "POST", json_data=json_data)
 
     def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None,
                       page_id: Optional[str] = None, page_urn: Optional[str] = None) -> Dict:
