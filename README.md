@@ -736,8 +736,8 @@ client.upload_video(
 - `cover_timestamp` - Timestamp in ms for cover
 - `is_aigc` - AI-generated content flag
 - `post_mode` - DIRECT_POST or MEDIA_UPLOAD. `MEDIA_UPLOAD` is the same draft as `tiktok_upload_to_draft=True`
-- `brand_content_toggle` - Branded content toggle
-- `brand_organic_toggle` - Brand organic toggle
+- `brand_content_toggle` - Branded content (paid partnership with a third-party brand). Direct posts only; TikTok does not allow it with `SELF_ONLY`. Same as `paid_partnership`, see [Paid partnerships](#paid-partnerships-and-commercial-disclosure)
+- `brand_organic_toggle` - Promoting your own business
 - `tiktok_is_ads_only` - Only show the video in ads (alias: `is_ads_only`)
 - `tiktok_tto_invite_link` - TikTok One invite link; needs branded content (alias: `tto_invite_link`)
 
@@ -796,7 +796,7 @@ for the music, location, cover and draft options.
 - `defaultLanguage` - Title/description language (BCP-47)
 - `defaultAudioLanguage` - Audio language (BCP-47)
 - `allowedCountries` / `blockedCountries` - Country restrictions
-- `hasPaidProductPlacement` - Paid placement flag
+- `hasPaidProductPlacement` - Paid promotion declaration (`paidProductPlacementDetails.hasPaidProductPlacement`). If YouTube does not keep it the response carries a `warnings` entry
 - `recordingDate` - Recording date (ISO 8601)
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
@@ -825,6 +825,7 @@ for the music, location, cover and draft options.
 - `facebook_call_to_action` / `facebook_child_attachments` / `facebook_multi_share_end_card` - Link post CTA and carousel
 - `facebook_is_ai_generated` - AI-generated flag on Reels
 - `facebook_collaborators` - Page ids to invite on Reels
+- `facebook_sponsor_id` - Sponsor's Page id for the branded content tag (Page photos, `VIDEO` and text posts; not Reels or Stories)
 - `facebook_unpublished_content_type` - DRAFT / INLINE_CREATED / ADS_POST on page video (`SCHEDULED` is rejected; use `scheduled_date`)
 - `facebook_no_story` / `facebook_secret` - Page video flags
 
@@ -836,6 +837,7 @@ for the music, location, cover and draft options.
 - `pinterest_cover_image_key_frame_time` - Key frame time in seconds (values larger than the video duration are treated as milliseconds)
 - `pinterest_board_section_id` - Board section id
 - `pinterest_ai_disclosures` - `AI_MODIFIED` and/or `SYNTHETIC_PERFORMER`
+- `pinterest_sponsor_id` - Sponsor's account id for a paid partnership (Pinterest closed beta)
 - `pinterest_carousel_titles` / `pinterest_carousel_descriptions` / `pinterest_carousel_links` - Per-slide carousel fields (2–5 photos)
 - `pinterest_carousel_index` - 0-based cover slide
 
@@ -855,7 +857,7 @@ for the music, location, cover and draft options.
 - `x_thread_image_layout` - Comma-separated image layout for thread (e.g. "4,4" or "2,3,1"). Each value 1-4, total must equal image count. Auto-chunks into groups of 4 when >4 images.
 - `x_alt_text` - Alt text (string, `x_alt_text[]`, or JSON array; ≤1000 chars)
 - `x_subtitles` / `x_subtitles_url` / `x_subtitles_language` / `x_subtitles_name` - Video SRT captions
-- `x_paid_partnership` - Paid partnership flag on the first post
+- `x_paid_partnership` - Paid partnership label on the first post
 - `x_article_title` / `x_article_body` / `x_article_content_state` / `x_article_draft` / `x_article_cover_media` - X Articles (text; Premium). Articles have two heading levels: a `### Heading` in the body, or a `header-three` block in `x_article_content_state`, is published as `header-two`
 
 ### Threads
@@ -981,6 +983,37 @@ These options work across all upload methods:
 | `add_to_queue` | Add to posting queue |
 | `max_posts_per_slot` | Max posts per queue slot (overrides profile setting) |
 | `async_upload` | Process asynchronously (default: True) |
+| `paid_partnership` | Mark the post as paid/sponsored on every network that has a native label (TikTok, YouTube, X). Others add a `warnings` entry. See below |
+
+## Paid partnerships and commercial disclosure
+
+`paid_partnership=True` asks each network to show its own paid-partnership label. It is mapped only where the network has an API field for it, and a network-specific field always wins over it:
+
+| Network | What `paid_partnership` does | Network-specific field |
+|---------|------------------------------|------------------------|
+| TikTok | Branded content (`is_branded_content`). Direct posts only. With `privacy_level="SELF_ONLY"` the API answers `400` `commercial_disclosure_privacy_conflict`; in draft mode it is skipped with a warning | `brand_content_toggle`, `brand_organic_toggle` |
+| YouTube | `paidProductPlacementDetails.hasPaidProductPlacement` | `hasPaidProductPlacement` |
+| X | Paid partnership on the first post | `x_paid_partnership` |
+| Facebook | No alias: the branded content tag needs the sponsor's Page id on Page photos, `VIDEO` and text posts (not Reels or Stories) | `facebook_sponsor_id` |
+| Pinterest | No alias: needs the sponsor's account id (closed beta) | `pinterest_sponsor_id` |
+| Instagram and others | No native API field for these connections. The upload goes on and the response has a `warnings` entry | - |
+
+```python
+response = client.upload_video(
+    "video.mp4",
+    title="Sponsored: our new product",
+    user="my-profile",
+    platforms=["tiktok", "youtube", "instagram"],
+    paid_partnership=True,
+)
+# Networks without a native label are listed in response["warnings"] (the upload goes on)
+```
+
+Notes:
+
+- TikTok does not return the label it applied, so check the post in the TikTok app. The Music Usage Confirmation is a consent line that TikTok requires apps to show before posting; it is not an API parameter.
+- YouTube's docs do not list `paidProductPlacementDetails` among the properties you can write, so it can be ignored. When YouTube's answer to the upload shows it was dropped, the post still publishes and that platform's result in `get_status()` carries a `warnings` entry. Read it back with YouTube's `videos.list` (`part=paidProductPlacementDetails`).
+- `paid_partnership=False` has no effect (it never removes a label); omit the field for unpaid posts.
 
 ## Error Handling
 

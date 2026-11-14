@@ -188,6 +188,12 @@ class UploadPostClient:
             data.append(("max_posts_per_slot", str(max_posts_per_slot)))
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
+        # Cross-network paid-partnership switch. The API maps it to each network's
+        # native label (TikTok branded content, YouTube paid promotion, X paid
+        # partnership) and answers with a `warnings` entry on networks that have
+        # none. A network-specific field (brand_content_toggle,
+        # hasPaidProductPlacement, x_paid_partnership) always wins over it.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
         
         # Platform-specific title overrides
@@ -585,6 +591,10 @@ class UploadPostClient:
             ("facebook_feed_targeting", "json"),
             ("facebook_is_ai_generated", "bool"),
             ("facebook_collaborators", "list"),
+            # Branded content tag: the sponsor's numeric Page id. Page photos,
+            # Page videos (facebook_media_type="VIDEO") and text/link posts; Reels
+            # and Stories have no sponsor field (ignored by the API, with a warning).
+            ("facebook_sponsor_id", "str"),
         ))
         if is_text:
             self._put_many(data, kwargs, (
@@ -625,6 +635,8 @@ class UploadPostClient:
             ("pinterest_carousel_descriptions", "list"),
             ("pinterest_carousel_links", "list"),
             ("pinterest_carousel_index", "str"),
+            # Paid partnership: the sponsor's numeric account id (Pinterest closed beta).
+            ("pinterest_sponsor_id", "str"),
         ))
 
     def _add_x_params(
@@ -981,6 +993,9 @@ class UploadPostClient:
             timezone: Timezone for scheduled date (e.g., "Europe/Madrid")
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously (default: True)
+            paid_partnership: Mark the post as paid/sponsored on every network with a native
+                label (TikTok branded content, YouTube paid promotion, X paid partnership).
+                Other networks add a `warnings` entry. Network-specific fields win over it.
                           title/description from the media and fills any platform field
                           the language (omit to auto-detect from the media).
             
@@ -1053,7 +1068,8 @@ class UploadPostClient:
                 defaultAudioLanguage: Audio language (BCP-47)
                 allowedCountries: Comma-separated country codes
                 blockedCountries: Comma-separated country codes
-                hasPaidProductPlacement: Paid placement flag
+                hasPaidProductPlacement: Paid promotion declaration (the response warns if YouTube
+                    did not keep it; read it back with YouTube's videos.list)
                 recordingDate: Recording date (ISO 8601)
                 youtube_playlist_id: Playlist ID (or list/comma-separated of IDs) to add
                     the uploaded video to after publishing
@@ -1066,12 +1082,15 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Page id for the branded content tag (Page photos,
+                    VIDEO and text posts; not Reels or Stories)
                 video_state: PUBLISHED or DRAFT
                 facebook_media_type: REELS, STORIES, or VIDEO
                 thumbnail_url: Thumbnail URL for normal page videos (VIDEO type only)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Sponsor's account id for a paid partnership (closed beta)
                 pinterest_link: Destination link
                 pinterest_cover_image_url: Cover image URL
                 pinterest_cover_image_key_frame_time: Key frame time in ms
@@ -1171,6 +1190,9 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as paid/sponsored on every network with a native
+                label (TikTok branded content, YouTube paid promotion, X paid partnership).
+                Other networks add a `warnings` entry. Network-specific fields win over it.
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
@@ -1210,9 +1232,12 @@ class UploadPostClient:
             
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Page id for the branded content tag (Page photos,
+                    VIDEO and text posts; not Reels or Stories)
             
             Pinterest:
                 pinterest_board_id: Board ID
+                pinterest_sponsor_id: Sponsor's account id for a paid partnership (closed beta)
                 pinterest_alt_text: Alt text
                 pinterest_link: Destination link
             
@@ -1327,6 +1352,9 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            paid_partnership: Mark the post as paid/sponsored on every network with a native
+                label (TikTok branded content, YouTube paid promotion, X paid partnership).
+                Other networks add a `warnings` entry. Network-specific fields win over it.
             link_url: Generic URL for link preview card (works for LinkedIn,
                 Bluesky, Facebook). Platform-specific params take priority.
 
@@ -1336,6 +1364,8 @@ class UploadPostClient:
 
             Facebook:
                 facebook_page_id: Facebook Page ID
+                facebook_sponsor_id: Sponsor's Page id for the branded content tag (Page photos,
+                    VIDEO and text posts; not Reels or Stories)
                 facebook_link_url: URL to attach as link preview on Facebook
 
             Bluesky:
