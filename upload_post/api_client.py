@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict, List, Union, Optional, Any
 from urllib.parse import quote
 import json
+import os
+import re
 import requests
 
 
@@ -113,7 +115,15 @@ class UploadPostClient:
                 else:
                     response = self.session.delete(url)
             elif method == "PATCH":
-                response = self.session.patch(url, json=json_data)
+                if json_data is None and (data is not None or files is not None):
+                    response = self.session.patch(url, data=data, files=files)
+                else:
+                    response = self.session.patch(url, json=json_data)
+            elif method == "PUT":
+                if json_data is None and (data is not None or files is not None):
+                    response = self.session.put(url, data=data, files=files)
+                else:
+                    response = self.session.put(url, json=json_data)
             else:
                 raise UploadPostError(f"Unsupported HTTP method: {method}")
             
@@ -189,11 +199,17 @@ class UploadPostClient:
         if async_upload is not None:
             data.append(("async_upload", str(async_upload).lower()))
         # AI auto-generation of native per-platform copy from the media (fills blank fields)
+        # Sponsored / paid-partnership post, mapped by the API to each network's
+        # native label (TikTok brand_content_toggle, YouTube
+        # hasPaidProductPlacement, X paid_partnership; Facebook and Pinterest
+        # also need their sponsor id). A network-specific field wins over it.
+        self._put(data, "paid_partnership", kwargs.get("paid_partnership"), "bool")
         
         # Platform-specific title overrides
         title_overrides = [
             "bluesky_title", "instagram_title", "facebook_title", "tiktok_title",
             "linkedin_title", "x_title", "youtube_title", "pinterest_title", "threads_title",
+            "telegram_title",
             # New credential-based platforms
             "slack_title", "mastodon_title", "nostr_title", "lemmy_title", "devto_title",
             "hashnode_title", "wordpress_title", "whop_title", "listmonk_title"
@@ -217,7 +233,8 @@ class UploadPostClient:
         comment_overrides = [
             "instagram_first_comment", "facebook_first_comment", "x_first_comment",
             "threads_first_comment", "youtube_first_comment", "reddit_first_comment",
-            "bluesky_first_comment", "linkedin_first_comment", "tiktok_first_comment"
+            "bluesky_first_comment", "linkedin_first_comment", "tiktok_first_comment",
+            "telegram_first_comment"
         ]
         for key in comment_overrides:
             if kwargs.get(key):
@@ -330,7 +347,7 @@ class UploadPostClient:
         if "discord" in platforms:
             self._add_discord_params(data, **kwargs)
         if "telegram" in platforms:
-            self._add_telegram_params(data, **kwargs)
+            self._add_telegram_params(data, files=files, opened=opened, **kwargs)
         if "mastodon" in platforms:
             self._add_mastodon_params(data, **kwargs)
         if "wordpress" in platforms:
@@ -380,6 +397,11 @@ class UploadPostClient:
         ("tiktok_upload_to_draft", True),
         ("upload_to_draft", True),
         ("is_draft", True),
+        # TikTok's "Disclose post content" switch and its two kinds (your own
+        # brand, branded content for a third party).
+        ("disclose_commercial", True),
+        ("your_brand", True),
+        ("branded_content", True),
     )
     # Video-only: TikTok's photo contract takes the track id alone, with no
     # volume or trim, and has no custom cover.
@@ -585,6 +607,8 @@ class UploadPostClient:
             ("facebook_feed_targeting", "json"),
             ("facebook_is_ai_generated", "bool"),
             ("facebook_collaborators", "list"),
+            # Branded content tag: the sponsor's Facebook Page id (not on Reels/Stories).
+            ("facebook_sponsor_id", "str"),
         ))
         if is_text:
             self._put_many(data, kwargs, (
@@ -625,6 +649,7 @@ class UploadPostClient:
             ("pinterest_carousel_descriptions", "list"),
             ("pinterest_carousel_links", "list"),
             ("pinterest_carousel_index", "str"),
+            ("pinterest_sponsor_id", "str"),
         ))
 
     def _add_x_params(
@@ -769,8 +794,12 @@ class UploadPostClient:
             data.append(("gbp_media_category", str(kwargs["gbp_media_category"]).upper()))
         if kwargs.get("gbp_topic_type"):
             data.append(("gbp_topic_type", str(kwargs["gbp_topic_type"]).upper()))
-        if kwargs.get("gbp_media_url"):
-            data.append(("gbp_media_url", kwargs["gbp_media_url"]))
+        media_url = kwargs.get("gbp_media_url")
+        if isinstance(media_url, (list, tuple)):
+            # Several photos (with gbp_multi_media=True) go as gbp_media_url[].
+            self._put(data, "gbp_media_url[]", list(media_url), "list")
+        elif media_url:
+            data.append(("gbp_media_url", media_url))
         if kwargs.get("gbp_media_format"):
             data.append(("gbp_media_format", str(kwargs["gbp_media_format"]).upper()))
         if kwargs.get("gbp_cta_type"):
@@ -802,6 +831,15 @@ class UploadPostClient:
             ("offer_coupon", "str"),
             ("gbp_redeem_url", "str"),
             ("gbp_terms", "str"),
+            ("gbp_alert_type", "str"),
+            ("gbp_upload_to_gallery", "bool"),
+            ("gbp_multi_media", "bool"),
+            ("gbp_recurrence", "str"),
+            ("gbp_recurrence_days", "str"),
+            ("gbp_recurrence_day_of_month", "str"),
+            ("gbp_recurrence_week_occurrence", "str"),
+            ("gbp_recurrence_end", "str"),
+            ("gbp_scheduled_time", "str"),
         ))
 
     def _add_bluesky_params(self, data: List[tuple], **kwargs):
@@ -820,6 +858,12 @@ class UploadPostClient:
             ("bluesky_quote_uri", "str"),
             ("bluesky_quote_id", "str"),
             ("bluesky_quote_url", "str"),
+            ("bluesky_tags", "json"),
+            ("bluesky_created_at", "str"),
+            ("bluesky_thread_overflow", "bool"),
+            ("bluesky_gif_as_video", "bool"),
+            ("bluesky_captions", "json"),
+            ("bluesky_video_presentation", "str"),
         ))
 
     def _add_discord_params(self, data: List[tuple], **kwargs):
@@ -839,8 +883,24 @@ class UploadPostClient:
             ("discord_max_file_mb", "str"),
         ))
 
-    def _add_telegram_params(self, data: List[tuple], **kwargs):
-        """Add Telegram-specific parameters."""
+    def _add_telegram_params(
+        self,
+        data: List[tuple],
+        files: Optional[List[tuple]] = None,
+        opened: Optional[List] = None,
+        **kwargs,
+    ):
+        """Add Telegram-specific parameters.
+
+        JSON objects keep Telegram's own shape (ReplyParameters,
+        LinkPreviewOptions, MessageEntity, InputPollOption...).
+        """
+        # A dice: an emoji, or True for the default one.
+        dice = kwargs.get("telegram_dice")
+        self._put(data, "telegram_dice", str(dice).lower() if isinstance(dice, bool) else dice)
+        # Files (local path) or URLs / file_ids.
+        for key in ("telegram_cover", "telegram_thumbnail", "telegram_live_photo_photo"):
+            self._put_file(data, files, opened, key, kwargs.get(key))
         self._put_many(data, kwargs, (
             ("telegram_parse_mode", "str"),
             ("telegram_message_thread_id", "str"),
@@ -853,6 +913,36 @@ class UploadPostClient:
             ("telegram_as_document", "bool"),
             ("telegram_media_urls", "str"),
             ("telegram_pin", "bool"),
+            ("telegram_pin_notify", "bool"),
+            ("telegram_poll", "json"),
+            ("telegram_location", "json"),
+            ("telegram_venue", "json"),
+            ("telegram_contact", "json"),
+            ("telegram_game_short_name", "str"),
+            ("telegram_rich_message", "json"),
+            ("telegram_reply_to_message_id", "str"),
+            ("telegram_reply_quote", "str"),
+            ("telegram_reply_parameters", "json"),
+            ("telegram_link_preview_options", "json"),
+            ("telegram_entities", "json"),
+            ("telegram_caption_entities", "json"),
+            ("telegram_show_caption_above_media", "bool"),
+            ("telegram_first_comment_as_reply", "bool"),
+            ("telegram_direct_messages_topic_id", "str"),
+            ("telegram_suggested_post_parameters", "json"),
+            ("telegram_ephemeral_message_parameters", "json"),
+            ("telegram_message_effect_id", "str"),
+            ("telegram_send_by_url", "bool"),
+            ("telegram_send_as", "str"),
+            ("telegram_paid_star_count", "str"),
+            ("telegram_paid_payload", "str"),
+            ("telegram_start_timestamp", "str"),
+            ("telegram_disable_content_type_detection", "bool"),
+            ("telegram_performer", "str"),
+            ("telegram_title_audio", "str"),
+            ("telegram_duration", "str"),
+            ("telegram_length", "str"),
+            ("telegram_emoji", "str"),
         ))
 
     def _add_mastodon_params(self, data: List[tuple], **kwargs):
@@ -1565,7 +1655,8 @@ class UploadPostClient:
         self,
         user: str,
         platform: str,
-        post_id: str
+        post_id: str,
+        **params,
     ) -> Dict:
         """
         Unpublish (delete) a previously published post.
@@ -1581,15 +1672,16 @@ class UploadPostClient:
                 bluesky, google_business...).
             post_id: ID of the published post to unpublish. Bluesky: the
                 ``at://`` URI or a bsky.app URL.
+            **params: Other API fields, e.g. ``delete_all_messages=True``
+                (Telegram: delete every message of the post, not only
+                ``post_id``).
 
         Returns:
             Unpublish result.
         """
-        return self._request("/uploadposts/posts/unpublish", "POST", json_data={
-            "user": user,
-            "platform": platform,
-            "post_id": post_id
-        })
+        body = {k: v for k, v in params.items() if v is not None}
+        body.update({"user": user, "platform": platform, "post_id": post_id})
+        return self._request("/uploadposts/posts/unpublish", "POST", json_data=body)
 
     def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None,
                       page_id: Optional[str] = None, page_urn: Optional[str] = None) -> Dict:
@@ -2193,6 +2285,46 @@ class UploadPostClient:
             body["channels"] = channels
         return self._request("/uploadposts/users/notifications", "POST", json_data=body)
 
+    def delete_notification_webhook(self) -> Dict:
+        """Remove the account's notification webhook."""
+        return self._request("/uploadposts/users/notifications", "DELETE")
+
+    def rotate_webhook_secret(self) -> Dict:
+        """Generate a new webhook signing secret (the old one stops working)."""
+        return self._request("/uploadposts/users/webhook-secret", "POST", json_data={})
+
+    def get_profile_webhook(self, profile_username: str) -> Dict:
+        """Get the webhook of one profile (white-label setups)."""
+        return self._request("/uploadposts/users/profile-webhook", "GET",
+                             params={"profile_username": profile_username})
+
+    def set_profile_webhook(
+        self,
+        profile_username: str,
+        webhook_url: str,
+        webhook_events: Optional[List[str]] = None,
+    ) -> Dict:
+        """Set the webhook of one profile; it receives only that profile's events."""
+        body = {"profile_username": profile_username, "webhook_url": webhook_url}
+        if webhook_events is not None:
+            body["webhook_events"] = webhook_events
+        return self._request("/uploadposts/users/profile-webhook", "POST", json_data=body)
+
+    def delete_profile_webhook(self, profile_username: str) -> Dict:
+        """Remove the webhook of one profile."""
+        return self._request("/uploadposts/users/profile-webhook", "DELETE",
+                             json_data={"profile_username": profile_username})
+
+    # ==================== Teams ====================
+
+    def list_team_members(self) -> Dict:
+        """Owner: the team members, with ``suspended`` / ``suspended_reason``."""
+        return self._request("/uploadposts/teams/members", "GET")
+
+    def list_shared_accounts(self) -> Dict:
+        """Member: the accounts shared with you (pass the owner's email as ``act_as_user``)."""
+        return self._request("/uploadposts/teams/shared-with-me", "GET")
+
     # ==================== Webhook deliveries ====================
 
     def list_webhook_deliveries(
@@ -2292,6 +2424,1228 @@ class UploadPostClient:
             f"/uploadposts/webhooks/deliveries/{quote(str(delivery_id), safe='')}/redeliver",
             "POST",
         )
+
+    # ==================== Resource endpoints ====================
+    #
+    # Post actions, best times, the queue, and the Telegram, Bluesky and Google
+    # Business management endpoints all go through _call(): every keyword is
+    # sent to the API with its API name, nothing is dropped. Path parameters
+    # (draft_id, nsid...) are taken out of the keywords. A file field (file,
+    # photo, sticker, avatar, telegram_media...) given as a local path, bytes or
+    # an open file turns the request into multipart/form-data; URLs and
+    # Telegram file_ids stay strings.
+
+    _FILE_FIELDS = frozenset({
+        "file", "photo", "animation", "sticker", "avatar", "banner", "thumbnail",
+        "telegram_media", "telegram_thumbnail", "telegram_cover", "telegram_live_photo_photo",
+    })
+
+    @staticmethod
+    def _query_value(value):
+        if isinstance(value, bool):
+            return str(value).lower()
+        if isinstance(value, (list, tuple)):
+            return ",".join(str(v).lower() if isinstance(v, bool) else str(v) for v in value)
+        if isinstance(value, dict):
+            return json.dumps(value)
+        return value
+
+    @staticmethod
+    def _form_value(value) -> str:
+        if isinstance(value, bool):
+            return str(value).lower()
+        if isinstance(value, (dict, list, tuple)):
+            return json.dumps(value)
+        return str(value)
+
+    def _call(self, method: str, endpoint: str, params: Dict, defaults: Optional[Dict] = None) -> Dict:
+        body = dict(defaults or {})
+        body.update({k: v for k, v in params.items() if v is not None})
+        for name in re.findall(r"\{(\w+)\}", endpoint):
+            value = body.pop(name, None)
+            if value is None or value == "":
+                raise UploadPostError(f"{name} is required")
+            endpoint = endpoint.replace("{%s}" % name, quote(str(value), safe=""))
+
+        if method == "GET":
+            return self._request(endpoint, "GET", params={k: self._query_value(v) for k, v in body.items()})
+
+        files: List[tuple] = []
+        opened: List = []
+        try:
+            for key in list(body):
+                if key not in self._FILE_FIELDS:
+                    continue
+                value = body[key]
+                if isinstance(value, (bytes, bytearray)):
+                    files.append((key, (key, bytes(value))))
+                elif hasattr(value, "read"):
+                    files.append((key, (os.path.basename(getattr(value, "name", key)) or key, value)))
+                elif isinstance(value, (str, Path)) and not str(value).lower().startswith(("http://", "https://")) \
+                        and Path(value).is_file():
+                    fh = Path(value).open("rb")
+                    opened.append(fh)
+                    files.append((key, (Path(value).name, fh)))
+                else:
+                    continue
+                body.pop(key)
+            if files:
+                data = [(k, self._form_value(v)) for k, v in body.items()]
+                return self._request(endpoint, method, data=data, files=files)
+            return self._request(endpoint, method, json_data=body)
+        finally:
+            for fh in opened:
+                fh.close()
+
+    # ---- Posts: edit, repost, actions ----
+    def edit_post(self, user: str, platform: str, post_id: str, **params) -> Dict:
+        """Edit a published post (Facebook, LinkedIn, X, Google Business, Telegram: text, buttons, pin/unpin, stop a poll, live location, replace the media).
+
+        Required: ``user``, ``platform``, ``post_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/edit-post
+        """
+        return self._call("POST", "/uploadposts/posts/edit", dict(params, user=user, platform=platform, post_id=post_id))
+
+    def repost_post(self, user: str, platform: str, post_id: Optional[str] = None, **params) -> Dict:
+        """Repost / reshare a post (LinkedIn, X, Threads; Telegram forward or copy with `mode`, `post_ids`, `all_messages`).
+
+        Required: ``user``, ``platform``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/repost
+        """
+        return self._call("POST", "/uploadposts/posts/repost", dict(params, user=user, platform=platform, post_id=post_id))
+
+    def post_action(self, user: str, platform: str, action: str, **params) -> Dict:
+        """Act on a published post: Telegram reactions and forward/copy; Bluesky bookmark/unbookmark, pin/unpin, reply and quote settings, detach/reattach quotes.
+
+        Required: ``user``, ``platform``, ``action``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-post-actions
+        """
+        return self._call("POST", "/uploadposts/posts/action", dict(params, user=user, platform=platform, action=action))
+
+    def save_post(self, user: str, post_id: str, **params) -> Dict:
+        """Save a post: a Pinterest Pin to a board, or a Bluesky bookmark (`platform: "bluesky"`).
+
+        Required: ``user``, ``post_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/save-pin
+        """
+        return self._call("POST", "/uploadposts/posts/save", dict(params, user=user, post_id=post_id))
+
+    # ---- Best time to post and queue ----
+    def get_best_times(self, profile_username: str, platform: str, **params) -> Dict:
+        """Best hours to publish for a connected account, with `source` and `confidence` (`timezone`, `top`, `refresh`, `page_urn`, `facebook_page_id`).
+
+        Required: ``profile_username``, ``platform``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/best-times
+        """
+        return self._call("GET", "/uploadposts/best-times", dict(params, profile_username=profile_username, platform=platform))
+
+    def get_queue_settings(self, profile_username: str, **params) -> Dict:
+        """Queue settings, including `slots_mode`, `auto_slots` and `effective_slots`.
+
+        Required: ``profile_username``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/queue-system
+        """
+        return self._call("GET", "/uploadposts/queue/settings", dict(params, profile_username=profile_username))
+
+    def update_queue_settings(self, profile_username: str, **params) -> Dict:
+        """Update the queue. `slots: "auto"` (or `slots_mode: "auto"`) fills the best hours automatically (`auto_slots_count`, `auto_platforms`, `refresh`); a `slots` array switches back to fixed slots.
+
+        Required: ``profile_username``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/queue-system
+        """
+        return self._call("POST", "/uploadposts/queue/settings", dict(params, profile_username=profile_username))
+
+    def get_queue_preview(self, profile_username: str, **params) -> Dict:
+        """Upcoming queue slots and what is scheduled in each (`count`, max 50).
+
+        Required: ``profile_username``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/queue-system
+        """
+        return self._call("GET", "/uploadposts/queue/preview", dict(params, profile_username=profile_username))
+
+    def get_next_queue_slot(self, profile_username: str, **params) -> Dict:
+        """Next free queue slot.
+
+        Required: ``profile_username``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/queue-system
+        """
+        return self._call("GET", "/uploadposts/queue/next-slot", dict(params, profile_username=profile_username))
+
+    def mark_queue_slot_full(self, profile_username: str, slot_datetime: str, **params) -> Dict:
+        """Mark a queue slot (ISO 8601, UTC) as full.
+
+        Required: ``profile_username``, ``slot_datetime``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/queue-system
+        """
+        return self._call("POST", "/uploadposts/queue/slot-full", dict(params, profile_username=profile_username, slot_datetime=slot_datetime))
+
+    def unmark_queue_slot_full(self, profile_username: str, slot_datetime: str, **params) -> Dict:
+        """Unmark a queue slot marked as full.
+
+        Required: ``profile_username``, ``slot_datetime``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/queue-system
+        """
+        return self._call("DELETE", "/uploadposts/queue/slot-full", dict(params, profile_username=profile_username, slot_datetime=slot_datetime))
+
+    # ---- Telegram: chat, members and invite links ----
+    def get_telegram_chat_info(self, user: str, **params) -> Dict:
+        """Chat details, subscribers/members and administrators (`include_administrators`, `return_bots`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat-insights
+        """
+        return self._call("GET", "/uploadposts/telegram/chat-info", dict(params, user=user))
+
+    def update_telegram_chat_info(self, user: str, **params) -> Dict:
+        """Change the chat title, description, photo (file or `photo_url`), permissions, slow mode, sticker set...
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("PATCH", "/uploadposts/telegram/chat-info", dict(params, user=user))
+
+    def get_telegram_boosts(self, user: str, **params) -> Dict:
+        """Boosts of the chat (with `user_id`: that user's boosts).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat-insights
+        """
+        return self._call("GET", "/uploadposts/telegram/boosts", dict(params, user=user))
+
+    def get_telegram_member(self, user: str, **params) -> Dict:
+        """Read one member (`user_id`) or list the administrators.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("GET", "/uploadposts/telegram/members", dict(params, user=user))
+
+    def moderate_telegram_member(self, user: str, **params) -> Dict:
+        """Ban, unban, restrict, promote or give a custom title to a member (`action`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/members", dict(params, user=user))
+
+    def create_telegram_invite_link(self, user: str, **params) -> Dict:
+        """Create an invite link (name, expiry, member limit, join requests, subscription).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/invite-links", dict(params, user=user))
+
+    def edit_telegram_invite_link(self, user: str, **params) -> Dict:
+        """Edit an invite link.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("PATCH", "/uploadposts/telegram/invite-links", dict(params, user=user))
+
+    def revoke_telegram_invite_link(self, user: str, **params) -> Dict:
+        """Revoke an invite link.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("DELETE", "/uploadposts/telegram/invite-links", dict(params, user=user))
+
+    def create_telegram_primary_invite_link(self, user: str, **params) -> Dict:
+        """Generate a new primary invite link (the previous one stops working).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/invite-links/primary", dict(params, user=user))
+
+    def answer_telegram_join_request(self, user: str, **params) -> Dict:
+        """Approve or decline a request to join the chat.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/join-requests", dict(params, user=user))
+
+    def get_telegram_topic_icons(self, user: str, **params) -> Dict:
+        """Custom emoji that can be used as forum topic icons.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("GET", "/uploadposts/telegram/topics/icons", dict(params, user=user))
+
+    def create_telegram_topic(self, user: str, **params) -> Dict:
+        """Create a forum topic.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/topics", dict(params, user=user))
+
+    def edit_telegram_topic(self, user: str, **params) -> Dict:
+        """Edit, close, reopen, hide, unhide or unpin a forum topic.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("PATCH", "/uploadposts/telegram/topics", dict(params, user=user))
+
+    def delete_telegram_topic(self, user: str, **params) -> Dict:
+        """Delete a forum topic.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("DELETE", "/uploadposts/telegram/topics", dict(params, user=user))
+
+    def unpin_all_telegram_messages(self, user: str, **params) -> Dict:
+        """Unpin every message of the chat (or of a topic).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/unpin-all", dict(params, user=user))
+
+    def leave_telegram_chat(self, user: str, **params) -> Dict:
+        """Make the bot leave the connected chat.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/leave", dict(params, user=user))
+
+    def answer_telegram_suggested_post(self, user: str, **params) -> Dict:
+        """Approve or decline a suggested post in a channel direct messages chat.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("POST", "/uploadposts/telegram/suggested-posts", dict(params, user=user))
+
+    def get_telegram_user_personal_chat_messages(self, user: str, user_id: Union[int, str], **params) -> Dict:
+        """Last messages of a user's personal channel.
+
+        Required: ``user``, ``user_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("GET", "/uploadposts/telegram/users/{user_id}/personal-chat-messages", dict(params, user=user, user_id=user_id))
+
+    def get_telegram_user_profile_audios(self, user: str, user_id: Union[int, str], **params) -> Dict:
+        """Profile audios of a Telegram user.
+
+        Required: ``user``, ``user_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("GET", "/uploadposts/telegram/users/{user_id}/profile-audios", dict(params, user=user, user_id=user_id))
+
+    def get_telegram_share_theme_backdrops(self, user: str, **params) -> Dict:
+        """Backdrops available for the Telegram share screen theme.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat
+        """
+        return self._call("GET", "/uploadposts/telegram/share-theme-backdrops", dict(params, user=user))
+
+    def get_telegram_updates_status(self, user: str, **params) -> Dict:
+        """Whether update receiving is on for the bot.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-inbox
+        """
+        return self._call("GET", "/uploadposts/telegram/updates", dict(params, user=user))
+
+    # ---- Telegram: bot profile, commands and stickers ----
+    def get_telegram_bot_profile(self, user: str, **params) -> Dict:
+        """Bot name, descriptions, photo, menu button and default administrator rights.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-bot-profile
+        """
+        return self._call("GET", "/uploadposts/telegram/bot-profile", dict(params, user=user))
+
+    def update_telegram_bot_profile(self, user: str, **params) -> Dict:
+        """Change the bot profile (`photo`/`animation` as file or URL, `menu_button`, `default_administrator_rights`...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-bot-profile
+        """
+        return self._call("PATCH", "/uploadposts/telegram/bot-profile", dict(params, user=user))
+
+    def get_telegram_bot_commands(self, user: str, **params) -> Dict:
+        """Bot commands for a scope and language.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-bot-profile
+        """
+        return self._call("GET", "/uploadposts/telegram/bot-commands", dict(params, user=user))
+
+    def set_telegram_bot_commands(self, user: str, **params) -> Dict:
+        """Set the bot commands (`commands`, `scope`, `language_code`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-bot-profile
+        """
+        return self._call("POST", "/uploadposts/telegram/bot-commands", dict(params, user=user))
+
+    def delete_telegram_bot_commands(self, user: str, **params) -> Dict:
+        """Delete the bot commands of a scope and language.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-bot-profile
+        """
+        return self._call("DELETE", "/uploadposts/telegram/bot-commands", dict(params, user=user))
+
+    def get_telegram_sticker_set(self, user: str, **params) -> Dict:
+        """Read a sticker set (`name`) or custom emoji stickers.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-stickers
+        """
+        return self._call("GET", "/uploadposts/telegram/sticker-sets", dict(params, user=user))
+
+    def create_telegram_sticker_set(self, user: str, **params) -> Dict:
+        """Create a sticker set.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-stickers
+        """
+        return self._call("POST", "/uploadposts/telegram/sticker-sets", dict(params, user=user))
+
+    def edit_telegram_sticker_set(self, user: str, **params) -> Dict:
+        """Edit a sticker set (add, replace, reorder stickers, title, thumbnail, emoji, keywords...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-stickers
+        """
+        return self._call("PATCH", "/uploadposts/telegram/sticker-sets", dict(params, user=user))
+
+    def delete_telegram_sticker_set(self, user: str, **params) -> Dict:
+        """Delete a sticker set, or a sticker from it.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-stickers
+        """
+        return self._call("DELETE", "/uploadposts/telegram/sticker-sets", dict(params, user=user))
+
+    def upload_telegram_sticker_file(self, user: str, **params) -> Dict:
+        """Upload a sticker file (`sticker` file or `sticker_url`, `sticker_format`, `owner_user_id`); returns its `file_id`.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-stickers
+        """
+        return self._call("POST", "/uploadposts/telegram/sticker-sets/upload", dict(params, user=user))
+
+    # ---- Telegram: Stars, invoices and gifts ----
+    def get_telegram_stars(self, user: str, **params) -> Dict:
+        """The bot's Telegram Stars balance.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat-insights
+        """
+        return self._call("GET", "/uploadposts/telegram/stars", dict(params, user=user))
+
+    def get_telegram_star_transactions(self, user: str, **params) -> Dict:
+        """The bot's Telegram Stars transactions (`offset`, `limit`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-chat-insights
+        """
+        return self._call("GET", "/uploadposts/telegram/stars/transactions", dict(params, user=user))
+
+    def send_telegram_invoice(self, user: str, **params) -> Dict:
+        """Send an invoice to the connected chat or to `chat_id` (payments go to your bot).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("POST", "/uploadposts/telegram/invoices", dict(params, user=user))
+
+    def create_telegram_invoice_link(self, user: str, **params) -> Dict:
+        """Create an invoice link.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("POST", "/uploadposts/telegram/invoice-links", dict(params, user=user))
+
+    def refund_telegram_star_payment(self, user: str, **params) -> Dict:
+        """Refund a Telegram Stars payment (`user_id`, `telegram_payment_charge_id`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("POST", "/uploadposts/telegram/stars/refund", dict(params, user=user))
+
+    def edit_telegram_star_subscription(self, user: str, **params) -> Dict:
+        """Cancel or re-enable a user's Stars subscription.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("POST", "/uploadposts/telegram/stars/subscription", dict(params, user=user))
+
+    def get_telegram_available_gifts(self, user: str, **params) -> Dict:
+        """Gifts the bot can send.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("GET", "/uploadposts/telegram/gifts", dict(params, user=user))
+
+    def get_telegram_owned_gifts(self, user: str, **params) -> Dict:
+        """Gifts owned by a user or a chat.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("GET", "/uploadposts/telegram/gifts/owned", dict(params, user=user))
+
+    def get_telegram_unique_gift(self, user: str, **params) -> Dict:
+        """A unique gift by name.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("GET", "/uploadposts/telegram/gifts/unique", dict(params, user=user))
+
+    def get_telegram_unanswered_payments(self, user: str, **params) -> Dict:
+        """Payment queries that were not answered in time.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/telegram-payments
+        """
+        return self._call("GET", "/uploadposts/telegram/payments/unanswered", dict(params, user=user))
+
+    # ---- Bluesky: reads ----
+    def get_post_engagement(self, post_id: str, **params) -> Dict:
+        """Who liked, reposted or quoted a post (`type`: likes, reposts, quotes; `limit`, `cursor`).
+
+        Required: ``post_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/post-engagement", dict(params, post_id=post_id), defaults={'platform': 'bluesky'})
+
+    def get_bluesky_profiles(self, **params) -> Dict:
+        """One or several Bluesky profiles (`actor`: handles or DIDs, comma separated, up to 25; without it, the connected account).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/bluesky/profile", params)
+
+    def search_bluesky_posts(self, user: str, q: str, **params) -> Dict:
+        """Search Bluesky posts (`sort`, `since`, `until`, `author`, `lang`, `tag`, `limit`, `cursor`...).
+
+        Required: ``user``, ``q``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/bluesky/search/posts", dict(params, user=user, q=q))
+
+    def search_bluesky_actors(self, q: str, **params) -> Dict:
+        """Search Bluesky accounts.
+
+        Required: ``q``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/bluesky/search/actors", dict(params, q=q))
+
+    def get_bluesky_followers(self, **params) -> Dict:
+        """Followers of an account (`actor`, or the connected one with `user`; `known=true` for followers you follow).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/bluesky/followers", params)
+
+    def get_bluesky_follows(self, **params) -> Dict:
+        """Accounts an account follows.
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/bluesky/follows", params)
+
+    def bluesky_xrpc(self, nsid: str, **params) -> Dict:
+        """Read-only gateway to an allow-listed public Bluesky XRPC method (e.g. `app.bsky.feed.getAuthorFeed`); returns Bluesky's answer untouched.
+
+        Required: ``nsid``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/bluesky/xrpc/{nsid}", dict(params, nsid=nsid))
+
+    def get_bluesky_labels(self, user: str, **params) -> Dict:
+        """Moderation labels on the account and its posts.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-reads
+        """
+        return self._call("GET", "/uploadposts/bluesky/labels", dict(params, user=user))
+
+    # ---- Bluesky: notifications ----
+    def get_bluesky_notifications(self, user: str, **params) -> Dict:
+        """List notifications (`reasons`, `priority`, `limit`, `cursor`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-notifications
+        """
+        return self._call("GET", "/uploadposts/bluesky/notifications", dict(params, user=user))
+
+    def get_bluesky_unread_count(self, user: str, **params) -> Dict:
+        """Unread notification count.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-notifications
+        """
+        return self._call("GET", "/uploadposts/bluesky/notifications/unread-count", dict(params, user=user))
+
+    def mark_bluesky_notifications_seen(self, user: str, **params) -> Dict:
+        """Mark notifications as seen (up to `seen_at`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-notifications
+        """
+        return self._call("POST", "/uploadposts/bluesky/notifications/seen", dict(params, user=user))
+
+    def get_bluesky_notification_preferences(self, user: str, **params) -> Dict:
+        """Notification preferences.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-notifications
+        """
+        return self._call("GET", "/uploadposts/bluesky/notification-preferences", dict(params, user=user))
+
+    def update_bluesky_notification_preferences(self, user: str, **params) -> Dict:
+        """Update notification preferences.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-notifications
+        """
+        return self._call("POST", "/uploadposts/bluesky/notification-preferences", dict(params, user=user))
+
+    def get_bluesky_activity_subscriptions(self, user: str, **params) -> Dict:
+        """Accounts whose activity you are subscribed to.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-notifications
+        """
+        return self._call("GET", "/uploadposts/bluesky/activity-subscriptions", dict(params, user=user))
+
+    def set_bluesky_activity_subscription(self, user: str, **params) -> Dict:
+        """Subscribe to (or stop) an account's posts and replies.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-notifications
+        """
+        return self._call("POST", "/uploadposts/bluesky/activity-subscriptions", dict(params, user=user))
+
+    # ---- Bluesky: profile, settings and drafts ----
+    def get_bluesky_own_profile(self, user: str, **params) -> Dict:
+        """The connected account's profile record.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("GET", "/uploadposts/bluesky/profile/self", dict(params, user=user))
+
+    def update_bluesky_profile(self, user: str, **params) -> Dict:
+        """Update the profile (display name, description, `avatar`/`banner` files, links, pinned post...). Fields not sent stay as they are.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("POST", "/uploadposts/bluesky/profile/self", dict(params, user=user))
+
+    def get_bluesky_status(self, user: str, **params) -> Dict:
+        """Read the live status.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("GET", "/uploadposts/bluesky/status", dict(params, user=user))
+
+    def set_bluesky_status(self, user: str, **params) -> Dict:
+        """Set the live status.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("POST", "/uploadposts/bluesky/status", dict(params, user=user))
+
+    def clear_bluesky_status(self, user: str, **params) -> Dict:
+        """Clear the live status.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("DELETE", "/uploadposts/bluesky/status", dict(params, user=user))
+
+    def get_bluesky_settings(self, user: str, **params) -> Dict:
+        """Chat and discovery settings.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("GET", "/uploadposts/bluesky/settings", dict(params, user=user))
+
+    def update_bluesky_settings(self, user: str, **params) -> Dict:
+        """Change chat and discovery settings.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("POST", "/uploadposts/bluesky/settings", dict(params, user=user))
+
+    def get_bluesky_preferences(self, user: str, **params) -> Dict:
+        """App preferences (content filters, feeds, muted words...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("GET", "/uploadposts/bluesky/preferences", dict(params, user=user))
+
+    def update_bluesky_preferences(self, user: str, **params) -> Dict:
+        """Replace some app preferences.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-profile
+        """
+        return self._call("PUT", "/uploadposts/bluesky/preferences", dict(params, user=user))
+
+    def list_bluesky_drafts(self, user: str, **params) -> Dict:
+        """List drafts.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-drafts
+        """
+        return self._call("GET", "/uploadposts/bluesky/drafts", dict(params, user=user))
+
+    def create_bluesky_draft(self, user: str, **params) -> Dict:
+        """Create a draft.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-drafts
+        """
+        return self._call("POST", "/uploadposts/bluesky/drafts", dict(params, user=user))
+
+    def update_bluesky_draft(self, user: str, draft_id: str, **params) -> Dict:
+        """Replace a draft.
+
+        Required: ``user``, ``draft_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-drafts
+        """
+        return self._call("PATCH", "/uploadposts/bluesky/drafts/{draft_id}", dict(params, user=user, draft_id=draft_id))
+
+    def delete_bluesky_draft(self, user: str, draft_id: str, **params) -> Dict:
+        """Delete a draft.
+
+        Required: ``user``, ``draft_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-drafts
+        """
+        return self._call("DELETE", "/uploadposts/bluesky/drafts/{draft_id}", dict(params, user=user, draft_id=draft_id))
+
+    # ---- Bluesky: chat ----
+    def get_bluesky_chat_status(self, user: str, **params) -> Dict:
+        """Chat status of the account.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-chat
+        """
+        return self._call("GET", "/uploadposts/dms/bluesky/status", dict(params, user=user))
+
+    def get_bluesky_chat_preferences(self, user: str, **params) -> Dict:
+        """DM notification settings.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-chat
+        """
+        return self._call("GET", "/uploadposts/dms/bluesky/preferences", dict(params, user=user))
+
+    def update_bluesky_chat_preferences(self, user: str, **params) -> Dict:
+        """Change DM notification settings.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-chat
+        """
+        return self._call("POST", "/uploadposts/dms/bluesky/preferences", dict(params, user=user))
+
+    def export_bluesky_chat(self, user: str, **params) -> Dict:
+        """Export the account's chat history.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/bluesky-chat
+        """
+        return self._call("GET", "/uploadposts/dms/bluesky/export", dict(params, user=user))
+
+    # ---- Google Business: posts and reviews ----
+    def list_google_business_posts(self, user: str, **params) -> Dict:
+        """List the location's posts (`location_id`, `page_size`, `page_token`). Edit them with editPost and delete them with unpublishPost.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-posts
+        """
+        return self._call("GET", "/uploadposts/google-business/posts", dict(params, user=user))
+
+    def get_google_business_post(self, user: str, **params) -> Dict:
+        """Read one post (`post_id` or `post_name`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-posts
+        """
+        return self._call("GET", "/uploadposts/google-business/posts/get", dict(params, user=user))
+
+    def list_google_business_reviews(self, user: str, **params) -> Dict:
+        """List reviews (`location_id`, `page_size`, `page_token`, `order_by`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-reviews
+        """
+        return self._call("GET", "/uploadposts/google-business/reviews", dict(params, user=user))
+
+    def get_google_business_review(self, user: str, **params) -> Dict:
+        """Read one review (`review_name`, or `review_id` + `location_id`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-reviews
+        """
+        return self._call("GET", "/uploadposts/google-business/reviews/get", dict(params, user=user))
+
+    def batch_get_google_business_reviews(self, user: str, **params) -> Dict:
+        """Reviews of several locations at once (`location_ids`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-reviews
+        """
+        return self._call("GET", "/uploadposts/google-business/reviews/batch", dict(params, user=user))
+
+    def reply_to_google_business_review(self, user: str, comment: str, **params) -> Dict:
+        """Reply to a review, or replace the reply (`review_name`, or `review_id` + `location_id`).
+
+        Required: ``user``, ``comment``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-reviews
+        """
+        return self._call("PUT", "/uploadposts/google-business/reviews/reply", dict(params, user=user, comment=comment))
+
+    def delete_google_business_review_reply(self, user: str, **params) -> Dict:
+        """Delete the reply to a review.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-reviews
+        """
+        return self._call("DELETE", "/uploadposts/google-business/reviews/reply", dict(params, user=user))
+
+    # ---- Google Business: gallery and performance ----
+    def list_google_business_media(self, user: str, **params) -> Dict:
+        """List the location's gallery.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-media
+        """
+        return self._call("GET", "/uploadposts/google-business/media", dict(params, user=user))
+
+    def get_google_business_media(self, user: str, **params) -> Dict:
+        """Read one gallery item.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-media
+        """
+        return self._call("GET", "/uploadposts/google-business/media/get", dict(params, user=user))
+
+    def upload_google_business_media(self, user: str, **params) -> Dict:
+        """Upload a photo or video to the gallery: `file` (local path, stream or Buffer) or `source_url`, plus `category`, `description`, `media_format`.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-media
+        """
+        return self._call("POST", "/uploadposts/google-business/media", dict(params, user=user))
+
+    def update_google_business_media(self, user: str, **params) -> Dict:
+        """Change a gallery item's category.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-media
+        """
+        return self._call("PATCH", "/uploadposts/google-business/media", dict(params, user=user))
+
+    def delete_google_business_media(self, user: str, **params) -> Dict:
+        """Delete a gallery item.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-media
+        """
+        return self._call("DELETE", "/uploadposts/google-business/media", dict(params, user=user))
+
+    def list_google_business_customer_media(self, user: str, **params) -> Dict:
+        """Photos uploaded by customers.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-media
+        """
+        return self._call("GET", "/uploadposts/google-business/media/customers", dict(params, user=user))
+
+    def get_google_business_customer_media(self, user: str, **params) -> Dict:
+        """One customer photo.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-media
+        """
+        return self._call("GET", "/uploadposts/google-business/media/customers/get", dict(params, user=user))
+
+    def get_google_business_performance(self, user: str, **params) -> Dict:
+        """Daily metrics for any date range (impressions, calls, website clicks, directions...: `metrics`, `start_date`, `end_date`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-performance
+        """
+        return self._call("GET", "/uploadposts/google-business/performance", dict(params, user=user))
+
+    def get_google_business_search_keywords(self, user: str, **params) -> Dict:
+        """Monthly search keywords that showed the location (`start_month`, `end_month`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-performance
+        """
+        return self._call("GET", "/uploadposts/google-business/performance/keywords", dict(params, user=user))
+
+    # ---- Google Business: location info ----
+    def get_google_business_location_info(self, user: str, **params) -> Dict:
+        """Read the location's info (name, address, hours, phones, categories, service area, open status...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-info
+        """
+        return self._call("GET", "/uploadposts/google-business/location-info", dict(params, user=user))
+
+    def update_google_business_location_info(self, user: str, **params) -> Dict:
+        """Edit the location's info. `edit_mode: "legacy"` (default) or `"strict"` (`dry_run`, `confirm`, `include_edit_status`); `validate_only` in both.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-info
+        """
+        return self._call("PATCH", "/uploadposts/google-business/location-info", dict(params, user=user))
+
+    def get_google_business_google_updates(self, user: str, **params) -> Dict:
+        """Changes Google suggested for the location (`diff_fields`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-info
+        """
+        return self._call("GET", "/uploadposts/google-business/location-info/google-updated", dict(params, user=user))
+
+    def answer_google_business_google_updates(self, user: str, decision: str, fields: List[str], **params) -> Dict:
+        """Accept or reject Google's suggested changes, field by field.
+
+        Required: ``user``, ``decision``, ``fields``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-info
+        """
+        return self._call("POST", "/uploadposts/google-business/location-info/google-updates", dict(params, user=user, decision=decision, fields=fields))
+
+    def get_google_business_location_info_extended(self, user: str, **params) -> Dict:
+        """Edit status of each field (experimental).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-info
+        """
+        return self._call("GET", "/uploadposts/google-business/location-info/extended", dict(params, user=user))
+
+    def list_google_business_locations(self, user: str, **params) -> Dict:
+        """List locations with filters (`account`, `filter`, `order_by`, `read_mask`, `page_size`, `page_token`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-info
+        """
+        return self._call("GET", "/uploadposts/google-business/locations/list", dict(params, user=user))
+
+    def get_google_business_pinned_location(self, profile_username: str, **params) -> Dict:
+        """Locations available to a profile and the one pinned for its uploads.
+
+        Required: ``profile_username``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-location
+        """
+        return self._call("GET", "/uploadposts/users/google-business-location", dict(params, profile_username=profile_username))
+
+    def pin_google_business_location(self, profile_username: str, gbp_location_id: str, **params) -> Dict:
+        """Pin the location a profile publishes to (instead of passing gbpLocationId on every upload).
+
+        Required: ``profile_username``, ``gbp_location_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-location
+        """
+        return self._call("POST", "/uploadposts/users/google-business-location", dict(params, profile_username=profile_username, gbp_location_id=gbp_location_id))
+
+    def clear_google_business_location_pin(self, profile_username: str, **params) -> Dict:
+        """Clear the pinned location.
+
+        Required: ``profile_username``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-location
+        """
+        return self._call("DELETE", "/uploadposts/users/google-business-location", dict(params, profile_username=profile_username))
+
+    # ---- Google Business: catalogs, attributes, Place Actions, menus, services and lodging ----
+    def search_google_business_categories(self, **params) -> Dict:
+        """Search categories (`region_code`, `language_code`, `query`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-catalogs
+        """
+        return self._call("GET", "/uploadposts/google-business/categories", params)
+
+    def batch_get_google_business_categories(self, **params) -> Dict:
+        """Category details: service types and more-hours types (`names`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-catalogs
+        """
+        return self._call("GET", "/uploadposts/google-business/categories/batch", params)
+
+    def search_google_business_chains(self, **params) -> Dict:
+        """Search chains (`name`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-catalogs
+        """
+        return self._call("GET", "/uploadposts/google-business/chains", params)
+
+    def get_google_business_chain(self, **params) -> Dict:
+        """One chain (`chain`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-catalogs
+        """
+        return self._call("GET", "/uploadposts/google-business/chains/get", params)
+
+    def search_google_business_google_locations(self, user: str, **params) -> Dict:
+        """Is the business already on Google? Search Google's listings.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-catalogs
+        """
+        return self._call("POST", "/uploadposts/google-business/google-locations/search", dict(params, user=user))
+
+    def get_google_business_recommended_locations(self, user: str, **params) -> Dict:
+        """Locations Google recommends for the account.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-catalogs
+        """
+        return self._call("GET", "/uploadposts/google-business/google-locations/recommended", dict(params, user=user))
+
+    def report_google_business_google_location(self, user: str, **params) -> Dict:
+        """Report a wrong listing to Google.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-catalogs
+        """
+        return self._call("POST", "/uploadposts/google-business/google-locations/report", dict(params, user=user))
+
+    def get_google_business_available_attributes(self, user: str, **params) -> Dict:
+        """Attributes the location can use.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-attributes
+        """
+        return self._call("GET", "/uploadposts/google-business/attributes/available", dict(params, user=user))
+
+    def get_google_business_attributes(self, user: str, **params) -> Dict:
+        """Current attributes of the location.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-attributes
+        """
+        return self._call("GET", "/uploadposts/google-business/attributes", dict(params, user=user))
+
+    def update_google_business_attributes(self, user: str, **params) -> Dict:
+        """Update attributes.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-attributes
+        """
+        return self._call("PATCH", "/uploadposts/google-business/attributes", dict(params, user=user))
+
+    def get_google_business_attributes_google_updated(self, user: str, **params) -> Dict:
+        """Attributes as Google shows them.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-attributes
+        """
+        return self._call("GET", "/uploadposts/google-business/attributes/google-updated", dict(params, user=user))
+
+    def get_google_business_attributes_extended(self, user: str, **params) -> Dict:
+        """Attributes with their edit status (experimental).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-attributes
+        """
+        return self._call("GET", "/uploadposts/google-business/attributes/extended", dict(params, user=user))
+
+    def get_google_business_place_action_types(self, user: str, **params) -> Dict:
+        """Place Action types (booking, ordering, shopping links...) the location can use.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-place-actions
+        """
+        return self._call("GET", "/uploadposts/google-business/place-actions/types", dict(params, user=user))
+
+    def list_google_business_place_actions(self, user: str, **params) -> Dict:
+        """List Place Action links.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-place-actions
+        """
+        return self._call("GET", "/uploadposts/google-business/place-actions", dict(params, user=user))
+
+    def get_google_business_place_action(self, user: str, **params) -> Dict:
+        """Read one Place Action link (`link`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-place-actions
+        """
+        return self._call("GET", "/uploadposts/google-business/place-actions/get", dict(params, user=user))
+
+    def create_google_business_place_action(self, user: str, **params) -> Dict:
+        """Create a Place Action link.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-place-actions
+        """
+        return self._call("POST", "/uploadposts/google-business/place-actions", dict(params, user=user))
+
+    def update_google_business_place_action(self, user: str, **params) -> Dict:
+        """Edit or switch off a Place Action link.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-place-actions
+        """
+        return self._call("PATCH", "/uploadposts/google-business/place-actions", dict(params, user=user))
+
+    def delete_google_business_place_action(self, user: str, **params) -> Dict:
+        """Delete a Place Action link.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-place-actions
+        """
+        return self._call("DELETE", "/uploadposts/google-business/place-actions", dict(params, user=user))
+
+    def get_google_business_food_menus(self, user: str, **params) -> Dict:
+        """Food menus of the location.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-menus-services
+        """
+        return self._call("GET", "/uploadposts/google-business/food-menus", dict(params, user=user))
+
+    def update_google_business_food_menus(self, user: str, **params) -> Dict:
+        """Replace the food menus.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-menus-services
+        """
+        return self._call("PUT", "/uploadposts/google-business/food-menus", dict(params, user=user))
+
+    def get_google_business_services(self, user: str, **params) -> Dict:
+        """Services of the location.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-menus-services
+        """
+        return self._call("GET", "/uploadposts/google-business/services", dict(params, user=user))
+
+    def update_google_business_services(self, user: str, **params) -> Dict:
+        """Replace the services.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-menus-services
+        """
+        return self._call("PUT", "/uploadposts/google-business/services", dict(params, user=user))
+
+    def get_google_business_lodging(self, user: str, **params) -> Dict:
+        """Lodging data of a hotel (`read_mask`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-lodging
+        """
+        return self._call("GET", "/uploadposts/google-business/lodging", dict(params, user=user))
+
+    def update_google_business_lodging(self, user: str, **params) -> Dict:
+        """Update lodging data.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-lodging
+        """
+        return self._call("PATCH", "/uploadposts/google-business/lodging", dict(params, user=user))
+
+    def get_google_business_lodging_google_updated(self, user: str, **params) -> Dict:
+        """Lodging data as Google shows it.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-lodging
+        """
+        return self._call("GET", "/uploadposts/google-business/lodging/google-updated", dict(params, user=user))
+
+    # ---- Google Business: accounts and verification (reads) ----
+    def list_google_business_accounts(self, user: str, **params) -> Dict:
+        """Google Business accounts and location groups (`type`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-accounts
+        """
+        return self._call("GET", "/uploadposts/google-business/accounts", dict(params, user=user))
+
+    def get_google_business_account(self, user: str, **params) -> Dict:
+        """Read one account (`account`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-accounts
+        """
+        return self._call("GET", "/uploadposts/google-business/accounts/get", dict(params, user=user))
+
+    def create_google_business_account(self, user: str, **params) -> Dict:
+        """Create a location group or user group (`type`, `account_name`, `confirm`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-accounts
+        """
+        return self._call("POST", "/uploadposts/google-business/accounts", dict(params, user=user))
+
+    def list_google_business_admins(self, user: str, **params) -> Dict:
+        """Admins of an account or a location (`scope`, `location_id`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-accounts
+        """
+        return self._call("GET", "/uploadposts/google-business/admins", dict(params, user=user))
+
+    def list_google_business_invitations(self, user: str, **params) -> Dict:
+        """Pending invitations of an account.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-accounts
+        """
+        return self._call("GET", "/uploadposts/google-business/invitations", dict(params, user=user))
+
+    def get_google_business_verification_state(self, user: str, **params) -> Dict:
+        """Whether the location is verified and in good standing.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-verification
+        """
+        return self._call("GET", "/uploadposts/google-business/verification/state", dict(params, user=user))
+
+    def get_google_business_verification_options(self, user: str, **params) -> Dict:
+        """Verification methods available for the location.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-verification
+        """
+        return self._call("POST", "/uploadposts/google-business/verification/options", dict(params, user=user))
+
+    def list_google_business_verifications(self, user: str, **params) -> Dict:
+        """Past verifications of the location.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/google-business-verification
+        """
+        return self._call("GET", "/uploadposts/google-business/verifications", dict(params, user=user))
 
     # ==================== Helper Endpoints ====================
 
@@ -2658,6 +4012,11 @@ class UploadPostClient:
         you. Messages count against the plan's daily DM allowance; sender
         actions do not.
 
+        Telegram (``platform="telegram"``): sends from your own connected bot
+        to a person who started it (``recipient_id`` = their user id), with
+        text, media, buttons (``reply_markup``) and sender actions. Reading
+        Telegram conversations needs update receiving, not available yet.
+
         Bluesky:
 
         - ``recipient_id`` is a handle (``alice.bsky.social`` or ``@alice...``),
@@ -2796,6 +4155,83 @@ class UploadPostClient:
             if value is not None:
                 query[key] = value
         return self._request("/uploadposts/dms/conversations", "GET", params=query)
+
+    # ==================== AutoDM: per-post monitors ====================
+
+    def start_autodm(
+        self,
+        profile_username: str,
+        reply_message: str,
+        platform: Optional[str] = None,
+        post_url: Optional[str] = None,
+        post_id: Optional[str] = None,
+        reply_messages: Optional[List[str]] = None,
+        buttons: Optional[List[Dict[str, str]]] = None,
+        monitoring_interval: Optional[int] = None,
+        trigger_keywords: Optional[Union[str, List[str]]] = None,
+    ) -> Dict:
+        """
+        Start a per-post monitor: it answers every new comment on one post,
+        with a private DM on Instagram or a public reply on TikTok, YouTube,
+        Facebook, Threads and Bluesky. Monitors stop after 15 days and a
+        profile can create 2 per day. For the whole Instagram account use
+        create_autodm_rule() instead.
+
+        Args:
+            profile_username: Profile username.
+            reply_message: DM text (Instagram) or public reply.
+            platform: instagram (default), tiktok, youtube, facebook, threads
+                or bluesky.
+            post_url: Post URL (required on Instagram).
+            post_id: Post id on the other platforms (or post_url).
+            reply_messages: Public replies only: up to 5 texts, rotated.
+            buttons: Instagram only: up to 3 ``{"title", "url"}`` buttons.
+            monitoring_interval: Minutes between checks (min and default 15).
+            trigger_keywords: Only answer comments containing one of these.
+
+        Returns:
+            Monitor result with ``monitor_id``.
+        """
+        body = {"profile_username": profile_username, "reply_message": reply_message}
+        for key, value in (
+            ("platform", platform), ("post_url", post_url), ("post_id", post_id),
+            ("reply_messages", reply_messages), ("buttons", buttons),
+            ("monitoring_interval", monitoring_interval), ("trigger_keywords", trigger_keywords),
+        ):
+            if value is not None:
+                body[key] = value
+        return self._request("/uploadposts/autodms/start", "POST", json_data=body)
+
+    def _autodm_monitor_action(self, action: str, monitor_id: str) -> Dict:
+        return self._request(f"/uploadposts/autodms/{action}", "POST",
+                             json_data={"monitor_id": monitor_id})
+
+    def stop_autodm(self, monitor_id: str) -> Dict:
+        """Stop a per-post monitor (it stays listed with ``include_inactive``)."""
+        return self._autodm_monitor_action("stop", monitor_id)
+
+    def pause_autodm(self, monitor_id: str) -> Dict:
+        """Pause a per-post monitor."""
+        return self._autodm_monitor_action("pause", monitor_id)
+
+    def resume_autodm(self, monitor_id: str) -> Dict:
+        """Resume a paused per-post monitor."""
+        return self._autodm_monitor_action("resume", monitor_id)
+
+    def delete_autodm(self, monitor_id: str) -> Dict:
+        """Delete a per-post monitor."""
+        return self._autodm_monitor_action("delete", monitor_id)
+
+    def get_autodm_status(self, include_inactive: Optional[bool] = None) -> Dict:
+        """List per-post monitors and their stats (``include_inactive`` adds stopped/expired ones)."""
+        params = {}
+        if include_inactive is not None:
+            params["include_inactive"] = str(bool(include_inactive)).lower()
+        return self._request("/uploadposts/autodms/status", "GET", params=params)
+
+    def get_autodm_logs(self, monitor_id: str) -> Dict:
+        """Get the log of one per-post monitor."""
+        return self._request("/uploadposts/autodms/logs", "GET", params={"monitor_id": monitor_id})
 
     # ==================== AutoDM: account-wide rules (Instagram) ====================
 
@@ -3087,7 +4523,11 @@ class UploadPostClient:
         Returns:
             Selection result with google_business_id and display_name.
         """
-        data = {"location_id": location_id}
-        if profile:
-            data["profile"] = profile
-        return self._request("/uploadposts/google-business/locations/select", "POST", json_data=data)
+        # The API pins a location per profile (POST /users/google-business-location);
+        # the old /google-business/locations/select route never existed.
+        if not profile:
+            raise UploadPostError(
+                "select_google_business_location needs the profile: pass "
+                "gbp_location_id on the upload, or pin_google_business_location(profile, location_id)."
+            )
+        return self.pin_google_business_location(profile, location_id)
