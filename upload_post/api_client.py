@@ -1920,7 +1920,7 @@ class UploadPostClient:
         Args:
             user: Profile username.
             platform: Filter by platform (instagram, tiktok, youtube, facebook,
-                linkedin, threads, pinterest, reddit).
+                linkedin, x, threads, pinterest, reddit, bluesky).
             limit: Posts per page. Defaults to 50, max 200.
             cursor: Opaque cursor from a previous response's ``next_cursor``.
             since: Start date in YYYY-MM-DD format (defaults to 30 days ago).

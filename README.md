@@ -289,7 +289,7 @@ cursor = None
 while True:
     page = client.get_cached_post_analytics(
         "my-profile",
-        platform="youtube",   # optional: instagram, tiktok, youtube, facebook, linkedin, threads, pinterest, reddit
+        platform="youtube",   # optional: instagram, tiktok, youtube, facebook, linkedin, x, threads, pinterest, reddit, bluesky
         limit=50,             # default 50, max 200
         since="2026-06-01",   # defaults to 30 days ago
         until="2026-07-01",   # defaults to today
