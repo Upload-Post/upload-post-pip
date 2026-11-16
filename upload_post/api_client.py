@@ -1691,7 +1691,9 @@ class UploadPostClient:
         return self._request("/uploadposts/posts/unpublish", "POST", json_data=body)
 
     def get_analytics(self, profile_username: str, platforms: Optional[List[str]] = None,
-                      page_id: Optional[str] = None, page_urn: Optional[str] = None) -> Dict:
+                      page_id: Optional[str] = None, page_urn: Optional[str] = None,
+                      since: Optional[str] = None, until: Optional[str] = None,
+                      compare: Optional[str] = None) -> Dict:
         """
         Get analytics for a profile.
 
@@ -1703,9 +1705,17 @@ class UploadPostClient:
                 analytics are only available for pages you administer; personal profiles
                 are not supported (LinkedIn's API exposes no member-level analytics). If
                 omitted, the first administered organization page is used.
+            since: Start of a period, YYYY-MM-DD. Adds a ``period`` block to each
+                platform, computed from stored daily snapshots (no extra network call).
+            until: End of the period, YYYY-MM-DD (defaults to today, UTC; at most 366 days).
+            compare: ``"previous"`` adds the previous period of the same length and
+                ``vs_previous``.
 
         Returns:
-            Analytics data per platform. For Instagram, the response includes both
+            Analytics data per platform. Each block carries ``as_of`` /
+            ``next_refresh_at`` (when it was read and when asking again can bring
+            newer numbers), ``missing`` (metric -> reason), ``views_field`` and,
+            where totals come from a list of posts, ``coverage``. For Instagram, the response includes both
             'views' (official Instagram metric) and 'impressions' (backwards-compatible alias),
             plus two audience breakdowns with the same shape ('age', 'gender',
             'country', 'city'): 'follower_demographics' for the account's followers
@@ -1719,6 +1729,12 @@ class UploadPostClient:
             params["page_id"] = page_id
         if page_urn:
             params["page_urn"] = page_urn
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+        if compare:
+            params["compare"] = compare
         return self._request(f"/analytics/{profile_username}", "GET", params=params if params else None)
 
     def get_total_impressions(
@@ -1746,7 +1762,10 @@ class UploadPostClient:
             metrics: Specific metrics to aggregate (e.g., ["likes", "comments", "shares", "views"]).
 
         Returns:
-            Total impressions data with optional breakdown. For Instagram, uses 'reach' as the primary metric.
+            Total impressions data with optional breakdown. ``total_impressions``
+            is a legacy mix of reach and impressions kept for compatibility;
+            ``views_total`` and ``views_by_platform`` (views only) are what
+            compares with the native apps.
         """
         params: Dict[str, Any] = {}
         if period:
@@ -1765,7 +1784,8 @@ class UploadPostClient:
             params["metrics"] = ",".join(metrics)
         return self._request(f"/uploadposts/total-impressions/{profile_username}", "GET", params=params if params else None)
 
-    def get_post_analytics(self, request_id: str, platform: Optional[str] = None) -> Dict:
+    def get_post_analytics(self, request_id: str, platform: Optional[str] = None,
+                           refresh: bool = False) -> Dict:
         """
         Get analytics for a specific post across all platforms it was published to.
 
@@ -1788,17 +1808,71 @@ class UploadPostClient:
         also carry ``original_publish_id`` (the upload's TikTok ``publish_id``),
         and ``post_url`` is empty when the account's @username is not known.
 
+        Freshness: each platform entry carries ``as_of`` (when the network was
+        asked) and ``next_refresh_at`` (earliest moment asking again can return
+        newer numbers; ``None`` = only ``refresh`` refreshes it). Depending on
+        the post's age Upload-Post may answer from its last stored reading
+        (``served_from: "snapshot"``). X and YouTube posts are only updated
+        when someone reads them.
+
         Args:
             request_id: The request_id from the upload.
             platform: Only this platform's row (e.g. ``"tiktok"``).
+            refresh: Ask the network again even if a recent stored reading
+                exists (limited per hour; past it ``refresh_limited: True``).
 
         Returns:
             Post analytics with per-platform metrics, profile snapshots, and post-level metrics.
         """
-        params = {"platform": platform} if platform else None
-        return self._request(f"/uploadposts/post-analytics/{request_id}", "GET", params=params)
+        params: Dict[str, Any] = {}
+        if platform:
+            params["platform"] = platform
+        if refresh:
+            params["refresh"] = "true"
+        return self._request(f"/uploadposts/post-analytics/{request_id}", "GET", params=params or None)
 
-    def get_post_analytics_by_platform_id(self, platform_post_id: str, platform: str, user: str) -> Dict:
+    def get_post_analytics_daily(self, request_id: str, platform: str,
+                                 since: Optional[str] = None, until: Optional[str] = None) -> Dict:
+        """
+        Day-by-day history of a post published with Upload-Post, from the
+        readings Upload-Post already stored (never calls the network). One row
+        per day with a reading; ``delta`` is what the post gained over ``gap_days``.
+
+        Args:
+            request_id: The request_id from the upload.
+            platform: Required: one upload can hold several platforms.
+            since: First day, YYYY-MM-DD.
+            until: Last day, YYYY-MM-DD.
+
+        Returns:
+            ``days``, ``refresh_policy`` (``on_demand`` on X and YouTube), ``as_of``
+            and ``missing_reason`` (``not_fetched`` when there is no reading).
+        """
+        if not platform:
+            raise UploadPostError("get_post_analytics_daily needs platform: one upload can hold several platforms.")
+        params: Dict[str, Any] = {"platform": platform}
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+        return self._request(f"/uploadposts/post-analytics/{request_id}/daily", "GET", params=params)
+
+    def get_post_analytics_daily_by_platform_id(self, platform_post_id: str, platform: str, user: str,
+                                                since: Optional[str] = None,
+                                                until: Optional[str] = None) -> Dict:
+        """
+        Day-by-day history of any post of a connected account, by its native
+        id. Same answer as :meth:`get_post_analytics_daily`.
+        """
+        params: Dict[str, Any] = {"platform_post_id": platform_post_id, "platform": platform, "user": user}
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+        return self._request("/uploadposts/post-analytics/daily", "GET", params=params)
+
+    def get_post_analytics_by_platform_id(self, platform_post_id: str, platform: str, user: str,
+                                          refresh: bool = False) -> Dict:
         """
         Get analytics for any post (including organic posts) using its native platform ID.
 
@@ -1806,15 +1880,20 @@ class UploadPostClient:
             platform_post_id: The native post ID on the platform (e.g., Instagram media ID).
             platform: The platform to query (instagram, youtube, tiktok, facebook, linkedin, x, threads, pinterest, reddit).
             user: The profile_username that owns the social account.
+            refresh: Ask the network again even if a recent stored reading
+                exists (limited per hour).
 
         Returns:
-            Post analytics with live per-post metrics from the platform API.
+            Post analytics with per-post metrics, ``as_of``, ``next_refresh_at``
+            and, where it applies, ``served_from``.
         """
         params = {
             "platform_post_id": platform_post_id,
             "platform": platform,
             "user": user,
         }
+        if refresh:
+            params["refresh"] = "true"
         return self._request("/uploadposts/post-analytics", "GET", params=params)
 
     def get_cached_post_analytics(
@@ -1825,6 +1904,10 @@ class UploadPostClient:
         cursor: Optional[str] = None,
         since: Optional[str] = None,
         until: Optional[str] = None,
+        sort: Optional[str] = None,
+        order: Optional[str] = None,
+        date_field: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> Dict:
         """
         Replay per-post metrics already fetched, instead of querying
@@ -1842,8 +1925,17 @@ class UploadPostClient:
             cursor: Opaque cursor from a previous response's ``next_cursor``.
             since: Start date in YYYY-MM-DD format (defaults to 30 days ago).
             until: End date in YYYY-MM-DD format (defaults to today).
+            sort: ``views``, ``likes``, ``comments``, ``shares``, ``engagement``,
+                ``published_at`` or ``as_of``; prefix ``-`` for descending.
+            order: ``asc`` or ``desc`` (overrides the ``-`` prefix).
+            date_field: What since/until filter on: ``captured_at`` (the day of
+                the reading, default) or ``published_at``.
+            origin: ``external`` (posts not published with Upload-Post, listed
+                by account reads) or ``all`` (both).
 
         Returns:
+            Each row carries ``as_of``; posts published with Upload-Post also
+            carry ``request_id``, ``post_title`` and ``caption_preview``.
             Cached post metrics with ``source: "snapshot_cache"``, plus
             ``next_cursor`` and ``has_more`` for pagination. A TikTok draft
             appears once, under its real post id, with ``original_publish_id``.
@@ -1859,6 +1951,14 @@ class UploadPostClient:
             params["since"] = since
         if until:
             params["until"] = until
+        if sort:
+            params["sort"] = sort
+        if order:
+            params["order"] = order
+        if date_field:
+            params["date_field"] = date_field
+        if origin:
+            params["origin"] = origin
         return self._request("/uploadposts/post-analytics/cached", "GET", params=params)
 
     def get_audience(
@@ -1950,12 +2050,56 @@ class UploadPostClient:
             params["language"] = language
         return self._request("/uploadposts/suggestions", "GET", params=params)
 
+    def get_insights(self, user: str, platform: Optional[str] = None,
+                     since: Optional[str] = None, until: Optional[str] = None) -> Dict:
+        """
+        Each post compared with the profile's other posts at the same age (1h,
+        24h, 7d, 30d), and median views by format, hour (UTC), weekday (UTC),
+        hashtag count and caption length. Computed from stored readings only.
+
+        Args:
+            user: Profile username.
+            platform: Only this platform.
+            since: Posts published from this day, YYYY-MM-DD.
+            until: Posts published until this day, YYYY-MM-DD.
+
+        Returns:
+            ``by_platform.<platform>.posts[].at_age`` and ``groups``.
+        """
+        params: Dict[str, Any] = {"user": user}
+        if platform:
+            params["platform"] = platform
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+        return self._request("/uploadposts/insights", "GET", params=params)
+
+    def get_analytics_status(self, user: Optional[str] = None, platform: Optional[str] = None) -> Dict:
+        """
+        Why is a number missing or old? Per profile and platform: connection,
+        whether analytics reads are paused, refresh mode, network delay, last
+        readings, coverage of recent posts and stored history. Never calls a network.
+
+        Args:
+            user: Profile username (omit for every profile).
+            platform: Only this platform.
+        """
+        params: Dict[str, Any] = {}
+        if user:
+            params["user"] = user
+        if platform:
+            params["platform"] = platform
+        return self._request("/uploadposts/analytics-status", "GET", params=params or None)
+
     def get_platform_metrics(self) -> Dict:
         """
         Get available metrics configuration for all supported platforms.
 
         Returns:
-            Platform metrics config with primary fields, available metrics, and labels.
+            Platform metrics config with primary fields, available metrics, and
+            labels and, per platform, ``metric_catalog`` (native label, API field,
+            unit, kind, summable, delay).
         """
         return self._request("/uploadposts/platform-metrics", "GET")
 
