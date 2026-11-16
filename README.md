@@ -923,6 +923,146 @@ client.get_autodm_logs(monitor["monitor_id"])
 client.pause_autodm(monitor["monitor_id"])   # also resume_autodm, stop_autodm, delete_autodm
 ```
 
+## YouTube management
+
+Video details and your daily allowance, thumbnails, playlists, captions, the
+comments inbox, search and catalogs, subscriptions, ratings and reports, channel
+settings, live broadcasts and streams, and the live chat. Same rules as above
+(required arguments positional, every other keyword sent, files go multipart).
+Destructive or hard-to-undo calls need `confirm=True`, which the SDK never adds
+for you (`400 confirmation_required` otherwise). These calls share a daily
+allowance per account, in YouTube quota units: check it with `get_youtube_quota()`.
+
+```python
+videos = client.get_youtube_videos("my-profile", ids="dQw4w9WgXcQ")
+client.upload_youtube_caption("my-profile", "dQw4w9WgXcQ", language="es", file="es.srt")
+srt = client.download_youtube_caption("my-profile", "AUieDa...", tfmt="srt")   # text
+client.moderate_youtube_comments("my-profile", ["Ugz..."], "rejected", confirm=True)
+live = client.create_youtube_broadcast("my-profile", title="Live Q&A", scheduled_start_time="2026-12-01T18:00:00Z")
+client.transition_youtube_broadcast("my-profile", live["broadcast"]["id"], "live", confirm=True)
+```
+
+Editing a published video goes through `edit_post(user, "youtube", video_id, ...)`
+with YouTube's own names (`privacyStatus`, `categoryId`, `publishAt`,
+`hasPaidProductPlacement`...), plus `localizations`, `localizations_remove` and
+`brand_partner`.
+
+### YouTube: videos, thumbnail and quota
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`get_youtube_videos`](https://docs.upload-post.com/api/youtube-videos) | `GET /api/uploadposts/youtube/videos` | Full details of videos: status, processing, statistics, translations, paid placement... (`ids`, `chart` or `my_rating`; `parts`, `include_owner_details`). |
+| [`get_youtube_quota`](https://docs.upload-post.com/api/youtube-videos) | `GET /api/uploadposts/youtube/quota` | Your account's daily allowance for the YouTube management endpoints and what is left. |
+| [`set_youtube_thumbnail`](https://docs.upload-post.com/api/youtube-thumbnail) | `POST /api/uploadposts/youtube/thumbnail` | Set a video's thumbnail: `thumbnail` (local file, stream or Buffer) or `thumbnail_url`. |
+
+### YouTube: playlists
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`list_youtube_playlists`](https://docs.upload-post.com/api/youtube-playlists) | `GET /api/uploadposts/youtube/playlists` | List the channel's playlists (or `ids`). |
+| [`create_youtube_playlist`](https://docs.upload-post.com/api/youtube-playlists) | `POST /api/uploadposts/youtube/playlists` | Create a playlist (`title`, `description`, `privacy_status`, `default_language`, `localizations`...). |
+| [`update_youtube_playlist`](https://docs.upload-post.com/api/youtube-playlists) | `PATCH /api/uploadposts/youtube/playlists/{playlist_id}` | Edit a playlist (only what you send changes). |
+| [`delete_youtube_playlist`](https://docs.upload-post.com/api/youtube-playlists) | `DELETE /api/uploadposts/youtube/playlists/{playlist_id}` | Delete a playlist (needs `confirm: true`; the videos stay). |
+| [`list_youtube_playlist_items`](https://docs.upload-post.com/api/youtube-playlists) | `GET /api/uploadposts/youtube/playlists/{playlist_id}/items` | Videos of a playlist. |
+| [`add_youtube_playlist_item`](https://docs.upload-post.com/api/youtube-playlists) | `POST /api/uploadposts/youtube/playlists/{playlist_id}/items` | Add a video to a playlist (`video_id`, `position`, `note`). |
+| [`update_youtube_playlist_item`](https://docs.upload-post.com/api/youtube-playlists) | `PATCH /api/uploadposts/youtube/playlists/{playlist_id}/items/{item_id}` | Reorder a playlist video or change its note. |
+| [`delete_youtube_playlist_item`](https://docs.upload-post.com/api/youtube-playlists) | `DELETE /api/uploadposts/youtube/playlists/{playlist_id}/items/{item_id}` | Remove a video from a playlist (needs `confirm: true`). |
+| [`get_youtube_playlist_image`](https://docs.upload-post.com/api/youtube-playlists) | `GET /api/uploadposts/youtube/playlists/{playlist_id}/image` | The playlist's custom image. |
+| [`set_youtube_playlist_image`](https://docs.upload-post.com/api/youtube-playlists) | `POST /api/uploadposts/youtube/playlists/{playlist_id}/image` | Add the playlist image: `image` (local file, stream or Buffer) or `image_url`. |
+| [`replace_youtube_playlist_image`](https://docs.upload-post.com/api/youtube-playlists) | `PUT /api/uploadposts/youtube/playlists/{playlist_id}/image` | Replace the playlist image (same fields, needs `confirm: true`). |
+| [`delete_youtube_playlist_image`](https://docs.upload-post.com/api/youtube-playlists) | `DELETE /api/uploadposts/youtube/playlists/{playlist_id}/image` | Remove the playlist image (needs `confirm: true`). |
+
+### YouTube: captions
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`list_youtube_captions`](https://docs.upload-post.com/api/youtube-captions) | `GET /api/uploadposts/youtube/captions` | Caption tracks of a video. |
+| [`upload_youtube_caption`](https://docs.upload-post.com/api/youtube-captions) | `POST /api/uploadposts/youtube/captions` | Add a caption track: `file` (local file, stream or Buffer) or `file_url`, plus `language`, `name`, `is_draft`. |
+| [`update_youtube_caption`](https://docs.upload-post.com/api/youtube-captions) | `PUT /api/uploadposts/youtube/captions/{caption_id}` | Replace a track's file and/or publish a draft (`is_draft: false`). |
+| [`download_youtube_caption`](https://docs.upload-post.com/api/youtube-captions) | `GET /api/uploadposts/youtube/captions/{caption_id}/download` | Download a track (`tfmt`: srt, vtt, sbv, scc, ttml; `tlang` to translate). Returns the file's text. |
+| [`delete_youtube_caption`](https://docs.upload-post.com/api/youtube-captions) | `DELETE /api/uploadposts/youtube/captions/{caption_id}` | Delete a track (needs `confirm: true`). |
+
+### YouTube: comments inbox
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`list_youtube_comments`](https://docs.upload-post.com/api/youtube-comments) | `GET /api/uploadposts/youtube/comments` | Comment threads of a video (`video_id`), of the whole channel (`scope: "channel"`) or by `ids`; `moderation_status`, `order`, `search_terms`... |
+| [`list_youtube_comment_replies`](https://docs.upload-post.com/api/youtube-comments) | `GET /api/uploadposts/youtube/comments/replies` | Replies to a comment (`parent_id`) or comments by `ids`. |
+| [`create_youtube_comment`](https://docs.upload-post.com/api/youtube-comments) | `POST /api/uploadposts/youtube/comments` | Reply to a comment (`parent_id`) or comment on a video (`video_id`); `idempotency_key` optional. |
+| [`update_youtube_comment`](https://docs.upload-post.com/api/youtube-comments) | `PATCH /api/uploadposts/youtube/comments/{comment_id}` | Edit your own comment (`text`). |
+| [`delete_youtube_comment`](https://docs.upload-post.com/api/youtube-comments) | `DELETE /api/uploadposts/youtube/comments/{comment_id}` | Delete your own comment (needs `confirm: true`). |
+| [`moderate_youtube_comments`](https://docs.upload-post.com/api/youtube-comments) | `POST /api/uploadposts/youtube/comments/moderate` | Approve, hold or reject comments of your channel (`rejected` needs `confirm: true`; `ban_author`). |
+
+### YouTube: search and catalogs
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`search_youtube`](https://docs.upload-post.com/api/youtube-search-catalogs) | `GET /api/uploadposts/youtube/search` | Search videos, channels and playlists (`q`, `for_mine`, `channel_id`, `type`, `order`...). |
+| [`get_youtube_categories`](https://docs.upload-post.com/api/youtube-search-catalogs) | `GET /api/uploadposts/youtube/categories` | Video categories of a region (`region`, `hl`, `assignable_only`). |
+| [`get_youtube_languages`](https://docs.upload-post.com/api/youtube-search-catalogs) | `GET /api/uploadposts/youtube/languages` | Languages YouTube supports (`hl`). |
+| [`get_youtube_regions`](https://docs.upload-post.com/api/youtube-search-catalogs) | `GET /api/uploadposts/youtube/regions` | Regions (countries) YouTube supports (`hl`). |
+| [`get_youtube_abuse_reasons`](https://docs.upload-post.com/api/youtube-search-catalogs) | `GET /api/uploadposts/youtube/abuse-reasons` | Reasons for an abuse report (`hl`). |
+
+### YouTube: subscriptions, ratings, reports and activity
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`list_youtube_subscriptions`](https://docs.upload-post.com/api/youtube-channel-actions) | `GET /api/uploadposts/youtube/subscriptions` | Channels the connected channel subscribes to (or its subscribers). |
+| [`subscribe_youtube_channel`](https://docs.upload-post.com/api/youtube-channel-actions) | `POST /api/uploadposts/youtube/subscriptions` | Subscribe the connected channel to a channel (`channel_id`). |
+| [`unsubscribe_youtube_channel`](https://docs.upload-post.com/api/youtube-channel-actions) | `DELETE /api/uploadposts/youtube/subscriptions/{subscription_id}` | Unsubscribe. |
+| [`rate_youtube_video`](https://docs.upload-post.com/api/youtube-channel-actions) | `POST /api/uploadposts/youtube/videos/{video_id}/rate` | Like, dislike or remove the rating of a video (`rating`: like, dislike, none). |
+| [`get_youtube_rating`](https://docs.upload-post.com/api/youtube-channel-actions) | `GET /api/uploadposts/youtube/videos/rating` | The channel's rating of up to 50 videos. |
+| [`report_youtube_video_abuse`](https://docs.upload-post.com/api/youtube-channel-actions) | `POST /api/uploadposts/youtube/videos/{video_id}/report-abuse` | Report a video (needs `confirm: true`; it cannot be withdrawn). |
+| [`get_youtube_activities`](https://docs.upload-post.com/api/youtube-channel-actions) | `GET /api/uploadposts/youtube/activities` | Activity of the channel (uploads, likes, playlist additions...). |
+
+### YouTube: channel settings
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`get_youtube_channel`](https://docs.upload-post.com/api/youtube-channel) | `GET /api/uploadposts/youtube/channel` | Read the connected channel (settings, branding, translations, statistics). |
+| [`update_youtube_channel`](https://docs.upload-post.com/api/youtube-channel) | `PATCH /api/uploadposts/youtube/channel` | Change the channel settings or translations (only what you send changes). |
+| [`lookup_youtube_channel`](https://docs.upload-post.com/api/youtube-channel) | `GET /api/uploadposts/youtube/channel/lookup` | Public data of any channel (`for_handle`, `channel_id`...). |
+| [`set_youtube_channel_banner`](https://docs.upload-post.com/api/youtube-channel) | `POST /api/uploadposts/youtube/channel/banner` | Upload and apply the banner: `image` (local file, stream or Buffer) or `image_url`. |
+| [`list_youtube_channel_sections`](https://docs.upload-post.com/api/youtube-channel) | `GET /api/uploadposts/youtube/channel/sections` | Sections of the channel page. |
+| [`create_youtube_channel_section`](https://docs.upload-post.com/api/youtube-channel) | `POST /api/uploadposts/youtube/channel/sections` | Create a section. |
+| [`update_youtube_channel_section`](https://docs.upload-post.com/api/youtube-channel) | `PATCH /api/uploadposts/youtube/channel/sections/{section_id}` | Edit or move a section. |
+| [`delete_youtube_channel_section`](https://docs.upload-post.com/api/youtube-channel) | `DELETE /api/uploadposts/youtube/channel/sections/{section_id}` | Delete a section (needs `confirm: true`). |
+| [`set_youtube_watermark`](https://docs.upload-post.com/api/youtube-channel) | `POST /api/uploadposts/youtube/channel/watermark` | Set the watermark: `image` (local file, stream or Buffer) or `image_url`, `timing_type`, `offset_ms`, `duration_ms` (needs `confirm: true`). |
+| [`remove_youtube_watermark`](https://docs.upload-post.com/api/youtube-channel) | `DELETE /api/uploadposts/youtube/channel/watermark` | Remove the watermark (needs `confirm: true`). |
+
+### YouTube: live broadcasts and streams
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`list_youtube_broadcasts`](https://docs.upload-post.com/api/youtube-live) | `GET /api/uploadposts/youtube/live/broadcasts` | List live broadcasts (`status`, `ids`...). |
+| [`create_youtube_broadcast`](https://docs.upload-post.com/api/youtube-live) | `POST /api/uploadposts/youtube/live/broadcasts` | Create a broadcast (`title`, `scheduled_start_time`, `privacy_status`...). |
+| [`get_youtube_broadcast`](https://docs.upload-post.com/api/youtube-live) | `GET /api/uploadposts/youtube/live/broadcasts/{broadcast_id}` | One broadcast. |
+| [`update_youtube_broadcast`](https://docs.upload-post.com/api/youtube-live) | `PATCH /api/uploadposts/youtube/live/broadcasts/{broadcast_id}` | Edit a broadcast. |
+| [`delete_youtube_broadcast`](https://docs.upload-post.com/api/youtube-live) | `DELETE /api/uploadposts/youtube/live/broadcasts/{broadcast_id}` | Delete a broadcast (needs `confirm: true`). |
+| [`bind_youtube_broadcast`](https://docs.upload-post.com/api/youtube-live) | `POST /api/uploadposts/youtube/live/broadcasts/{broadcast_id}/bind` | Bind a stream to the broadcast (`stream_id`), or unbind it. |
+| [`transition_youtube_broadcast`](https://docs.upload-post.com/api/youtube-live) | `POST /api/uploadposts/youtube/live/broadcasts/{broadcast_id}/transition` | Go `testing`, `live` or `complete` (`live` and `complete` need `confirm: true`). |
+| [`insert_youtube_cuepoint`](https://docs.upload-post.com/api/youtube-live) | `POST /api/uploadposts/youtube/live/broadcasts/{broadcast_id}/cuepoint` | Insert an ad break. |
+| [`list_youtube_streams`](https://docs.upload-post.com/api/youtube-live) | `GET /api/uploadposts/youtube/live/streams` | List streams. |
+| [`create_youtube_stream`](https://docs.upload-post.com/api/youtube-live) | `POST /api/uploadposts/youtube/live/streams` | Create a stream (its key is a secret). |
+| [`get_youtube_stream`](https://docs.upload-post.com/api/youtube-live) | `GET /api/uploadposts/youtube/live/streams/{stream_id}` | One stream. |
+| [`update_youtube_stream`](https://docs.upload-post.com/api/youtube-live) | `PATCH /api/uploadposts/youtube/live/streams/{stream_id}` | Edit a stream. |
+| [`delete_youtube_stream`](https://docs.upload-post.com/api/youtube-live) | `DELETE /api/uploadposts/youtube/live/streams/{stream_id}` | Delete a stream (needs `confirm: true`; encoders using its key stop). |
+
+### YouTube: live chat, polls and moderation
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| [`get_youtube_live_chat`](https://docs.upload-post.com/api/youtube-live-chat) | `GET /api/uploadposts/youtube/live/chat` | Read the live chat (`broadcast_id` or `live_chat_id`, `page_token`). |
+| [`send_youtube_live_chat_message`](https://docs.upload-post.com/api/youtube-live-chat) | `POST /api/uploadposts/youtube/live/chat` | Post a message or a poll in the live chat (`idempotency_key` optional). |
+| [`close_youtube_live_chat_poll`](https://docs.upload-post.com/api/youtube-live-chat) | `POST /api/uploadposts/youtube/live/chat/polls/{message_id}/close` | Close a poll. |
+| [`delete_youtube_live_chat_message`](https://docs.upload-post.com/api/youtube-live-chat) | `DELETE /api/uploadposts/youtube/live/chat/messages/{message_id}` | Delete a chat message (needs `confirm: true`). |
+| [`list_youtube_live_moderators`](https://docs.upload-post.com/api/youtube-live-chat) | `GET /api/uploadposts/youtube/live/moderators` | Moderators of the live chat. |
+| [`add_youtube_live_moderator`](https://docs.upload-post.com/api/youtube-live-chat) | `POST /api/uploadposts/youtube/live/moderators` | Add a moderator (`channel_id`). |
+| [`remove_youtube_live_moderator`](https://docs.upload-post.com/api/youtube-live-chat) | `DELETE /api/uploadposts/youtube/live/moderators/{moderator_id}` | Remove a moderator (the `id` from the list; needs `confirm: true`). |
+| [`ban_youtube_live_chat_user`](https://docs.upload-post.com/api/youtube-live-chat) | `POST /api/uploadposts/youtube/live/bans` | Ban a user from the chat (`permanent` or `temporary` with `ban_duration_seconds`; needs `confirm: true`). |
+| [`unban_youtube_live_chat_user`](https://docs.upload-post.com/api/youtube-live-chat) | `DELETE /api/uploadposts/youtube/live/bans/{ban_id}` | Lift a ban. |
+| [`list_youtube_super_chats`](https://docs.upload-post.com/api/youtube-live-chat) | `GET /api/uploadposts/youtube/live/super-chats` | Super Chats and Super Stickers received. |
+
 ## What a TikTok connection can do (`capabilities`)
 
 Not every TikTok connection can do the same things. `client.list_users()`
@@ -1080,6 +1220,8 @@ for the music, location, cover and draft options.
 - `youtube_playlist_id` - Playlist ID (single string, list, or comma-separated) to add the uploaded video to after publishing
 - `youtube_notify_subscribers` - Notify subscribers (default `true`; send `false` to skip)
 - `youtube_publish_at` - RFC3339 time; uploads as private and schedules on YouTube
+- `youtube_localizations` - Translated title/description per language: `{"es": {"title": ..., "description": ...}}`
+- `youtube_brand_partner` - Brand partner channel id (`UC…`) for creator-initiated brand partner access
 
 ### LinkedIn
 - `visibility` / `linkedin_visibility` - PUBLIC, CONNECTIONS, LOGGED_IN, CONTAINER
