@@ -96,9 +96,10 @@ class UploadPostClient:
         data: Optional[List[tuple]] = None,
         files: Optional[List[tuple]] = None,
         json_data: Optional[Dict] = None,
-        params: Optional[Dict] = None
+        params: Optional[Dict] = None,
+        raw: bool = False,
     ) -> Dict:
-        """Make an API request."""
+        """Make an API request. ``raw=True`` returns the body as text (file downloads)."""
         url = f"{self.BASE_URL}{endpoint}"
         
         try:
@@ -128,6 +129,8 @@ class UploadPostClient:
                 raise UploadPostError(f"Unsupported HTTP method: {method}")
             
             response.raise_for_status()
+            if raw:
+                return response.text
             return response.json()
             
         except requests.exceptions.RequestException as e:
@@ -507,6 +510,10 @@ class UploadPostClient:
             data.append(("hasPaidProductPlacement", str(kwargs["hasPaidProductPlacement"]).lower()))
         if kwargs.get("recordingDate"):
             data.append(("recordingDate", kwargs["recordingDate"]))
+        # Translated title/description per language ({"es": {"title", "description"}})
+        # and the brand partner channel id (UC...) for brand partner access.
+        self._put(data, "youtube_localizations", kwargs.get("youtube_localizations"), "json")
+        self._put(data, "youtube_brand_partner", kwargs.get("youtube_brand_partner"))
         playlist_value = kwargs.get("youtube_playlist_id")
         if playlist_value:
             if isinstance(playlist_value, (list, tuple)):
@@ -2436,7 +2443,7 @@ class UploadPostClient:
     # Telegram file_ids stay strings.
 
     _FILE_FIELDS = frozenset({
-        "file", "photo", "animation", "sticker", "avatar", "banner", "thumbnail",
+        "file", "photo", "animation", "sticker", "avatar", "banner", "thumbnail", "image",
         "telegram_media", "telegram_thumbnail", "telegram_cover", "telegram_live_photo_photo",
     })
 
@@ -2458,7 +2465,8 @@ class UploadPostClient:
             return json.dumps(value)
         return str(value)
 
-    def _call(self, method: str, endpoint: str, params: Dict, defaults: Optional[Dict] = None) -> Dict:
+    def _call(self, method: str, endpoint: str, params: Dict, defaults: Optional[Dict] = None,
+              raw: bool = False) -> Dict:
         body = dict(defaults or {})
         body.update({k: v for k, v in params.items() if v is not None})
         for name in re.findall(r"\{(\w+)\}", endpoint):
@@ -2468,7 +2476,7 @@ class UploadPostClient:
             endpoint = endpoint.replace("{%s}" % name, quote(str(value), safe=""))
 
         if method == "GET":
-            return self._request(endpoint, "GET", params={k: self._query_value(v) for k, v in body.items()})
+            return self._request(endpoint, "GET", params={k: self._query_value(v) for k, v in body.items()}, raw=raw)
 
         files: List[tuple] = []
         opened: List = []
@@ -2500,6 +2508,12 @@ class UploadPostClient:
     # ---- Posts: edit, repost, actions ----
     def edit_post(self, user: str, platform: str, post_id: str, **params) -> Dict:
         """Edit a published post (Facebook, LinkedIn, X, Google Business, Telegram: text, buttons, pin/unpin, stop a poll, live location, replace the media).
+
+        YouTube: ``title``, ``description``, ``tags``, ``privacyStatus``, ``categoryId``,
+        ``publishAt``, ``hasPaidProductPlacement``, ``defaultLanguage``, ``embeddable``,
+        ``publicStatsViewable``, ``selfDeclaredMadeForKids``, ``containsSyntheticMedia``,
+        ``license``, ``recordingDate``, ``localizations``, ``localizations_remove``,
+        ``brand_partner``.
 
         Required: ``user``, ``platform``, ``post_id``. Any other API field goes in ``**params``
         with its API name. Docs: https://docs.upload-post.com/api/edit-post
@@ -3646,6 +3660,583 @@ class UploadPostClient:
         with its API name. Docs: https://docs.upload-post.com/api/google-business-verification
         """
         return self._call("GET", "/uploadposts/google-business/verifications", dict(params, user=user))
+
+    # ---- YouTube: videos, thumbnail and quota ----
+    def get_youtube_videos(self, user: str, **params) -> Dict:
+        """Full details of videos: status, processing, statistics, translations, paid placement... (`ids`, `chart` or `my_rating`; `parts`, `include_owner_details`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-videos
+        """
+        return self._call("GET", "/uploadposts/youtube/videos", dict(params, user=user))
+
+    def get_youtube_quota(self, **params) -> Dict:
+        """Your account's daily allowance for the YouTube management endpoints and what is left.
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-videos
+        """
+        return self._call("GET", "/uploadposts/youtube/quota", params)
+
+    def set_youtube_thumbnail(self, user: str, video_id: str, **params) -> Dict:
+        """Set a video's thumbnail: `thumbnail` (local file, stream or Buffer) or `thumbnail_url`.
+
+        Required: ``user``, ``video_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-thumbnail
+        """
+        return self._call("POST", "/uploadposts/youtube/thumbnail", dict(params, user=user, video_id=video_id))
+
+    # ---- YouTube: playlists ----
+    def list_youtube_playlists(self, user: str, **params) -> Dict:
+        """List the channel's playlists (or `ids`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("GET", "/uploadposts/youtube/playlists", dict(params, user=user))
+
+    def create_youtube_playlist(self, user: str, **params) -> Dict:
+        """Create a playlist (`title`, `description`, `privacy_status`, `default_language`, `localizations`...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("POST", "/uploadposts/youtube/playlists", dict(params, user=user))
+
+    def update_youtube_playlist(self, user: str, playlist_id: str, **params) -> Dict:
+        """Edit a playlist (only what you send changes).
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("PATCH", "/uploadposts/youtube/playlists/{playlist_id}", dict(params, user=user, playlist_id=playlist_id))
+
+    def delete_youtube_playlist(self, user: str, playlist_id: str, **params) -> Dict:
+        """Delete a playlist (needs `confirm: true`; the videos stay).
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("DELETE", "/uploadposts/youtube/playlists/{playlist_id}", dict(params, user=user, playlist_id=playlist_id))
+
+    def list_youtube_playlist_items(self, user: str, playlist_id: str, **params) -> Dict:
+        """Videos of a playlist.
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("GET", "/uploadposts/youtube/playlists/{playlist_id}/items", dict(params, user=user, playlist_id=playlist_id))
+
+    def add_youtube_playlist_item(self, user: str, playlist_id: str, **params) -> Dict:
+        """Add a video to a playlist (`video_id`, `position`, `note`).
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("POST", "/uploadposts/youtube/playlists/{playlist_id}/items", dict(params, user=user, playlist_id=playlist_id))
+
+    def update_youtube_playlist_item(self, user: str, playlist_id: str, item_id: str, **params) -> Dict:
+        """Reorder a playlist video or change its note.
+
+        Required: ``user``, ``playlist_id``, ``item_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("PATCH", "/uploadposts/youtube/playlists/{playlist_id}/items/{item_id}", dict(params, user=user, playlist_id=playlist_id, item_id=item_id))
+
+    def delete_youtube_playlist_item(self, user: str, playlist_id: str, item_id: str, **params) -> Dict:
+        """Remove a video from a playlist (needs `confirm: true`).
+
+        Required: ``user``, ``playlist_id``, ``item_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("DELETE", "/uploadposts/youtube/playlists/{playlist_id}/items/{item_id}", dict(params, user=user, playlist_id=playlist_id, item_id=item_id))
+
+    def get_youtube_playlist_image(self, user: str, playlist_id: str, **params) -> Dict:
+        """The playlist's custom image.
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("GET", "/uploadposts/youtube/playlists/{playlist_id}/image", dict(params, user=user, playlist_id=playlist_id))
+
+    def set_youtube_playlist_image(self, user: str, playlist_id: str, **params) -> Dict:
+        """Add the playlist image: `image` (local file, stream or Buffer) or `image_url`.
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("POST", "/uploadposts/youtube/playlists/{playlist_id}/image", dict(params, user=user, playlist_id=playlist_id))
+
+    def replace_youtube_playlist_image(self, user: str, playlist_id: str, **params) -> Dict:
+        """Replace the playlist image (same fields, needs `confirm: true`).
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("PUT", "/uploadposts/youtube/playlists/{playlist_id}/image", dict(params, user=user, playlist_id=playlist_id))
+
+    def delete_youtube_playlist_image(self, user: str, playlist_id: str, **params) -> Dict:
+        """Remove the playlist image (needs `confirm: true`).
+
+        Required: ``user``, ``playlist_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-playlists
+        """
+        return self._call("DELETE", "/uploadposts/youtube/playlists/{playlist_id}/image", dict(params, user=user, playlist_id=playlist_id))
+
+    # ---- YouTube: captions ----
+    def list_youtube_captions(self, user: str, video_id: str, **params) -> Dict:
+        """Caption tracks of a video.
+
+        Required: ``user``, ``video_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-captions
+        """
+        return self._call("GET", "/uploadposts/youtube/captions", dict(params, user=user, video_id=video_id))
+
+    def upload_youtube_caption(self, user: str, video_id: str, **params) -> Dict:
+        """Add a caption track: `file` (local file, stream or Buffer) or `file_url`, plus `language`, `name`, `is_draft`.
+
+        Required: ``user``, ``video_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-captions
+        """
+        return self._call("POST", "/uploadposts/youtube/captions", dict(params, user=user, video_id=video_id))
+
+    def update_youtube_caption(self, user: str, caption_id: str, **params) -> Dict:
+        """Replace a track's file and/or publish a draft (`is_draft: false`).
+
+        Required: ``user``, ``caption_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-captions
+        """
+        return self._call("PUT", "/uploadposts/youtube/captions/{caption_id}", dict(params, user=user, caption_id=caption_id))
+
+    def download_youtube_caption(self, user: str, caption_id: str, **params) -> Dict:
+        """Download a track (`tfmt`: srt, vtt, sbv, scc, ttml; `tlang` to translate). Returns the file's text.
+
+        Required: ``user``, ``caption_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-captions
+        """
+        return self._call("GET", "/uploadposts/youtube/captions/{caption_id}/download", dict(params, user=user, caption_id=caption_id), raw=True)
+
+    def delete_youtube_caption(self, user: str, caption_id: str, **params) -> Dict:
+        """Delete a track (needs `confirm: true`).
+
+        Required: ``user``, ``caption_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-captions
+        """
+        return self._call("DELETE", "/uploadposts/youtube/captions/{caption_id}", dict(params, user=user, caption_id=caption_id))
+
+    # ---- YouTube: comments inbox ----
+    def list_youtube_comments(self, user: str, **params) -> Dict:
+        """Comment threads of a video (`video_id`), of the whole channel (`scope: "channel"`) or by `ids`; `moderation_status`, `order`, `search_terms`...
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-comments
+        """
+        return self._call("GET", "/uploadposts/youtube/comments", dict(params, user=user))
+
+    def list_youtube_comment_replies(self, user: str, **params) -> Dict:
+        """Replies to a comment (`parent_id`) or comments by `ids`.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-comments
+        """
+        return self._call("GET", "/uploadposts/youtube/comments/replies", dict(params, user=user))
+
+    def create_youtube_comment(self, user: str, text: str, **params) -> Dict:
+        """Reply to a comment (`parent_id`) or comment on a video (`video_id`); `idempotency_key` optional.
+
+        Required: ``user``, ``text``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-comments
+        """
+        return self._call("POST", "/uploadposts/youtube/comments", dict(params, user=user, text=text))
+
+    def update_youtube_comment(self, user: str, comment_id: str, **params) -> Dict:
+        """Edit your own comment (`text`).
+
+        Required: ``user``, ``comment_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-comments
+        """
+        return self._call("PATCH", "/uploadposts/youtube/comments/{comment_id}", dict(params, user=user, comment_id=comment_id))
+
+    def delete_youtube_comment(self, user: str, comment_id: str, **params) -> Dict:
+        """Delete your own comment (needs `confirm: true`).
+
+        Required: ``user``, ``comment_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-comments
+        """
+        return self._call("DELETE", "/uploadposts/youtube/comments/{comment_id}", dict(params, user=user, comment_id=comment_id))
+
+    def moderate_youtube_comments(self, user: str, comment_ids: str, status: str, **params) -> Dict:
+        """Approve, hold or reject comments of your channel (`rejected` needs `confirm: true`; `ban_author`).
+
+        Required: ``user``, ``comment_ids``, ``status``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-comments
+        """
+        return self._call("POST", "/uploadposts/youtube/comments/moderate", dict(params, user=user, comment_ids=comment_ids, status=status))
+
+    # ---- YouTube: search and catalogs ----
+    def search_youtube(self, user: str, **params) -> Dict:
+        """Search videos, channels and playlists (`q`, `for_mine`, `channel_id`, `type`, `order`...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-search-catalogs
+        """
+        return self._call("GET", "/uploadposts/youtube/search", dict(params, user=user))
+
+    def get_youtube_categories(self, **params) -> Dict:
+        """Video categories of a region (`region`, `hl`, `assignable_only`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-search-catalogs
+        """
+        return self._call("GET", "/uploadposts/youtube/categories", params)
+
+    def get_youtube_languages(self, **params) -> Dict:
+        """Languages YouTube supports (`hl`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-search-catalogs
+        """
+        return self._call("GET", "/uploadposts/youtube/languages", params)
+
+    def get_youtube_regions(self, **params) -> Dict:
+        """Regions (countries) YouTube supports (`hl`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-search-catalogs
+        """
+        return self._call("GET", "/uploadposts/youtube/regions", params)
+
+    def get_youtube_abuse_reasons(self, **params) -> Dict:
+        """Reasons for an abuse report (`hl`).
+
+        Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-search-catalogs
+        """
+        return self._call("GET", "/uploadposts/youtube/abuse-reasons", params)
+
+    # ---- YouTube: subscriptions, ratings, reports and activity ----
+    def list_youtube_subscriptions(self, user: str, **params) -> Dict:
+        """Channels the connected channel subscribes to (or its subscribers).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel-actions
+        """
+        return self._call("GET", "/uploadposts/youtube/subscriptions", dict(params, user=user))
+
+    def subscribe_youtube_channel(self, user: str, **params) -> Dict:
+        """Subscribe the connected channel to a channel (`channel_id`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel-actions
+        """
+        return self._call("POST", "/uploadposts/youtube/subscriptions", dict(params, user=user))
+
+    def unsubscribe_youtube_channel(self, user: str, subscription_id: str, **params) -> Dict:
+        """Unsubscribe.
+
+        Required: ``user``, ``subscription_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel-actions
+        """
+        return self._call("DELETE", "/uploadposts/youtube/subscriptions/{subscription_id}", dict(params, user=user, subscription_id=subscription_id))
+
+    def rate_youtube_video(self, user: str, video_id: str, **params) -> Dict:
+        """Like, dislike or remove the rating of a video (`rating`: like, dislike, none).
+
+        Required: ``user``, ``video_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel-actions
+        """
+        return self._call("POST", "/uploadposts/youtube/videos/{video_id}/rate", dict(params, user=user, video_id=video_id))
+
+    def get_youtube_rating(self, user: str, ids: str, **params) -> Dict:
+        """The channel's rating of up to 50 videos.
+
+        Required: ``user``, ``ids``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel-actions
+        """
+        return self._call("GET", "/uploadposts/youtube/videos/rating", dict(params, user=user, ids=ids))
+
+    def report_youtube_video_abuse(self, user: str, video_id: str, reason_id: str, **params) -> Dict:
+        """Report a video (needs `confirm: true`; it cannot be withdrawn).
+
+        Required: ``user``, ``video_id``, ``reason_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel-actions
+        """
+        return self._call("POST", "/uploadposts/youtube/videos/{video_id}/report-abuse", dict(params, user=user, video_id=video_id, reason_id=reason_id))
+
+    def get_youtube_activities(self, user: str, **params) -> Dict:
+        """Activity of the channel (uploads, likes, playlist additions...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel-actions
+        """
+        return self._call("GET", "/uploadposts/youtube/activities", dict(params, user=user))
+
+    # ---- YouTube: channel settings ----
+    def get_youtube_channel(self, user: str, **params) -> Dict:
+        """Read the connected channel (settings, branding, translations, statistics).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("GET", "/uploadposts/youtube/channel", dict(params, user=user))
+
+    def update_youtube_channel(self, user: str, **params) -> Dict:
+        """Change the channel settings or translations (only what you send changes).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("PATCH", "/uploadposts/youtube/channel", dict(params, user=user))
+
+    def lookup_youtube_channel(self, user: str, **params) -> Dict:
+        """Public data of any channel (`for_handle`, `channel_id`...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("GET", "/uploadposts/youtube/channel/lookup", dict(params, user=user))
+
+    def set_youtube_channel_banner(self, user: str, **params) -> Dict:
+        """Upload and apply the banner: `image` (local file, stream or Buffer) or `image_url`.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("POST", "/uploadposts/youtube/channel/banner", dict(params, user=user))
+
+    def list_youtube_channel_sections(self, user: str, **params) -> Dict:
+        """Sections of the channel page.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("GET", "/uploadposts/youtube/channel/sections", dict(params, user=user))
+
+    def create_youtube_channel_section(self, user: str, **params) -> Dict:
+        """Create a section.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("POST", "/uploadposts/youtube/channel/sections", dict(params, user=user))
+
+    def update_youtube_channel_section(self, user: str, section_id: str, **params) -> Dict:
+        """Edit or move a section.
+
+        Required: ``user``, ``section_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("PATCH", "/uploadposts/youtube/channel/sections/{section_id}", dict(params, user=user, section_id=section_id))
+
+    def delete_youtube_channel_section(self, user: str, section_id: str, **params) -> Dict:
+        """Delete a section (needs `confirm: true`).
+
+        Required: ``user``, ``section_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("DELETE", "/uploadposts/youtube/channel/sections/{section_id}", dict(params, user=user, section_id=section_id))
+
+    def set_youtube_watermark(self, user: str, **params) -> Dict:
+        """Set the watermark: `image` (local file, stream or Buffer) or `image_url`, `timing_type`, `offset_ms`, `duration_ms` (needs `confirm: true`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("POST", "/uploadposts/youtube/channel/watermark", dict(params, user=user))
+
+    def remove_youtube_watermark(self, user: str, **params) -> Dict:
+        """Remove the watermark (needs `confirm: true`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-channel
+        """
+        return self._call("DELETE", "/uploadposts/youtube/channel/watermark", dict(params, user=user))
+
+    # ---- YouTube: live broadcasts and streams ----
+    def list_youtube_broadcasts(self, user: str, **params) -> Dict:
+        """List live broadcasts (`status`, `ids`...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("GET", "/uploadposts/youtube/live/broadcasts", dict(params, user=user))
+
+    def create_youtube_broadcast(self, user: str, **params) -> Dict:
+        """Create a broadcast (`title`, `scheduled_start_time`, `privacy_status`...).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("POST", "/uploadposts/youtube/live/broadcasts", dict(params, user=user))
+
+    def get_youtube_broadcast(self, user: str, broadcast_id: str, **params) -> Dict:
+        """One broadcast.
+
+        Required: ``user``, ``broadcast_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("GET", "/uploadposts/youtube/live/broadcasts/{broadcast_id}", dict(params, user=user, broadcast_id=broadcast_id))
+
+    def update_youtube_broadcast(self, user: str, broadcast_id: str, **params) -> Dict:
+        """Edit a broadcast.
+
+        Required: ``user``, ``broadcast_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("PATCH", "/uploadposts/youtube/live/broadcasts/{broadcast_id}", dict(params, user=user, broadcast_id=broadcast_id))
+
+    def delete_youtube_broadcast(self, user: str, broadcast_id: str, **params) -> Dict:
+        """Delete a broadcast (needs `confirm: true`).
+
+        Required: ``user``, ``broadcast_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("DELETE", "/uploadposts/youtube/live/broadcasts/{broadcast_id}", dict(params, user=user, broadcast_id=broadcast_id))
+
+    def bind_youtube_broadcast(self, user: str, broadcast_id: str, **params) -> Dict:
+        """Bind a stream to the broadcast (`stream_id`), or unbind it.
+
+        Required: ``user``, ``broadcast_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("POST", "/uploadposts/youtube/live/broadcasts/{broadcast_id}/bind", dict(params, user=user, broadcast_id=broadcast_id))
+
+    def transition_youtube_broadcast(self, user: str, broadcast_id: str, status: str, **params) -> Dict:
+        """Go `testing`, `live` or `complete` (`live` and `complete` need `confirm: true`).
+
+        Required: ``user``, ``broadcast_id``, ``status``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("POST", "/uploadposts/youtube/live/broadcasts/{broadcast_id}/transition", dict(params, user=user, broadcast_id=broadcast_id, status=status))
+
+    def insert_youtube_cuepoint(self, user: str, broadcast_id: str, **params) -> Dict:
+        """Insert an ad break.
+
+        Required: ``user``, ``broadcast_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("POST", "/uploadposts/youtube/live/broadcasts/{broadcast_id}/cuepoint", dict(params, user=user, broadcast_id=broadcast_id))
+
+    def list_youtube_streams(self, user: str, **params) -> Dict:
+        """List streams.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("GET", "/uploadposts/youtube/live/streams", dict(params, user=user))
+
+    def create_youtube_stream(self, user: str, **params) -> Dict:
+        """Create a stream (its key is a secret).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("POST", "/uploadposts/youtube/live/streams", dict(params, user=user))
+
+    def get_youtube_stream(self, user: str, stream_id: str, **params) -> Dict:
+        """One stream.
+
+        Required: ``user``, ``stream_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("GET", "/uploadposts/youtube/live/streams/{stream_id}", dict(params, user=user, stream_id=stream_id))
+
+    def update_youtube_stream(self, user: str, stream_id: str, **params) -> Dict:
+        """Edit a stream.
+
+        Required: ``user``, ``stream_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("PATCH", "/uploadposts/youtube/live/streams/{stream_id}", dict(params, user=user, stream_id=stream_id))
+
+    def delete_youtube_stream(self, user: str, stream_id: str, **params) -> Dict:
+        """Delete a stream (needs `confirm: true`; encoders using its key stop).
+
+        Required: ``user``, ``stream_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live
+        """
+        return self._call("DELETE", "/uploadposts/youtube/live/streams/{stream_id}", dict(params, user=user, stream_id=stream_id))
+
+    # ---- YouTube: live chat, polls and moderation ----
+    def get_youtube_live_chat(self, user: str, **params) -> Dict:
+        """Read the live chat (`broadcast_id` or `live_chat_id`, `page_token`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("GET", "/uploadposts/youtube/live/chat", dict(params, user=user))
+
+    def send_youtube_live_chat_message(self, user: str, **params) -> Dict:
+        """Post a message or a poll in the live chat (`idempotency_key` optional).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("POST", "/uploadposts/youtube/live/chat", dict(params, user=user))
+
+    def close_youtube_live_chat_poll(self, user: str, message_id: str, **params) -> Dict:
+        """Close a poll.
+
+        Required: ``user``, ``message_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("POST", "/uploadposts/youtube/live/chat/polls/{message_id}/close", dict(params, user=user, message_id=message_id))
+
+    def delete_youtube_live_chat_message(self, user: str, message_id: str, **params) -> Dict:
+        """Delete a chat message (needs `confirm: true`).
+
+        Required: ``user``, ``message_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("DELETE", "/uploadposts/youtube/live/chat/messages/{message_id}", dict(params, user=user, message_id=message_id))
+
+    def list_youtube_live_moderators(self, user: str, **params) -> Dict:
+        """Moderators of the live chat.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("GET", "/uploadposts/youtube/live/moderators", dict(params, user=user))
+
+    def add_youtube_live_moderator(self, user: str, **params) -> Dict:
+        """Add a moderator (`channel_id`).
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("POST", "/uploadposts/youtube/live/moderators", dict(params, user=user))
+
+    def remove_youtube_live_moderator(self, user: str, moderator_id: str, **params) -> Dict:
+        """Remove a moderator (the `id` from the list; needs `confirm: true`).
+
+        Required: ``user``, ``moderator_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("DELETE", "/uploadposts/youtube/live/moderators/{moderator_id}", dict(params, user=user, moderator_id=moderator_id))
+
+    def ban_youtube_live_chat_user(self, user: str, channel_id: str, type: str, **params) -> Dict:
+        """Ban a user from the chat (`permanent` or `temporary` with `ban_duration_seconds`; needs `confirm: true`).
+
+        Required: ``user``, ``channel_id``, ``type``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("POST", "/uploadposts/youtube/live/bans", dict(params, user=user, channel_id=channel_id, type=type))
+
+    def unban_youtube_live_chat_user(self, user: str, ban_id: str, **params) -> Dict:
+        """Lift a ban.
+
+        Required: ``user``, ``ban_id``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("DELETE", "/uploadposts/youtube/live/bans/{ban_id}", dict(params, user=user, ban_id=ban_id))
+
+    def list_youtube_super_chats(self, user: str, **params) -> Dict:
+        """Super Chats and Super Stickers received.
+
+        Required: ``user``. Any other API field goes in ``**params``
+        with its API name. Docs: https://docs.upload-post.com/api/youtube-live-chat
+        """
+        return self._call("GET", "/uploadposts/youtube/live/super-chats", dict(params, user=user))
 
     # ==================== Helper Endpoints ====================
 
