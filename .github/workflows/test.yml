@@ -1,0 +1,34 @@
+name: Tests
+
+# Runs on every push and pull request. Publishing is publish.yml (main + version bump).
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install -e . pytest
+
+      # Coverage against codegen/openapi.json, upload field whitelists, parity tests.
+      - run: python -m pytest -q tests
+
+      - name: Generated methods match codegen/openapi.json
+        run: python codegen/generate.py --check
+
+      - name: Version files must agree
+        shell: bash
+        run: |
+          SETUP=$(sed -n 's/.*version="\([^"]*\)".*/\1/p' setup.py | head -1)
+          INIT=$(sed -n 's/.*__version__ = "\([^"]*\)".*/\1/p' upload_post/__init__.py | head -1)
+          echo "setup.py=$SETUP  __init__.py=$INIT"
+          test -n "$SETUP" && test "$SETUP" = "$INIT"

@@ -119,6 +119,9 @@ response = client.upload_document(
     visibility="PUBLIC",
     target_linkedin_page_id="company-page-id",  # Optional: post to company page
 )
+
+# Any file up to 50 MB to Telegram (or both, with platforms=["linkedin", "telegram"])
+client.upload_document("archive.zip", title="Files", user="my-profile", platforms=["telegram"])
 ```
 
 ### Check Upload Status
@@ -1063,6 +1066,267 @@ with YouTube's own names (`privacyStatus`, `categoryId`, `publishAt`,
 | [`unban_youtube_live_chat_user`](https://docs.upload-post.com/api/youtube-live-chat) | `DELETE /api/uploadposts/youtube/live/bans/{ban_id}` | Lift a ban. |
 | [`list_youtube_super_chats`](https://docs.upload-post.com/api/youtube-live-chat) | `GET /api/uploadposts/youtube/live/super-chats` | Super Chats and Super Stickers received. |
 
+## Everything else in the API
+
+Every operation of the [API reference](https://docs.upload-post.com) has a method. The ones below are generated from the OpenAPI spec, so they stay in step with it.
+
+<!-- openapi:methods -->
+Generated from the OpenAPI spec (`codegen/openapi.json`) by `codegen/generate.py`. Required fields are positional arguments; every other API field goes in `**params` by its API name.
+Methods marked *not generally available* answer HTTP 503 until the feature is switched on for your account.
+
+### Telegram
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `send_telegram_gift` | `POST /api/uploadposts/telegram/gifts` | Send a gift from the bot's Stars. |
+| `gift_telegram_premium` | `POST /api/uploadposts/telegram/gifts/premium` | Gift Telegram Premium from the bot's Stars. |
+| `get_telegram_payment_settings` | `GET /api/uploadposts/telegram/payments/settings` | Automatic pre-checkout rules. |
+| `update_telegram_payment_settings` | `PUT /api/uploadposts/telegram/payments/settings` | Set automatic pre-checkout rules. |
+| `set_telegram_updates` | `POST /api/uploadposts/telegram/updates` | Turn Telegram updates on or off. |
+| `answer_telegram_query` | `POST /api/uploadposts/telegram/answer` | Answer a Telegram query. |
+| `get_telegram_business_connections` | `GET /api/uploadposts/telegram/business-connections` | Telegram Business connections. |
+| `get_telegram_business_profile` | `GET /api/uploadposts/telegram/business-profile` | Telegram Business account. |
+| `update_telegram_business_profile` | `PATCH /api/uploadposts/telegram/business-profile` | Update the Telegram Business profile. |
+| `post_telegram_story` | `POST /api/uploadposts/telegram/business-stories` | Post a Telegram story. |
+| `edit_telegram_story` | `PATCH /api/uploadposts/telegram/business-stories` | Edit a Telegram story. |
+| `delete_telegram_story` | `DELETE /api/uploadposts/telegram/business-stories` | Delete a Telegram story. |
+| `repost_telegram_story` | `POST /api/uploadposts/telegram/business-stories/repost` | Repost a Telegram story. |
+| `get_telegram_business_gifts` | `GET /api/uploadposts/telegram/business-gifts` | Telegram Business gifts. |
+| `manage_telegram_business_gift` | `POST /api/uploadposts/telegram/business-gifts` | Convert, upgrade, transfer or delete a gift. |
+| `get_telegram_business_stars` | `GET /api/uploadposts/telegram/business-stars` | Telegram Business Stars balance. |
+| `transfer_telegram_business_stars` | `POST /api/uploadposts/telegram/business-stars/transfer` | Move Stars to the bot. |
+
+### Content Upload
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `analyze_shorts` | `POST /api/uploadposts/analyze-shorts` | AI titles and captions for a short video. |
+| `rewrite_captions` | `POST /api/uploadposts/rewrite-captions` | Translate or rewrite captions with AI. |
+| `create_media_upload` | `POST /api/uploadposts/media-uploads` | Get a signed URL to upload a file. |
+| `complete_media_upload` | `POST /api/uploadposts/media-uploads/{upload_id}/complete` | Confirm a signed upload. |
+| `get_media_upload` | `GET /api/uploadposts/media-uploads/{upload_id}` | Get a signed upload. |
+| `delete_media_upload` | `DELETE /api/uploadposts/media-uploads/{upload_id}` | Delete a signed upload. |
+
+### Upload Management
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `get_scheduled_post` | `GET /api/uploadposts/schedule/{job_id}` | Get a scheduled post. |
+| `get_scheduled_post_thumbnail` | `GET /api/uploadposts/schedule/{job_id}/thumbnail` | Get a scheduled post's thumbnail. |
+| `get_scheduled_post_preview` | `GET /api/uploadposts/schedule/{job_id}/preview` | Preview URLs of a scheduled post. |
+
+### Platform Integration
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `create_pinterest_board` | `POST /api/uploadposts/pinterest/boards` | Create a Pinterest board. |
+| `get_reddit_detailed_posts` | `GET /api/uploadposts/reddit/detailed-posts/` | Get Reddit detailed posts. |
+| `query_youtube_analytics` | `GET /api/uploadposts/youtube/analytics/query` | Run a YouTube Analytics channel report. |
+| `list_youtube_analytics_reports` | `GET /api/uploadposts/youtube/analytics/reports` | YouTube Analytics report catalog. |
+| `list_youtube_analytics_groups` | `GET /api/uploadposts/youtube/analytics/groups` | List YouTube Analytics groups. |
+| `list_youtube_analytics_group_items` | `GET /api/uploadposts/youtube/analytics/groups/{group_id}/items` | List the items of a YouTube Analytics group. |
+| `get_youtube_analytics_usage` | `GET /api/uploadposts/youtube/analytics/usage` | Daily allowance of YouTube Analytics and bulk reports. |
+| `list_youtube_report_types` | `GET /api/uploadposts/youtube/reporting/report-types` | List YouTube bulk report types. |
+| `list_youtube_reporting_jobs` | `GET /api/uploadposts/youtube/reporting/jobs` | List YouTube reporting jobs. |
+| `create_youtube_reporting_job` | `POST /api/uploadposts/youtube/reporting/jobs` | Create a YouTube reporting job. |
+| `get_youtube_reporting_job` | `GET /api/uploadposts/youtube/reporting/jobs/{job_id}` | Get a YouTube reporting job. |
+| `delete_youtube_reporting_job` | `DELETE /api/uploadposts/youtube/reporting/jobs/{job_id}` | Delete a YouTube reporting job. |
+| `list_youtube_reports` | `GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports` | List the reports of a YouTube reporting job. |
+| `get_youtube_report` | `GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}` | Get a YouTube report. |
+| `download_youtube_report` | `GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}/download` | Download a YouTube report (CSV). |
+| `get_youtube_push` | `GET /api/uploadposts/youtube/push` | YouTube new video notifications status. |
+| `enable_youtube_push` | `POST /api/uploadposts/youtube/push` | Turn on YouTube new video notifications. |
+| `disable_youtube_push` | `DELETE /api/uploadposts/youtube/push` | Turn off YouTube new video notifications. |
+| `get_instagram_publishing_limit` | `GET /api/uploadposts/instagram/publishing_limit` | Instagram publishing quota. |
+| `get_threads_publishing_limit` | `GET /api/uploadposts/threads/publishing_limit` | Threads publishing quota. |
+| `list_pinterest_board_sections` | `GET /api/uploadposts/pinterest/boards/{board_id}/sections` | List the sections of a Pinterest board. |
+| `create_pinterest_board_section` | `POST /api/uploadposts/pinterest/boards/{board_id}/sections` | Create a section in a Pinterest board. |
+| `get_facebook_page_info` | `GET /api/uploadposts/facebook/page-info` | Read a Facebook Page's public info. |
+| `update_facebook_page_info` | `PATCH /api/uploadposts/facebook/page-info` | Update a Facebook Page's public info. |
+| `list_reddit_subreddits` | `GET /api/uploadposts/reddit/subreddits` | Subreddits the Reddit account belongs to. |
+| `get_reddit_post_types` | `GET /api/uploadposts/reddit/post-types` | Post types a subreddit allows. |
+| `list_reddit_flairs` | `GET /api/uploadposts/reddit/flairs` | Post flairs of a subreddit. |
+
+### User Management
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `get_user_profile` | `GET /api/uploadposts/users/{username}` | Get a specific user profile. |
+| `rename_user_profile` | `PATCH /api/uploadposts/users/{username}` | Rename a user profile. |
+| `disconnect_social_account` | `DELETE /api/uploadposts/users/social` | Disconnect a social account from a profile. |
+| `connect_discord_credentials` | `POST /api/uploadposts/users/discord/credentials` | Connect Discord with credentials. |
+| `connect_telegram_credentials` | `POST /api/uploadposts/users/telegram/credentials` | Connect Telegram with credentials. |
+| `connect_slack_credentials` | `POST /api/uploadposts/users/slack/credentials` | Connect Slack with credentials. |
+| `connect_mastodon_credentials` | `POST /api/uploadposts/users/mastodon/credentials` | Connect Mastodon with credentials. |
+| `connect_nostr_credentials` | `POST /api/uploadposts/users/nostr/credentials` | Connect Nostr with credentials. |
+| `connect_lemmy_credentials` | `POST /api/uploadposts/users/lemmy/credentials` | Connect Lemmy with credentials. |
+| `connect_devto_credentials` | `POST /api/uploadposts/users/devto/credentials` | Connect Dev.to with credentials. |
+| `connect_hashnode_credentials` | `POST /api/uploadposts/users/hashnode/credentials` | Connect Hashnode with credentials. |
+| `connect_wordpress_credentials` | `POST /api/uploadposts/users/wordpress/credentials` | Connect WordPress with credentials. |
+| `connect_whop_credentials` | `POST /api/uploadposts/users/whop/credentials` | Connect Whop with credentials. |
+| `connect_listmonk_credentials` | `POST /api/uploadposts/users/listmonk/credentials` | Connect Listmonk with credentials. |
+| `list_facebook_page_choices` | `GET /api/uploadposts/users/facebook-page` | List the Facebook Pages a profile can publish to. |
+| `set_facebook_page` | `POST /api/uploadposts/users/facebook-page` | Select the Facebook Page used when publishing. |
+| `clear_facebook_page` | `DELETE /api/uploadposts/users/facebook-page` | Clear the selected Facebook Page. |
+| `list_linkedin_page_choices` | `GET /api/uploadposts/users/linkedin-page` | List the LinkedIn Pages a profile can publish to. |
+| `set_linkedin_page` | `POST /api/uploadposts/users/linkedin-page` | Select the LinkedIn Page used when publishing. |
+| `clear_linkedin_page` | `DELETE /api/uploadposts/users/linkedin-page` | Clear the selected LinkedIn Page. |
+| `connect_bluesky_credentials` | `POST /api/uploadposts/users/bluesky/credentials` | Connect Bluesky with an app password. |
+| `set_youtube_oauth_client` | `POST /api/uploadposts/users/youtube/credentials` | Use your own Google OAuth client for a profile's YouTube. |
+
+### Authentication
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `get_current_user` | `GET /api/uploadposts/me` | Get current user. |
+| `start_oauth_connection` | `POST /api/uploadposts/oauth/{platform}/start` | Connect API: start connecting a social account. |
+
+### FFmpeg Editor
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `create_ffmpeg_job` | `POST /api/uploadposts/ffmpeg/jobs/upload` | Create FFmpeg job. |
+| `get_ffmpeg_job_status` | `GET /api/uploadposts/ffmpeg/jobs/{job_id}` | Get FFmpeg job status. |
+| `download_ffmpeg_result` | `GET /api/uploadposts/ffmpeg/jobs/{job_id}/download` | Download FFmpeg result. |
+| `get_ffmpeg_consumption` | `GET /api/uploadposts/ffmpeg/consumption` | Get FFmpeg consumption. |
+
+### Webhooks
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `list_webhook_subscriptions` | `GET /api/uploadposts/webhooks/subscriptions` | List webhook subscriptions. *Not generally available.* |
+| `create_webhook_subscription` | `POST /api/uploadposts/webhooks/subscriptions` | Create a webhook subscription. *Not generally available.* |
+| `get_webhook_subscription` | `GET /api/uploadposts/webhooks/subscriptions/{subscription_id}` | Get a webhook subscription. *Not generally available.* |
+| `delete_webhook_subscription` | `DELETE /api/uploadposts/webhooks/subscriptions/{subscription_id}` | Delete a webhook subscription. *Not generally available.* |
+| `test_webhook_subscription` | `POST /api/uploadposts/webhooks/subscriptions/{subscription_id}/test` | Send a test event to a subscription. *Not generally available.* |
+| `test_notifications` | `POST /api/uploadposts/users/notifications/test` | Send a test notification. |
+
+### Instagram Interactions
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `delete_comment_post` | `POST /api/uploadposts/comments/delete` | Delete a comment (POST alias). |
+| `delete_bluesky_chat_account` | `POST /api/uploadposts/dms/bluesky/account/delete` | Delete the Bluesky chat account. |
+| `list_bluesky_mutual_groups` | `GET /api/uploadposts/dms/bluesky/groups` | Bluesky groups shared with someone. |
+| `create_bluesky_group` | `POST /api/uploadposts/dms/bluesky/groups` | Create a Bluesky group chat. |
+| `edit_bluesky_group` | `PATCH /api/uploadposts/dms/bluesky/groups/{conversation_id}` | Rename, lock or unlock a Bluesky group. |
+| `list_bluesky_group_members` | `GET /api/uploadposts/dms/bluesky/groups/{conversation_id}/members` | Bluesky group members. |
+| `add_bluesky_group_members` | `POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/members` | Add members to a Bluesky group. |
+| `remove_bluesky_group_members` | `DELETE /api/uploadposts/dms/bluesky/groups/{conversation_id}/members` | Remove members from a Bluesky group. |
+| `manage_bluesky_join_link` | `POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-link` | Manage a Bluesky group join link. |
+| `list_bluesky_join_requests` | `GET /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests` | Pending requests to join a Bluesky group. |
+| `answer_bluesky_join_request` | `POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests` | Answer or withdraw a Bluesky join request. |
+| `preview_bluesky_join_links` | `GET /api/uploadposts/dms/bluesky/join-links` | Preview Bluesky join links. |
+| `join_bluesky_group` | `POST /api/uploadposts/dms/bluesky/join-links` | Ask to join a Bluesky group. |
+| `download_dm_media` | `GET /api/uploadposts/dms/media` | Download a DM attachment. |
+
+### Bluesky
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `bluesky_graph_action` | `POST /api/uploadposts/bluesky/graph` | Follow, block or mute (one target per call). |
+| `list_bluesky_lists` | `GET /api/uploadposts/bluesky/lists` | The account's lists. |
+| `create_bluesky_list` | `POST /api/uploadposts/bluesky/lists` | Create a list. |
+| `get_bluesky_list` | `GET /api/uploadposts/bluesky/lists/{list_id}` | A list and its members. |
+| `update_bluesky_list` | `PATCH /api/uploadposts/bluesky/lists/{list_id}` | Update a list. |
+| `delete_bluesky_list` | `DELETE /api/uploadposts/bluesky/lists/{list_id}` | Delete a list and its members. |
+| `list_bluesky_list_members` | `GET /api/uploadposts/bluesky/lists/{list_id}/members` | List members. |
+| `add_bluesky_list_member` | `POST /api/uploadposts/bluesky/lists/{list_id}/members` | Add a member. |
+| `remove_bluesky_list_member` | `DELETE /api/uploadposts/bluesky/lists/{list_id}/members` | Remove a member. |
+| `opt_out_bluesky_list` | `POST /api/uploadposts/bluesky/lists/opt-out` | Ask not to appear in a reference list. |
+| `remove_opt_out_bluesky_list` | `DELETE /api/uploadposts/bluesky/lists/opt-out` | Withdraw the opt-out. |
+| `list_bluesky_starter_packs` | `GET /api/uploadposts/bluesky/starter-packs` | The account's starter packs. |
+| `create_bluesky_starter_pack` | `POST /api/uploadposts/bluesky/starter-packs` | Create a starter pack. |
+| `get_bluesky_starter_pack` | `GET /api/uploadposts/bluesky/starter-packs/{pack_id}` | A starter pack. |
+| `update_bluesky_starter_pack` | `PATCH /api/uploadposts/bluesky/starter-packs/{pack_id}` | Update a starter pack. |
+| `delete_bluesky_starter_pack` | `DELETE /api/uploadposts/bluesky/starter-packs/{pack_id}` | Delete a starter pack. |
+| `list_bluesky_feeds` | `GET /api/uploadposts/bluesky/feeds` | Feeds declared by the account. |
+| `create_bluesky_feed` | `POST /api/uploadposts/bluesky/feeds` | Declare a custom feed. |
+| `update_bluesky_feed` | `PATCH /api/uploadposts/bluesky/feeds/{rkey}` | Update a feed declaration. |
+| `delete_bluesky_feed` | `DELETE /api/uploadposts/bluesky/feeds/{rkey}` | Delete a feed declaration. |
+| `report_on_bluesky` | `POST /api/uploadposts/bluesky/report` | Report a post or account to Bluesky moderation. |
+
+### Teams and Approvals
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `list_post_approvals` | `GET /api/uploadposts/approvals` | List posts awaiting approval. *Not generally available.* |
+| `get_post_approval` | `GET /api/uploadposts/approvals/{approval_id}` | Get a post awaiting approval. *Not generally available.* |
+| `edit_post_approval` | `PATCH /api/uploadposts/approvals/{approval_id}` | Edit a post awaiting approval. *Not generally available.* |
+| `withdraw_post_approval` | `DELETE /api/uploadposts/approvals/{approval_id}` | Withdraw or discard a post awaiting approval. *Not generally available.* |
+| `approve_post_approval` | `POST /api/uploadposts/approvals/{approval_id}/approve` | Approve a post. *Not generally available.* |
+| `reject_post_approval` | `POST /api/uploadposts/approvals/{approval_id}/reject` | Reject a post. *Not generally available.* |
+| `list_client_post_approvals` | `GET /api/uploadposts/approvals/client` | End client: list posts to approve. *Not generally available.* |
+| `approve_client_post_approval` | `POST /api/uploadposts/approvals/client/{approval_id}/approve` | End client: approve a post. *Not generally available.* |
+| `reject_client_post_approval` | `POST /api/uploadposts/approvals/client/{approval_id}/reject` | End client: reject a post. *Not generally available.* |
+| `get_team_roles` | `GET /api/uploadposts/teams/roles` | Team roles and your role. |
+| `list_team_audit` | `GET /api/uploadposts/teams/audit` | Team activity log. |
+
+### Feedback
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `send_feedback` | `POST /api/uploadposts/feedback` | Send feedback to the Upload-Post team. |
+
+### Google Business
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `update_google_business_account` | `PATCH /api/uploadposts/google-business/accounts` | Rename a Google Business account. |
+| `create_google_business_admin` | `POST /api/uploadposts/google-business/admins` | Invite an admin. |
+| `update_google_business_admin` | `PATCH /api/uploadposts/google-business/admins` | Change an admin's role. |
+| `delete_google_business_admin` | `DELETE /api/uploadposts/google-business/admins` | Remove an admin. |
+| `accept_google_business_invitation` | `POST /api/uploadposts/google-business/invitations/accept` | Accept an invitation. |
+| `decline_google_business_invitation` | `POST /api/uploadposts/google-business/invitations/decline` | Decline an invitation. |
+| `transfer_google_business_location` | `POST /api/uploadposts/google-business/locations/transfer` | Transfer a location to another account. |
+| `create_google_business_location` | `POST /api/uploadposts/google-business/locations/create` | Create a location. |
+| `delete_google_business_location` | `DELETE /api/uploadposts/google-business/locations/delete` | Delete a location. |
+| `get_google_business_notification_settings` | `GET /api/uploadposts/google-business/notifications` | Get real-time notification settings. |
+| `update_google_business_notification_settings` | `PUT /api/uploadposts/google-business/notifications` | Turn real-time notifications on or off. |
+| `update_google_business_notification_settings_patch` | `PATCH /api/uploadposts/google-business/notifications` | Turn real-time notifications on or off (PATCH). |
+| `batch_get_google_business_reviews_post` | `POST /api/uploadposts/google-business/reviews/batch` | Batch get reviews (JSON body). |
+| `start_google_business_verification` | `POST /api/uploadposts/google-business/verification/start` | Start a verification. |
+| `complete_google_business_verification` | `POST /api/uploadposts/google-business/verification/complete` | Enter the verification code. |
+| `generate_google_business_verification_token` | `POST /api/uploadposts/google-business/verification/token` | Get an instant verification token. |
+
+### ChatGPT Ads
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `connect_chatgpt_ads_account` | `POST /api/uploadposts/ads/chatgpt/connect` | Connect a ChatGPT Ads account. |
+| `list_chatgpt_ads_accounts` | `GET /api/uploadposts/ads/chatgpt/accounts` | List connected ChatGPT Ads accounts. |
+| `disconnect_chatgpt_ads_account` | `DELETE /api/uploadposts/ads/chatgpt/accounts/{ad_account_id}` | Disconnect a ChatGPT Ads account. |
+| `get_chatgpt_ads_account` | `GET /api/uploadposts/ads/chatgpt/account` | Get live ad account metadata. |
+| `list_chatgpt_ads_campaigns` | `GET /api/uploadposts/ads/chatgpt/campaigns` | List campaigns. |
+| `create_chatgpt_ads_campaign` | `POST /api/uploadposts/ads/chatgpt/campaigns` | Create a campaign. |
+| `get_chatgpt_ads_campaign` | `GET /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}` | Get a campaign. |
+| `update_chatgpt_ads_campaign` | `POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}` | Update a campaign. |
+| `activate_chatgpt_ads_campaign` | `POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/activate` | Activate a campaign. |
+| `pause_chatgpt_ads_campaign` | `POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/pause` | Pause a campaign. |
+| `archive_chatgpt_ads_campaign` | `POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/archive` | Archive a campaign. |
+| `get_chatgpt_ads_campaign_insights` | `GET /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/insights` | Get campaign insights. |
+| `list_chatgpt_ads_ad_groups` | `GET /api/uploadposts/ads/chatgpt/adgroups` | List ad groups. |
+| `create_chatgpt_ads_ad_group` | `POST /api/uploadposts/ads/chatgpt/adgroups` | Create an ad group. |
+| `get_chatgpt_ads_ad_group` | `GET /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}` | Get an ad group. |
+| `update_chatgpt_ads_ad_group` | `POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}` | Update an ad group. |
+| `activate_chatgpt_ads_ad_group` | `POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/activate` | Activate an ad group. |
+| `pause_chatgpt_ads_ad_group` | `POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/pause` | Pause an ad group. |
+| `archive_chatgpt_ads_ad_group` | `POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/archive` | Archive an ad group. |
+| `get_chatgpt_ads_ad_group_insights` | `GET /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/insights` | Get ad group insights. |
+| `list_chatgpt_ads_ads` | `GET /api/uploadposts/ads/chatgpt/ads` | List ads. |
+| `create_chatgpt_ads_ad` | `POST /api/uploadposts/ads/chatgpt/ads` | Create an ad. |
+| `get_chatgpt_ads_ad` | `GET /api/uploadposts/ads/chatgpt/ads/{ad_id}` | Get an ad. |
+| `update_chatgpt_ads_ad` | `POST /api/uploadposts/ads/chatgpt/ads/{ad_id}` | Update an ad. |
+| `activate_chatgpt_ads_ad` | `POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/activate` | Activate an ad. |
+| `pause_chatgpt_ads_ad` | `POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/pause` | Pause an ad. |
+| `archive_chatgpt_ads_ad` | `POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/archive` | Archive an ad. |
+| `get_chatgpt_ads_ad_insights` | `GET /api/uploadposts/ads/chatgpt/ads/{ad_id}/insights` | Get ad insights. |
+| `preview_chatgpt_ads_ad` | `POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/preview` | Preview an ad. |
+| `upload_chatgpt_ads_creative` | `POST /api/uploadposts/ads/chatgpt/creatives` | Upload a creative image. |
+| `get_chatgpt_ads_account_insights` | `GET /api/uploadposts/ads/chatgpt/insights` | Get ad account insights. |
+| `promote_chatgpt_ads` | `POST /api/uploadposts/ads/chatgpt/promote` | Launch an ad in one call. |
+<!-- /openapi:methods -->
+
 ## What a TikTok connection can do (`capabilities`)
 
 Not every TikTok connection can do the same things. `client.list_users()`
@@ -1445,7 +1709,35 @@ except UploadPostError as e:
     print(e.error_code)    # stable code, e.g. "bluesky_dm_scope_missing", "TEAM_SEAT_SUSPENDED"
     print(e.response)      # decoded JSON body of the error
     print(e.retry_after)   # Retry-After seconds, when the API sent it
+    print(e.error_type)    # `error_type` of the body, where the API sends one
 ```
+
+Error bodies differ by area of the API (`error_code`, `reason`, `code` or
+`error_type`); `error_code` reads the first of `error_code`, `code` and
+`reason`. Methods marked *not generally available* answer HTTP 503 (for example
+`webhook_subscriptions_disabled` or `post_approvals_disabled`) until the feature
+is switched on for your account.
+
+## Development: methods generated from the OpenAPI spec
+
+`codegen/openapi.json` is a copy of the API's OpenAPI spec. Every operation in it
+either has a hand-written method (listed in `codegen/sdk-map.json` under
+`existing`), is left out on purpose (`excluded`, with the reason), or gets a
+generated method from `codegen/generate.py` (standard library only; the same
+file lives in the npm SDK):
+
+```bash
+cp <spec> codegen/openapi.json        # the API's openapi/openapi.json
+python3 codegen/generate.py           # rewrites the generated part of api_client.py and this README
+python3 codegen/generate.py --check   # fails if they are out of date
+python -m pytest tests
+```
+
+`tests/test_openapi_coverage.py` fails when an operation of the spec has no
+method, and calls every method to check it sends the HTTP method and path of its
+operation. `tests/test_upload_fields.py` fails when an upload drops a form field
+the spec gives that endpoint. Generated code sits between `<openapi:...>`
+markers: do not edit it by hand.
 
 ## Links
 
