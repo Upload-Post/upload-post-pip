@@ -318,6 +318,46 @@ class UploadPostClient:
             return
         data.append((key, val))
 
+    def _add_first_comment_media(self, files: List[tuple], opened: List, items) -> None:
+        """Attach the first comment images (``first_comment_media[]``).
+
+        The API takes them as files only (a URL in that field was ignored), so
+        local paths are opened, bytes are sent as they are, and http(s) URLs are
+        downloaded here and sent as files. A URL that cannot be downloaded, or a
+        path that does not exist, raises UploadPostError instead of publishing
+        without the images.
+        """
+        if not items:
+            return
+        if isinstance(items, (str, Path, bytes, bytearray)):
+            items = [items]
+        for item in items:
+            if isinstance(item, (bytes, bytearray)):
+                files.append(("first_comment_media[]", ("image.jpg", bytes(item))))
+                continue
+            value = str(item)
+            if value.lower().startswith(("http://", "https://")):
+                try:
+                    # Plain request, not the session: the API key must not go to another host.
+                    response = requests.get(value, timeout=60)
+                    response.raise_for_status()
+                except requests.exceptions.RequestException as e:
+                    raise UploadPostError(
+                        f"Could not download first_comment_media {value} ({e}). The API takes "
+                        "first comment images as files: pass a local path or bytes instead."
+                    ) from e
+                name = os.path.basename(value.split("?", 1)[0].rstrip("/")) or "image.jpg"
+                content_type = (response.headers.get("Content-Type") or "").split(";")[0] or None
+                part = (name, response.content, content_type) if content_type else (name, response.content)
+                files.append(("first_comment_media[]", part))
+                continue
+            p = Path(value)
+            if not p.exists():
+                raise UploadPostError(f"First comment media file not found: {item}")
+            f = open(p, "rb")
+            opened.append(f)
+            files.append(("first_comment_media[]", (p.name, f)))
+
     def _add_all_platform_params(
         self,
         data: List[tuple],
@@ -1263,13 +1303,7 @@ class UploadPostClient:
             )
 
             # Images for the first comment (Reddit), as on photos and text posts.
-            for media_path in kwargs.get("first_comment_media") or []:
-                p = Path(media_path)
-                if not p.exists():
-                    raise UploadPostError(f"First comment media file not found: {media_path}")
-                f = open(p, "rb")
-                opened_files.append(f)
-                files.append(("first_comment_media[]", (p.name, f)))
+            self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
             return self._request("/upload", "POST", data=data, files=files if files else None)
             
@@ -1391,7 +1425,8 @@ class UploadPostClient:
                 gbp_topic_type: STANDARD, EVENT or OFFER
                 gbp_cta_type / gbp_cta_url: Call-to-action button
 
-            first_comment_media: List of file paths to attach as images in
+            first_comment_media: Local paths, bytes or URLs (downloaded and sent as
+                files) of images to attach in
                 the first comment. Supported on Reddit and X.
 
         Returns:
@@ -1423,15 +1458,7 @@ class UploadPostClient:
                 files=files, opened=opened_files, **kwargs,
             )
 
-            first_comment_media = kwargs.get("first_comment_media")
-            if first_comment_media:
-                for media_path in first_comment_media:
-                    p = Path(media_path)
-                    if not p.exists():
-                        raise UploadPostError(f"First comment media file not found: {media_path}")
-                    f = open(p, "rb")
-                    opened_files.append(f)
-                    files.append(("first_comment_media[]", (p.name, f)))
+            self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
             return self._request("/upload_photos", "POST", data=data, files=files if files else None)
 
@@ -1511,7 +1538,8 @@ class UploadPostClient:
                     gbp_event_end_date / gbp_event_end_time: Used with EVENT
                 gbp_offer_coupon / gbp_offer_redeem_url / gbp_offer_terms: Used with OFFER
 
-            first_comment_media: List of file paths to attach as images in
+            first_comment_media: Local paths, bytes or URLs (downloaded and sent as
+                files) of images to attach in
                 the first comment. Supported on Reddit and X.
 
         Returns:
@@ -1535,15 +1563,7 @@ class UploadPostClient:
             files=files, opened=opened_files, **kwargs,
         )
 
-        first_comment_media = kwargs.get("first_comment_media")
-        if first_comment_media:
-            for media_path in first_comment_media:
-                p = Path(media_path)
-                if not p.exists():
-                    raise UploadPostError(f"First comment media file not found: {media_path}")
-                f = open(p, "rb")
-                opened_files.append(f)
-                files.append(("first_comment_media[]", (p.name, f)))
+        self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
         try:
             return self._request("/upload_text", "POST", data=data, files=files if files else None)
@@ -5274,23 +5294,23 @@ class UploadPostClient:
     # answer is a file, na = not generally available yet (HTTP 503 until on).
     # <openapi:methods>
     _OPENAPI_OPERATIONS = {
-        "sendTelegramGift": ("POST", "/uploadposts/telegram/gifts", {"b": ["user", "user_id", "chat_id", "gift_id", "max_star_count", "pay_for_upgrade", "text", "text_parse_mode", "text_entities", "confirm", "idempotency_key"]}),
-        "giftTelegramPremium": ("POST", "/uploadposts/telegram/gifts/premium", {"b": ["user", "user_id", "month_count", "star_count", "text", "confirm", "idempotency_key"]}),
+        "sendTelegramGift": ("POST", "/uploadposts/telegram/gifts", {"b": ["user", "user_id", "chat_id", "gift_id", "max_star_count", "pay_for_upgrade", "text", "text_parse_mode", "text_entities", "confirm", "idempotency_key"], "na": True}),
+        "giftTelegramPremium": ("POST", "/uploadposts/telegram/gifts/premium", {"b": ["user", "user_id", "month_count", "star_count", "text", "confirm", "idempotency_key"], "na": True}),
         "getTelegramPaymentSettings": ("GET", "/uploadposts/telegram/payments/settings", {"q": ["user"]}),
         "updateTelegramPaymentSettings": ("PUT", "/uploadposts/telegram/payments/settings", {"b": ["user", "pre_checkout", "max_total_amount", "allowed_payload_prefixes", "error_message", "shipping", "shipping_options", "shipping_countries", "only_upload_post_invoices", "confirm"]}),
-        "setTelegramUpdates": ("POST", "/uploadposts/telegram/updates", {"b": ["user", "enabled", "replace_existing_webhook", "forward_url", "business_chats", "auto_answer_callbacks", "extra_updates"]}),
+        "setTelegramUpdates": ("POST", "/uploadposts/telegram/updates", {"b": ["user", "enabled", "replace_existing_webhook", "forward_url", "business_chats", "auto_answer_callbacks", "extra_updates"], "na": True}),
         "answerTelegramQuery": ("POST", "/uploadposts/telegram/answer", {"b": ["user", "type", "query_id", "text", "show_alert", "url", "cache_time", "results", "is_personal", "next_offset", "button", "result", "web_app_url", "data", "ok", "shipping_options", "error_message"]}),
-        "getTelegramBusinessConnections": ("GET", "/uploadposts/telegram/business-connections", {"q": ["user", "business_connection_id"]}),
-        "getTelegramBusinessProfile": ("GET", "/uploadposts/telegram/business-profile", {"q": ["user", "business_connection_id"]}),
-        "updateTelegramBusinessProfile": ("PATCH", "/uploadposts/telegram/business-profile", {"b": ["user", "business_connection_id", "first_name", "last_name", "username", "bio", "media_url", "is_public", "remove_photo", "gift_settings"]}),
-        "postTelegramStory": ("POST", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"]}),
-        "editTelegramStory": ("PATCH", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"]}),
-        "deleteTelegramStory": ("DELETE", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"]}),
-        "repostTelegramStory": ("POST", "/uploadposts/telegram/business-stories/repost", {"b": ["user", "business_connection_id", "from_chat_id", "from_story_id", "active_period", "post_to_chat_page", "protect_content"]}),
-        "getTelegramBusinessGifts": ("GET", "/uploadposts/telegram/business-gifts", {"q": ["user", "business_connection_id"]}),
-        "manageTelegramBusinessGift": ("POST", "/uploadposts/telegram/business-gifts", {"b": ["user", "business_connection_id", "action", "owned_gift_id", "confirm", "keep_original_details", "star_count", "idempotency_key", "new_owner_chat_id"]}),
-        "getTelegramBusinessStars": ("GET", "/uploadposts/telegram/business-stars", {"q": ["user", "business_connection_id"]}),
-        "transferTelegramBusinessStars": ("POST", "/uploadposts/telegram/business-stars/transfer", {"b": ["user", "business_connection_id", "star_count", "idempotency_key", "confirm"]}),
+        "getTelegramBusinessConnections": ("GET", "/uploadposts/telegram/business-connections", {"q": ["user", "business_connection_id"], "na": True}),
+        "getTelegramBusinessProfile": ("GET", "/uploadposts/telegram/business-profile", {"q": ["user", "business_connection_id"], "na": True}),
+        "updateTelegramBusinessProfile": ("PATCH", "/uploadposts/telegram/business-profile", {"b": ["user", "business_connection_id", "first_name", "last_name", "username", "bio", "media_url", "is_public", "remove_photo", "gift_settings"], "na": True}),
+        "postTelegramStory": ("POST", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"], "na": True}),
+        "editTelegramStory": ("PATCH", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"], "na": True}),
+        "deleteTelegramStory": ("DELETE", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"], "na": True}),
+        "repostTelegramStory": ("POST", "/uploadposts/telegram/business-stories/repost", {"b": ["user", "business_connection_id", "from_chat_id", "from_story_id", "active_period", "post_to_chat_page", "protect_content"], "na": True}),
+        "getTelegramBusinessGifts": ("GET", "/uploadposts/telegram/business-gifts", {"q": ["user", "business_connection_id"], "na": True}),
+        "manageTelegramBusinessGift": ("POST", "/uploadposts/telegram/business-gifts", {"b": ["user", "business_connection_id", "action", "owned_gift_id", "confirm", "keep_original_details", "star_count", "idempotency_key", "new_owner_chat_id"], "na": True}),
+        "getTelegramBusinessStars": ("GET", "/uploadposts/telegram/business-stars", {"q": ["user", "business_connection_id"], "na": True}),
+        "transferTelegramBusinessStars": ("POST", "/uploadposts/telegram/business-stars/transfer", {"b": ["user", "business_connection_id", "star_count", "idempotency_key", "confirm"], "na": True}),
         "analyzeShorts": ("POST", "/uploadposts/analyze-shorts", {"b": ["video", "platforms", "language"], "f": ["video"], "mp": True}),
         "rewriteCaptions": ("POST", "/uploadposts/rewrite-captions", {"b": ["content", "language", "platforms"]}),
         "createMediaUpload": ("POST", "/uploadposts/media-uploads", {"b": ["media_type", "filename", "content_type", "content_length", "source"]}),
@@ -5300,33 +5320,33 @@ class UploadPostClient:
         "getScheduledPost": ("GET", "/uploadposts/schedule/{job_id}", {}),
         "getScheduledPostThumbnail": ("GET", "/uploadposts/schedule/{job_id}/thumbnail", {}),
         "getScheduledPostPreview": ("GET", "/uploadposts/schedule/{job_id}/preview", {}),
-        "createPinterestBoard": ("POST", "/uploadposts/pinterest/boards", {"b": ["user", "name", "description", "privacy"]}),
-        "getRedditDetailedPosts": ("GET", "/uploadposts/reddit/detailed-posts/", {"q": ["profile_username"]}),
-        "queryYoutubeAnalytics": ("GET", "/uploadposts/youtube/analytics/query", {"q": ["user", "start_date", "end_date", "metrics", "dimensions", "filters", "sort", "max_results", "start_index", "report"]}),
-        "listYoutubeAnalyticsReports": ("GET", "/uploadposts/youtube/analytics/reports", {"q": ["user"]}),
-        "listYoutubeAnalyticsGroups": ("GET", "/uploadposts/youtube/analytics/groups", {"q": ["user", "ids", "page_token"]}),
-        "listYoutubeAnalyticsGroupItems": ("GET", "/uploadposts/youtube/analytics/groups/{group_id}/items", {"q": ["user"]}),
-        "getYoutubeAnalyticsUsage": ("GET", "/uploadposts/youtube/analytics/usage", {}),
-        "listYoutubeReportTypes": ("GET", "/uploadposts/youtube/reporting/report-types", {"q": ["user", "page_token", "page_size"]}),
-        "listYoutubeReportingJobs": ("GET", "/uploadposts/youtube/reporting/jobs", {"q": ["user", "page_token", "page_size"]}),
-        "createYoutubeReportingJob": ("POST", "/uploadposts/youtube/reporting/jobs", {"b": ["user", "report_type_id", "name"]}),
-        "getYoutubeReportingJob": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}", {"q": ["user"]}),
-        "deleteYoutubeReportingJob": ("DELETE", "/uploadposts/youtube/reporting/jobs/{job_id}", {"b": ["user", "confirm"]}),
-        "listYoutubeReports": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports", {"q": ["user", "created_after", "start_time_at_or_after", "start_time_before", "page_token", "page_size"]}),
-        "getYoutubeReport": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}", {"q": ["user"]}),
-        "downloadYoutubeReport": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}/download", {"q": ["user"], "raw": 'text'}),
-        "getYoutubePush": ("GET", "/uploadposts/youtube/push", {"q": ["user"]}),
-        "enableYoutubePush": ("POST", "/uploadposts/youtube/push", {"b": ["user"]}),
-        "disableYoutubePush": ("DELETE", "/uploadposts/youtube/push", {"b": ["user"]}),
+        "createPinterestBoard": ("POST", "/uploadposts/pinterest/boards", {"q": ["profile", "user"], "b": ["user", "name", "description", "privacy", "profile"]}),
+        "queryYoutubeAnalytics": ("GET", "/uploadposts/youtube/analytics/query", {"q": ["user", "start_date", "end_date", "metrics", "dimensions", "filters", "sort", "max_results", "start_index", "report"], "na": True}),
+        "listYoutubeAnalyticsReports": ("GET", "/uploadposts/youtube/analytics/reports", {"q": ["user"], "na": True}),
+        "listYoutubeAnalyticsGroups": ("GET", "/uploadposts/youtube/analytics/groups", {"q": ["user", "ids", "page_token"], "na": True}),
+        "listYoutubeAnalyticsGroupItems": ("GET", "/uploadposts/youtube/analytics/groups/{group_id}/items", {"q": ["user"], "na": True}),
+        "getYoutubeAnalyticsUsage": ("GET", "/uploadposts/youtube/analytics/usage", {"na": True}),
+        "listYoutubeReportTypes": ("GET", "/uploadposts/youtube/reporting/report-types", {"q": ["user", "page_token", "page_size"], "na": True}),
+        "listYoutubeReportingJobs": ("GET", "/uploadposts/youtube/reporting/jobs", {"q": ["user", "page_token", "page_size"], "na": True}),
+        "createYoutubeReportingJob": ("POST", "/uploadposts/youtube/reporting/jobs", {"b": ["user", "report_type_id", "name"], "na": True}),
+        "getYoutubeReportingJob": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}", {"q": ["user"], "na": True}),
+        "deleteYoutubeReportingJob": ("DELETE", "/uploadposts/youtube/reporting/jobs/{job_id}", {"b": ["user", "confirm"], "na": True}),
+        "listYoutubeReports": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports", {"q": ["user", "created_after", "start_time_at_or_after", "start_time_before", "page_token", "page_size"], "na": True}),
+        "getYoutubeReport": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}", {"q": ["user"], "na": True}),
+        "downloadYoutubeReport": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}/download", {"q": ["user"], "raw": 'text', "na": True}),
+        "getYoutubePush": ("GET", "/uploadposts/youtube/push", {"q": ["user"], "na": True}),
+        "enableYoutubePush": ("POST", "/uploadposts/youtube/push", {"b": ["user"], "na": True}),
+        "disableYoutubePush": ("DELETE", "/uploadposts/youtube/push", {"b": ["user"], "na": True}),
         "getInstagramPublishingLimit": ("GET", "/uploadposts/instagram/publishing_limit", {"q": ["profile", "refresh"]}),
-        "getThreadsPublishingLimit": ("GET", "/uploadposts/threads/publishing_limit", {"q": ["user", "refresh"]}),
+        "getThreadsPublishingLimit": ("GET", "/uploadposts/threads/publishing_limit", {"q": ["user", "profile", "refresh"]}),
         "listPinterestBoardSections": ("GET", "/uploadposts/pinterest/boards/{board_id}/sections", {"q": ["profile"]}),
-        "createPinterestBoardSection": ("POST", "/uploadposts/pinterest/boards/{board_id}/sections", {"b": ["user", "name"]}),
+        "createPinterestBoardSection": ("POST", "/uploadposts/pinterest/boards/{board_id}/sections", {"q": ["profile", "user"], "b": ["user", "name", "profile"]}),
         "getFacebookPageInfo": ("GET", "/uploadposts/facebook/page-info", {"q": ["user", "page_id"]}),
         "updateFacebookPageInfo": ("PATCH", "/uploadposts/facebook/page-info", {"b": ["user", "page_id", "validate_only", "about", "description", "website", "phone", "emails", "hours", "picture_url", "cover_url"]}),
         "listRedditSubreddits": ("GET", "/uploadposts/reddit/subreddits", {"q": ["profile"]}),
         "getRedditPostTypes": ("GET", "/uploadposts/reddit/post-types", {"q": ["profile", "subreddit"]}),
         "listRedditFlairs": ("GET", "/uploadposts/reddit/flairs", {"q": ["profile", "subreddit"]}),
+        "getRedditDetailedPosts": ("GET", "/uploadposts/reddit/detailed-posts/", {"q": ["profile_username"]}),
         "getUserProfile": ("GET", "/uploadposts/users/{username}", {}),
         "renameUserProfile": ("PATCH", "/uploadposts/users/{username}", {"b": ["display_name"]}),
         "disconnectSocialAccount": ("DELETE", "/uploadposts/users/social", {"b": ["profile_username", "social_platform"]}),
@@ -5362,40 +5382,40 @@ class UploadPostClient:
         "testWebhookSubscription": ("POST", "/uploadposts/webhooks/subscriptions/{subscription_id}/test", {"b": ["event"], "na": True}),
         "testNotifications": ("POST", "/uploadposts/users/notifications/test", {"b": ["platform", "media_type", "title", "caption", "profile_username", "message", "result"]}),
         "deleteCommentPost": ("POST", "/uploadposts/comments/delete", {"b": ["platform", "user", "comment_id", "post_id"]}),
-        "deleteBlueskyChatAccount": ("POST", "/uploadposts/dms/bluesky/account/delete", {"b": ["user", "confirm", "confirm_handle"]}),
-        "listBlueskyMutualGroups": ("GET", "/uploadposts/dms/bluesky/groups", {"q": ["user", "subject", "limit", "cursor"]}),
-        "createBlueskyGroup": ("POST", "/uploadposts/dms/bluesky/groups", {"b": ["user", "name", "members", "idempotency_key"]}),
-        "editBlueskyGroup": ("PATCH", "/uploadposts/dms/bluesky/groups/{conversation_id}", {"b": ["user", "name", "locked"]}),
-        "listBlueskyGroupMembers": ("GET", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"q": ["user"]}),
-        "addBlueskyGroupMembers": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"b": ["user", "members"]}),
-        "removeBlueskyGroupMembers": ("DELETE", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"b": ["user", "members"]}),
-        "manageBlueskyJoinLink": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-link", {"b": ["user", "action", "require_approval", "join_rule"]}),
-        "listBlueskyJoinRequests": ("GET", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests", {"q": ["user"]}),
-        "answerBlueskyJoinRequest": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests", {"b": ["user", "action", "member"]}),
-        "previewBlueskyJoinLinks": ("GET", "/uploadposts/dms/bluesky/join-links", {"q": ["user", "codes"]}),
-        "joinBlueskyGroup": ("POST", "/uploadposts/dms/bluesky/join-links", {"b": ["user", "code"]}),
+        "deleteBlueskyChatAccount": ("POST", "/uploadposts/dms/bluesky/account/delete", {"b": ["user", "confirm", "confirm_handle"], "na": True}),
+        "listBlueskyMutualGroups": ("GET", "/uploadposts/dms/bluesky/groups", {"q": ["user", "subject", "limit", "cursor"], "na": True}),
+        "createBlueskyGroup": ("POST", "/uploadposts/dms/bluesky/groups", {"b": ["user", "name", "members", "idempotency_key"], "na": True}),
+        "editBlueskyGroup": ("PATCH", "/uploadposts/dms/bluesky/groups/{conversation_id}", {"b": ["user", "name", "locked"], "na": True}),
+        "listBlueskyGroupMembers": ("GET", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"q": ["user"], "na": True}),
+        "addBlueskyGroupMembers": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"b": ["user", "members"], "na": True}),
+        "removeBlueskyGroupMembers": ("DELETE", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"b": ["user", "members"], "na": True}),
+        "manageBlueskyJoinLink": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-link", {"b": ["user", "action", "require_approval", "join_rule"], "na": True}),
+        "listBlueskyJoinRequests": ("GET", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests", {"q": ["user"], "na": True}),
+        "answerBlueskyJoinRequest": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests", {"b": ["user", "action", "member"], "na": True}),
+        "previewBlueskyJoinLinks": ("GET", "/uploadposts/dms/bluesky/join-links", {"q": ["user", "codes"], "na": True}),
+        "joinBlueskyGroup": ("POST", "/uploadposts/dms/bluesky/join-links", {"b": ["user", "code"], "na": True}),
         "downloadDmMedia": ("GET", "/uploadposts/dms/media", {"q": ["platform", "user", "media_id"], "raw": 'binary'}),
-        "blueskyGraphAction": ("POST", "/uploadposts/bluesky/graph", {"b": ["user", "action", "actor", "list", "post_id", "only_reposts", "only_quoteposts"]}),
-        "listBlueskyLists": ("GET", "/uploadposts/bluesky/lists", {"q": ["user", "purposes", "cursor"]}),
-        "createBlueskyList": ("POST", "/uploadposts/bluesky/lists", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"]}),
-        "getBlueskyList": ("GET", "/uploadposts/bluesky/lists/{list_id}", {"q": ["user"]}),
-        "updateBlueskyList": ("PATCH", "/uploadposts/bluesky/lists/{list_id}", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"]}),
-        "deleteBlueskyList": ("DELETE", "/uploadposts/bluesky/lists/{list_id}", {"b": ["user", "confirm"]}),
-        "listBlueskyListMembers": ("GET", "/uploadposts/bluesky/lists/{list_id}/members", {"q": ["user"]}),
-        "addBlueskyListMember": ("POST", "/uploadposts/bluesky/lists/{list_id}/members", {"b": ["user", "actor"]}),
-        "removeBlueskyListMember": ("DELETE", "/uploadposts/bluesky/lists/{list_id}/members", {"b": ["user", "actor"]}),
-        "optOutBlueskyList": ("POST", "/uploadposts/bluesky/lists/opt-out", {"b": ["user", "list"]}),
-        "removeOptOutBlueskyList": ("DELETE", "/uploadposts/bluesky/lists/opt-out", {"b": ["user", "list"]}),
-        "listBlueskyStarterPacks": ("GET", "/uploadposts/bluesky/starter-packs", {"q": ["user"]}),
-        "createBlueskyStarterPack": ("POST", "/uploadposts/bluesky/starter-packs", {"b": ["user", "name", "description", "feeds", "list", "members"]}),
-        "getBlueskyStarterPack": ("GET", "/uploadposts/bluesky/starter-packs/{pack_id}", {"q": ["user"]}),
-        "updateBlueskyStarterPack": ("PATCH", "/uploadposts/bluesky/starter-packs/{pack_id}", {"b": ["user", "name", "description", "feeds", "list", "members"]}),
-        "deleteBlueskyStarterPack": ("DELETE", "/uploadposts/bluesky/starter-packs/{pack_id}", {"b": ["user", "confirm", "delete_list"]}),
-        "listBlueskyFeeds": ("GET", "/uploadposts/bluesky/feeds", {"q": ["user"]}),
-        "createBlueskyFeed": ("POST", "/uploadposts/bluesky/feeds", {"b": ["user", "rkey", "did", "display_name", "description", "avatar", "accepts_interactions", "content_mode"], "f": ["avatar"]}),
-        "updateBlueskyFeed": ("PATCH", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "did", "display_name", "description", "avatar", "accepts_interactions", "content_mode"], "f": ["avatar"]}),
-        "deleteBlueskyFeed": ("DELETE", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "confirm"]}),
-        "reportOnBluesky": ("POST", "/uploadposts/bluesky/report", {"b": ["user", "post_id", "actor", "reason_type", "reason", "confirm"]}),
+        "blueskyGraphAction": ("POST", "/uploadposts/bluesky/graph", {"b": ["user", "action", "actor", "list", "post_id", "only_reposts", "only_quoteposts"], "na": True}),
+        "listBlueskyLists": ("GET", "/uploadposts/bluesky/lists", {"q": ["user", "purposes", "cursor"], "na": True}),
+        "createBlueskyList": ("POST", "/uploadposts/bluesky/lists", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"], "na": True}),
+        "getBlueskyList": ("GET", "/uploadposts/bluesky/lists/{list_id}", {"q": ["user"], "na": True}),
+        "updateBlueskyList": ("PATCH", "/uploadposts/bluesky/lists/{list_id}", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"], "na": True}),
+        "deleteBlueskyList": ("DELETE", "/uploadposts/bluesky/lists/{list_id}", {"b": ["user", "confirm"], "na": True}),
+        "listBlueskyListMembers": ("GET", "/uploadposts/bluesky/lists/{list_id}/members", {"q": ["user"], "na": True}),
+        "addBlueskyListMember": ("POST", "/uploadposts/bluesky/lists/{list_id}/members", {"b": ["user", "actor"], "na": True}),
+        "removeBlueskyListMember": ("DELETE", "/uploadposts/bluesky/lists/{list_id}/members", {"b": ["user", "actor"], "na": True}),
+        "optOutBlueskyList": ("POST", "/uploadposts/bluesky/lists/opt-out", {"b": ["user", "list"], "na": True}),
+        "removeOptOutBlueskyList": ("DELETE", "/uploadposts/bluesky/lists/opt-out", {"b": ["user", "list"], "na": True}),
+        "listBlueskyStarterPacks": ("GET", "/uploadposts/bluesky/starter-packs", {"q": ["user"], "na": True}),
+        "createBlueskyStarterPack": ("POST", "/uploadposts/bluesky/starter-packs", {"b": ["user", "name", "description", "feeds", "list", "members"], "na": True}),
+        "getBlueskyStarterPack": ("GET", "/uploadposts/bluesky/starter-packs/{pack_id}", {"q": ["user"], "na": True}),
+        "updateBlueskyStarterPack": ("PATCH", "/uploadposts/bluesky/starter-packs/{pack_id}", {"b": ["user", "name", "description", "feeds", "list", "members"], "na": True}),
+        "deleteBlueskyStarterPack": ("DELETE", "/uploadposts/bluesky/starter-packs/{pack_id}", {"b": ["user", "confirm", "delete_list"], "na": True}),
+        "listBlueskyFeeds": ("GET", "/uploadposts/bluesky/feeds", {"q": ["user"], "na": True}),
+        "createBlueskyFeed": ("POST", "/uploadposts/bluesky/feeds", {"b": ["user", "rkey", "did", "display_name", "description", "avatar", "accepts_interactions", "content_mode"], "f": ["avatar"], "na": True}),
+        "updateBlueskyFeed": ("PATCH", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "did", "display_name", "description", "avatar", "accepts_interactions", "content_mode"], "f": ["avatar"], "na": True}),
+        "deleteBlueskyFeed": ("DELETE", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "confirm"], "na": True}),
+        "reportOnBluesky": ("POST", "/uploadposts/bluesky/report", {"b": ["user", "post_id", "actor", "reason_type", "reason", "confirm"], "na": True}),
         "listPostApprovals": ("GET", "/uploadposts/approvals", {"q": ["status", "profile_username", "author", "limit", "before"], "na": True}),
         "getPostApproval": ("GET", "/uploadposts/approvals/{approval_id}", {"na": True}),
         "editPostApproval": ("PATCH", "/uploadposts/approvals/{approval_id}", {"b": ["title", "caption", "description", "platform_content", "fields", "scheduled_date", "timezone", "cover_image_base64", "remove_cover"], "na": True}),
@@ -5408,22 +5428,20 @@ class UploadPostClient:
         "getTeamRoles": ("GET", "/uploadposts/teams/roles", {}),
         "listTeamAudit": ("GET", "/uploadposts/teams/audit", {"q": ["actor", "action", "profile_username", "target_id", "since", "until", "limit", "cursor"]}),
         "sendFeedback": ("POST", "/uploadposts/feedback", {"b": ["message", "category", "endpoint", "request_id", "agent"]}),
-        "updateGoogleBusinessAccount": ("PATCH", "/uploadposts/google-business/accounts", {"b": ["user", "account", "account_name", "validate_only", "confirm"]}),
-        "createGoogleBusinessAdmin": ("POST", "/uploadposts/google-business/admins", {"b": ["user", "scope", "account", "location_id", "admin", "admin_account", "role", "confirm"]}),
-        "updateGoogleBusinessAdmin": ("PATCH", "/uploadposts/google-business/admins", {"b": ["user", "admin_name", "role", "confirm"]}),
-        "deleteGoogleBusinessAdmin": ("DELETE", "/uploadposts/google-business/admins", {"b": ["user", "admin_name", "confirm"]}),
-        "acceptGoogleBusinessInvitation": ("POST", "/uploadposts/google-business/invitations/accept", {"b": ["user", "invitation", "confirm"]}),
-        "declineGoogleBusinessInvitation": ("POST", "/uploadposts/google-business/invitations/decline", {"b": ["user", "invitation", "confirm"]}),
-        "transferGoogleBusinessLocation": ("POST", "/uploadposts/google-business/locations/transfer", {"b": ["user", "location_id", "destination_account", "confirm"]}),
-        "createGoogleBusinessLocation": ("POST", "/uploadposts/google-business/locations/create", {"b": ["user", "account", "location", "language_code", "title", "primary_category", "request_id", "dry_run", "confirm"]}),
-        "deleteGoogleBusinessLocation": ("DELETE", "/uploadposts/google-business/locations/delete", {"b": ["user", "location_id", "confirm"]}),
-        "getGoogleBusinessNotificationSettings": ("GET", "/uploadposts/google-business/notifications", {"q": ["user", "account"]}),
-        "updateGoogleBusinessNotificationSettings": ("PUT", "/uploadposts/google-business/notifications", {"b": ["user", "account", "enabled", "types", "confirm", "force", "confirm_other_tool"]}),
-        "updateGoogleBusinessNotificationSettingsPatch": ("PATCH", "/uploadposts/google-business/notifications", {"b": ["user", "account", "enabled", "types", "confirm", "force", "confirm_other_tool"]}),
-        "batchGetGoogleBusinessReviewsPost": ("POST", "/uploadposts/google-business/reviews/batch", {"b": ["user", "location_ids", "page_size", "page_token", "order_by", "ignoreRatingOnlyReviews"]}),
-        "startGoogleBusinessVerification": ("POST", "/uploadposts/google-business/verification/start", {"b": ["user", "location_id", "method", "phone_number", "email_address", "mailer_contact", "trusted_partner_token", "token", "language_code", "context", "confirm"]}),
-        "completeGoogleBusinessVerification": ("POST", "/uploadposts/google-business/verification/complete", {"b": ["user", "location_id", "verification_name", "verification_id", "pin"]}),
-        "generateGoogleBusinessVerificationToken": ("POST", "/uploadposts/google-business/verification/token", {"b": ["user", "location_id"]}),
+        "updateGoogleBusinessAccount": ("PATCH", "/uploadposts/google-business/accounts", {"b": ["user", "account", "account_name", "validate_only", "confirm"], "na": True}),
+        "createGoogleBusinessAdmin": ("POST", "/uploadposts/google-business/admins", {"b": ["user", "scope", "account", "location_id", "admin", "admin_account", "role", "confirm"], "na": True}),
+        "updateGoogleBusinessAdmin": ("PATCH", "/uploadposts/google-business/admins", {"b": ["user", "admin_name", "role", "confirm"], "na": True}),
+        "deleteGoogleBusinessAdmin": ("DELETE", "/uploadposts/google-business/admins", {"b": ["user", "admin_name", "confirm"], "na": True}),
+        "acceptGoogleBusinessInvitation": ("POST", "/uploadposts/google-business/invitations/accept", {"b": ["user", "invitation", "confirm"], "na": True}),
+        "declineGoogleBusinessInvitation": ("POST", "/uploadposts/google-business/invitations/decline", {"b": ["user", "invitation", "confirm"], "na": True}),
+        "transferGoogleBusinessLocation": ("POST", "/uploadposts/google-business/locations/transfer", {"b": ["user", "location_id", "destination_account", "confirm"], "na": True}),
+        "createGoogleBusinessLocation": ("POST", "/uploadposts/google-business/locations/create", {"b": ["user", "account", "location", "language_code", "title", "primary_category", "request_id", "dry_run", "confirm"], "na": True}),
+        "deleteGoogleBusinessLocation": ("DELETE", "/uploadposts/google-business/locations/delete", {"b": ["user", "location_id", "confirm"], "na": True}),
+        "getGoogleBusinessNotificationSettings": ("GET", "/uploadposts/google-business/notifications", {"q": ["user", "account"], "na": True}),
+        "updateGoogleBusinessNotificationSettings": ("PUT", "/uploadposts/google-business/notifications", {"b": ["user", "account", "enabled", "types", "confirm", "force", "confirm_other_tool"], "na": True}),
+        "startGoogleBusinessVerification": ("POST", "/uploadposts/google-business/verification/start", {"b": ["user", "location_id", "method", "phone_number", "email_address", "mailer_contact", "trusted_partner_token", "token", "language_code", "context", "confirm"], "na": True}),
+        "completeGoogleBusinessVerification": ("POST", "/uploadposts/google-business/verification/complete", {"b": ["user", "location_id", "verification_name", "verification_id", "pin"], "na": True}),
+        "generateGoogleBusinessVerificationToken": ("POST", "/uploadposts/google-business/verification/token", {"b": ["user", "location_id"], "na": True}),
         "connectChatgptAdsAccount": ("POST", "/uploadposts/ads/chatgpt/connect", {"b": ["api_key", "profile_username", "name", "default"]}),
         "listChatgptAdsAccounts": ("GET", "/uploadposts/ads/chatgpt/accounts", {}),
         "disconnectChatgptAdsAccount": ("DELETE", "/uploadposts/ads/chatgpt/accounts/{ad_account_id}", {"q": ["profile_username"]}),
@@ -5462,6 +5480,9 @@ class UploadPostClient:
     def send_telegram_gift(self, user: str, gift_id: str, max_star_count: int, confirm: bool, idempotency_key: str, **params) -> Dict:
         """Send a gift from the bot's Stars.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_stars_spend_disabled` until the feature is available.
+
         sendGift. Spends the bot's Stars. Requires confirm=true and max_star_count
         (checked against the current price).
 
@@ -5485,6 +5506,9 @@ class UploadPostClient:
 
     def gift_telegram_premium(self, user: str, user_id: int, month_count: int, star_count: int, confirm: bool, idempotency_key: str, **params) -> Dict:
         """Gift Telegram Premium from the bot's Stars.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_stars_spend_disabled` until the feature is available.
 
         Spends the bot's Stars.
 
@@ -5545,6 +5569,9 @@ class UploadPostClient:
     def set_telegram_updates(self, user: str, enabled: bool, **params) -> Dict:
         """Turn Telegram updates on or off.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_updates_unavailable` until the feature is available.
+
         Opt-in per bot. A webhook that is not Upload-Post's is never replaced without
         replace_existing_webhook=true (409 telegram_webhook_in_use otherwise). With no
         webhook, the answer warns that a getUpdates integration stops receiving.
@@ -5604,6 +5631,9 @@ class UploadPostClient:
     def get_telegram_business_connections(self, user: str, **params) -> Dict:
         """Telegram Business connections.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
         Connections of the bot with Telegram Business accounts (rights, enabled).
 
         ``GET /api/uploadposts/telegram/business-connections``
@@ -5619,6 +5649,9 @@ class UploadPostClient:
     def get_telegram_business_profile(self, user: str, **params) -> Dict:
         """Telegram Business account.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
         The connected account.
 
         ``GET /api/uploadposts/telegram/business-profile``
@@ -5633,6 +5666,9 @@ class UploadPostClient:
 
     def update_telegram_business_profile(self, user: str, **params) -> Dict:
         """Update the Telegram Business profile.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
 
         first_name/last_name, username, bio, photo (multipart or media_url, is_public),
         remove_photo, gift_settings.
@@ -5659,6 +5695,9 @@ class UploadPostClient:
     def post_telegram_story(self, user: str, **params) -> Dict:
         """Post a Telegram story.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
         postStory on behalf of the Business account. Photos 1080x1920 up to 10 MB;
         videos 720x1280 H.265 up to 30 MB, 60 s.
 
@@ -5683,6 +5722,9 @@ class UploadPostClient:
     def edit_telegram_story(self, user: str, **params) -> Dict:
         """Edit a Telegram story.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
         editStory.
 
         ``PATCH /api/uploadposts/telegram/business-stories``
@@ -5705,6 +5747,9 @@ class UploadPostClient:
 
     def delete_telegram_story(self, user: str, story_id: int, **params) -> Dict:
         """Delete a Telegram story.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
 
         deleteStory.
 
@@ -5729,6 +5774,9 @@ class UploadPostClient:
     def repost_telegram_story(self, user: str, from_chat_id: int, from_story_id: int, active_period: int, **params) -> Dict:
         """Repost a Telegram story.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
         repostStory from another Business account of the same bot.
 
         ``POST /api/uploadposts/telegram/business-stories/repost``
@@ -5748,6 +5796,9 @@ class UploadPostClient:
     def get_telegram_business_gifts(self, user: str, **params) -> Dict:
         """Telegram Business gifts.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
         getBusinessAccountGifts with Telegram's filters.
 
         ``GET /api/uploadposts/telegram/business-gifts``
@@ -5762,6 +5813,9 @@ class UploadPostClient:
 
     def manage_telegram_business_gift(self, user: str, action: str, owned_gift_id: str, confirm: bool, idempotency_key: str, **params) -> Dict:
         """Convert, upgrade, transfer or delete a gift.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
 
         Irreversible: requires confirm=true and an idempotency_key (a repeat with the
         same key returns the first answer).
@@ -5786,6 +5840,9 @@ class UploadPostClient:
     def get_telegram_business_stars(self, user: str, **params) -> Dict:
         """Telegram Business Stars balance.
 
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
         getBusinessAccountStarBalance.
 
         ``GET /api/uploadposts/telegram/business-stars``
@@ -5800,6 +5857,9 @@ class UploadPostClient:
 
     def transfer_telegram_business_stars(self, user: str, star_count: int, idempotency_key: str, confirm: bool, **params) -> Dict:
         """Move Stars to the bot.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
 
         transferBusinessAccountStars (1-10000). Requires confirm=true and an
         idempotency_key.
@@ -5957,39 +6017,29 @@ class UploadPostClient:
         return self._op("getScheduledPostPreview", params, job_id=job_id)
 
     # ---- Platform Integration ----
-    def create_pinterest_board(self, user: str, name: str, **params) -> Dict:
+    def create_pinterest_board(self, name: str, **params) -> Dict:
         """Create a Pinterest board.
+
+        Without a profile the first profile of the account with a Pinterest account is
+        used.
 
         ``POST /api/uploadposts/pinterest/boards``
 
         Args:
-            user
+            profile (str, optional): Profile username (alias user); default the
+                first profile with Pinterest.
+            user (str, optional): Alias of profile.
             name
             description (str, optional)
             privacy (str, optional): SECRET is rejected (400).
             **params: Any other API field, by its API name.
         """
-        return self._op("createPinterestBoard", params, user=user, name=name)
-
-    def get_reddit_detailed_posts(self, profile_username: str, **params) -> Dict:
-        """Get Reddit detailed posts.
-
-        Retrieve detailed posts from a Reddit account connected to a profile, including
-        complete media information. Supports automatic pagination up to 2000 posts.
-
-        ``GET /api/uploadposts/reddit/detailed-posts/``
-
-        Args:
-            profile_username: Username of the profile with a connected Reddit
-                account.
-            **params: Any other API field, by its API name.
-        """
-        return self._op("getRedditDetailedPosts", params, profile_username=profile_username)
+        return self._op("createPinterestBoard", params, name=name)
 
     def query_youtube_analytics(self, user: str, start_date: str, end_date: str, metrics: str, **params) -> Dict:
         """Run a YouTube Analytics channel report.
 
-        Not generally available yet: answers 503 youtube_analytics_disabled until it is
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
         enabled. reports.query for the profile's channel with any dimensions, metrics,
         filters and sort of YouTube's channel reports. Validated against the official
         report tables before it reaches YouTube (invalid combinations: 400
@@ -6020,7 +6070,7 @@ class UploadPostClient:
     def list_youtube_analytics_reports(self, user: str, **params) -> Dict:
         """YouTube Analytics report catalog.
 
-        Not generally available yet: answers 503 youtube_analytics_disabled until it is
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
         enabled. The 47 YouTube channel reports with their dimensions, metrics, filters,
         sort options and row limits. Does not call YouTube.
 
@@ -6035,7 +6085,7 @@ class UploadPostClient:
     def list_youtube_analytics_groups(self, user: str, **params) -> Dict:
         """List YouTube Analytics groups.
 
-        Not generally available yet: answers 503 youtube_analytics_disabled until it is
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
         enabled. groups.list of the channel (mine=true, or ids). Cached 30 minutes; 1
         request of the Analytics allowance per uncached call.
 
@@ -6052,7 +6102,7 @@ class UploadPostClient:
     def list_youtube_analytics_group_items(self, group_id: str, user: str, **params) -> Dict:
         """List the items of a YouTube Analytics group.
 
-        Not generally available yet: answers 503 youtube_analytics_disabled until it is
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
         enabled. groupItems.list. Cached 30 minutes.
 
         ``GET /api/uploadposts/youtube/analytics/groups/{group_id}/items``
@@ -6067,6 +6117,9 @@ class UploadPostClient:
     def get_youtube_analytics_usage(self, **params) -> Dict:
         """Daily allowance of YouTube Analytics and bulk reports.
 
+        Not generally available yet. Off by default: answers `503` with
+        `youtube_feature_disabled` until the feature is available.
+
         The caller's own usage today of the Analytics and bulk reports allowances. While
         Analytics and bulk reports are not generally available yet, each service shows
         enabled: false.
@@ -6080,7 +6133,7 @@ class UploadPostClient:
     def list_youtube_report_types(self, user: str, **params) -> Dict:
         """List YouTube bulk report types.
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. reportTypes.list for the channel (one page, cached 24 h).
         can_create_job marks the channel/playlist types that can be scheduled.
 
@@ -6097,7 +6150,7 @@ class UploadPostClient:
     def list_youtube_reporting_jobs(self, user: str, **params) -> Dict:
         """List YouTube reporting jobs.
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. jobs.list of the channel (one page). used_by_upload_post marks the job
         behind Upload-Post's thumbnail impressions.
 
@@ -6114,7 +6167,7 @@ class UploadPostClient:
     def create_youtube_reporting_job(self, user: str, report_type_id: str, **params) -> Dict:
         """Create a YouTube reporting job.
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. jobs.create: YouTube then generates one CSV per day (first ones within
         ~48 h, covering the previous 30 days). One job per report type and up to 20 per
         channel.
@@ -6132,7 +6185,7 @@ class UploadPostClient:
     def get_youtube_reporting_job(self, job_id: str, user: str, **params) -> Dict:
         """Get a YouTube reporting job.
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. jobs.get.
 
         ``GET /api/uploadposts/youtube/reporting/jobs/{job_id}``
@@ -6147,7 +6200,7 @@ class UploadPostClient:
     def delete_youtube_reporting_job(self, job_id: str, user: str, confirm: bool, **params) -> Dict:
         """Delete a YouTube reporting job.
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. jobs.delete: stops the daily reports. Requires confirm: true. A
         channel_reach_basic_a1 job (used by Upload-Post for thumbnail impressions)
         cannot be deleted (409 youtube_reporting_job_in_use). 502
@@ -6166,7 +6219,7 @@ class UploadPostClient:
     def list_youtube_reports(self, job_id: str, user: str, **params) -> Dict:
         """List the reports of a YouTube reporting job.
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. jobs.reports.list (one page). Each item has download_path.
 
         ``GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports``
@@ -6186,7 +6239,7 @@ class UploadPostClient:
     def get_youtube_report(self, job_id: str, report_id: str, user: str, **params) -> Dict:
         """Get a YouTube report.
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. jobs.reports.get (metadata).
 
         ``GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}``
@@ -6202,7 +6255,7 @@ class UploadPostClient:
     def download_youtube_report(self, job_id: str, report_id: str, user: str, **params) -> str:
         """Download a YouTube report (CSV).
 
-        Not generally available yet: answers 503 youtube_reporting_disabled until it is
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
         enabled. The report's CSV file, streamed. Up to 100 MB; up to 2 downloads at a
         time per account. Counts 2 requests of the bulk reports allowance.
 
@@ -6220,7 +6273,7 @@ class UploadPostClient:
     def get_youtube_push(self, user: str, **params) -> Dict:
         """YouTube new video notifications status.
 
-        Not generally available yet: answers 503 youtube_feature_disabled until it is
+        Not generally available yet. Answers 503 youtube_feature_disabled until it is
         enabled. State of the push subscription of the profile's channel (null when
         off). No YouTube quota.
 
@@ -6235,7 +6288,7 @@ class UploadPostClient:
     def enable_youtube_push(self, user: str, **params) -> Dict:
         """Turn on YouTube new video notifications.
 
-        Not generally available yet: answers 503 youtube_feature_disabled until it is
+        Not generally available yet. Answers 503 youtube_feature_disabled until it is
         enabled. Requires a webhook listing youtube_video_published and/or
         youtube_video_updated. No YouTube quota.
 
@@ -6250,7 +6303,7 @@ class UploadPostClient:
     def disable_youtube_push(self, user: str, **params) -> Dict:
         """Turn off YouTube new video notifications.
 
-        Not generally available yet: answers 503 youtube_feature_disabled until it is
+        Not generally available yet. Answers 503 youtube_feature_disabled until it is
         enabled. No YouTube quota.
 
         ``DELETE /api/uploadposts/youtube/push``
@@ -6276,17 +6329,20 @@ class UploadPostClient:
         """
         return self._op("getInstagramPublishingLimit", params, profile=profile)
 
-    def get_threads_publishing_limit(self, user: str, **params) -> Dict:
+    def get_threads_publishing_limit(self, **params) -> Dict:
         """Threads publishing quota.
+
+        Send user or profile (one is required: 400 without both).
 
         ``GET /api/uploadposts/threads/publishing_limit``
 
         Args:
-            user: Profile username.
+            user (str, optional): Profile username (or use profile).
+            profile (str, optional): Alias of user.
             refresh (bool, optional): Skip the cache.
             **params: Any other API field, by its API name.
         """
-        return self._op("getThreadsPublishingLimit", params, user=user)
+        return self._op("getThreadsPublishingLimit", params)
 
     def list_pinterest_board_sections(self, board_id: str, **params) -> Dict:
         """List the sections of a Pinterest board.
@@ -6300,18 +6356,23 @@ class UploadPostClient:
         """
         return self._op("listPinterestBoardSections", params, board_id=board_id)
 
-    def create_pinterest_board_section(self, board_id: str, user: str, name: str, **params) -> Dict:
+    def create_pinterest_board_section(self, board_id: str, name: str, **params) -> Dict:
         """Create a section in a Pinterest board.
+
+        Without a profile the first profile of the account with a Pinterest account is
+        used.
 
         ``POST /api/uploadposts/pinterest/boards/{board_id}/sections``
 
         Args:
             board_id: Board id.
-            user
+            profile (str, optional): Profile username (alias user); default the
+                first profile with Pinterest.
+            user (str, optional): Alias of profile.
             name
             **params: Any other API field, by its API name.
         """
-        return self._op("createPinterestBoardSection", params, board_id=board_id, user=user, name=name)
+        return self._op("createPinterestBoardSection", params, board_id=board_id, name=name)
 
     def get_facebook_page_info(self, user: str, **params) -> Dict:
         """Read a Facebook Page's public info.
@@ -6388,6 +6449,23 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("listRedditFlairs", params, profile=profile, subreddit=subreddit)
+
+    def get_reddit_detailed_posts(self, profile_username: str, **params) -> Dict:
+        """Get Reddit detailed posts.
+
+        Retrieve detailed posts from a Reddit account connected to a profile, including
+        complete media information. Supports automatic pagination up to 2000 posts. The
+        path ends with a slash (`/detailed-posts/`); without it the API answers a 308
+        redirect.
+
+        ``GET /api/uploadposts/reddit/detailed-posts/``
+
+        Args:
+            profile_username: Username of the profile with a connected Reddit
+                account.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getRedditDetailedPosts", params, profile_username=profile_username)
 
     # ---- User Management ----
     def get_user_profile(self, username: str, **params) -> Dict:
@@ -6907,10 +6985,9 @@ class UploadPostClient:
 
         Args:
             url: Public https URL.
-            events: Event names (dots are accepted: social_account.connected). Also
-                youtube_video_published / youtube_video_updated and the post approval
-                events (post_approval_requested, post_approved, post_rejected,
-                post_approval_expired)...
+            events: Event names. youtube_video_* only while YouTube push is on and
+                post_approval_* only while post approvals are on; otherwise 400
+                invalid_events with allowed_events.
             profile_username (str, optional): Only events of this profile.
             source (str, optional)
             name (str, optional)
@@ -7016,7 +7093,12 @@ class UploadPostClient:
     def delete_bluesky_chat_account(self, user: str, confirm: bool, confirm_handle: str, **params) -> Dict:
         """Delete the Bluesky chat account.
 
-        **Not generally available yet: answers `403` `bluesky_chat_delete_disabled`.**
+        Not generally available yet. Answers `403` `bluesky_chat_delete_disabled`.
+
+        Deletes every conversation and message of the account's Bluesky chat account
+        (not the Bluesky account). Needs confirm: true and confirm_handle; not enabled
+        yet (403 bluesky_chat_delete_disabled). Account owner only; every attempt is
+        recorded.
 
         ``POST /api/uploadposts/dms/bluesky/account/delete``
 
@@ -7031,8 +7113,11 @@ class UploadPostClient:
     def list_bluesky_mutual_groups(self, user: str, subject: str, **params) -> Dict:
         """Bluesky groups shared with someone.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
 
         ``GET /api/uploadposts/dms/bluesky/groups``
 
@@ -7048,8 +7133,13 @@ class UploadPostClient:
     def create_bluesky_group(self, user: str, name: str, members: List[str], **params) -> Dict:
         """Create a Bluesky group chat.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Members get a request to accept. Every invited member counts as one DM (all or
+        nothing); at most 10 members by handle per request. Idempotent for 10 minutes
+        per idempotency_key (or name + members). Experimental on Bluesky: answers carry
+        experimental: true; 403 bluesky_dm_experimental_disabled while not enabled.
 
         ``POST /api/uploadposts/dms/bluesky/groups``
 
@@ -7065,8 +7155,11 @@ class UploadPostClient:
     def edit_bluesky_group(self, conversation_id: str, user: str, **params) -> Dict:
         """Rename, lock or unlock a Bluesky group.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
 
         ``PATCH /api/uploadposts/dms/bluesky/groups/{conversation_id}``
 
@@ -7082,8 +7175,11 @@ class UploadPostClient:
     def list_bluesky_group_members(self, conversation_id: str, user: str, **params) -> Dict:
         """Bluesky group members.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
 
         ``GET /api/uploadposts/dms/bluesky/groups/{conversation_id}/members``
 
@@ -7097,8 +7193,12 @@ class UploadPostClient:
     def add_bluesky_group_members(self, conversation_id: str, user: str, members: List[str], **params) -> Dict:
         """Add members to a Bluesky group.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. One DM of quota per added member. Experimental on Bluesky: answers
+        carry experimental: true; 403 bluesky_dm_experimental_disabled while not
+        enabled.
 
         ``POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/members``
 
@@ -7113,8 +7213,11 @@ class UploadPostClient:
     def remove_bluesky_group_members(self, conversation_id: str, user: str, members: List[str], **params) -> Dict:
         """Remove members from a Bluesky group.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
 
         ``DELETE /api/uploadposts/dms/bluesky/groups/{conversation_id}/members``
 
@@ -7129,8 +7232,11 @@ class UploadPostClient:
     def manage_bluesky_join_link(self, conversation_id: str, user: str, action: str, **params) -> Dict:
         """Manage a Bluesky group join link.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        action: create, edit, enable or disable. Experimental on Bluesky: answers carry
+        experimental: true; 403 bluesky_dm_experimental_disabled while not enabled.
 
         ``POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-link``
 
@@ -7147,8 +7253,11 @@ class UploadPostClient:
     def list_bluesky_join_requests(self, conversation_id: str, user: str, **params) -> Dict:
         """Pending requests to join a Bluesky group.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
 
         ``GET /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests``
 
@@ -7162,8 +7271,12 @@ class UploadPostClient:
     def answer_bluesky_join_request(self, conversation_id: str, user: str, action: str, **params) -> Dict:
         """Answer or withdraw a Bluesky join request.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        action: approve / reject (with member), mark_read, or withdraw (your own
+        request). Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
 
         ``POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests``
 
@@ -7179,8 +7292,12 @@ class UploadPostClient:
     def preview_bluesky_join_links(self, user: str, codes: str, **params) -> Dict:
         """Preview Bluesky join links.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Up to 50 codes; status active, disabled or invalid. Experimental on Bluesky:
+        answers carry experimental: true; 403 bluesky_dm_experimental_disabled while not
+        enabled.
 
         ``GET /api/uploadposts/dms/bluesky/join-links``
 
@@ -7194,8 +7311,11 @@ class UploadPostClient:
     def join_bluesky_group(self, user: str, code: str, **params) -> Dict:
         """Ask to join a Bluesky group.
 
-        **Not generally available yet: group chats answer `403`
-        `bluesky_dm_experimental_disabled` until they are turned on.**
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        status is joined or pending. Experimental on Bluesky: answers carry
+        experimental: true; 403 bluesky_dm_experimental_disabled while not enabled.
 
         ``POST /api/uploadposts/dms/bluesky/join-links``
 
@@ -7227,8 +7347,12 @@ class UploadPostClient:
     def bluesky_graph_action(self, user: str, action: str, **params) -> Dict:
         """Follow, block or mute (one target per call).
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        follow/unfollow (daily limit), block/unblock, mute/unmute (only_reposts,
+        only_quoteposts), mute_list/unmute_list, block_list/unblock_list (moderation
+        lists), mute_thread/unmute_thread.
 
         ``POST /api/uploadposts/bluesky/graph``
 
@@ -7247,8 +7371,10 @@ class UploadPostClient:
     def list_bluesky_lists(self, user: str, **params) -> Dict:
         """The account's lists.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        getLists for the account.
 
         ``GET /api/uploadposts/bluesky/lists``
 
@@ -7263,8 +7389,10 @@ class UploadPostClient:
     def create_bluesky_list(self, user: str, name: str, purpose: str, **params) -> Dict:
         """Create a list.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Curated, moderation or reference list.
 
         ``POST /api/uploadposts/bluesky/lists``
 
@@ -7284,8 +7412,10 @@ class UploadPostClient:
     def get_bluesky_list(self, list_id: str, user: str, **params) -> Dict:
         """A list and its members.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        getList.
 
         ``GET /api/uploadposts/bluesky/lists/{list_id}``
 
@@ -7299,8 +7429,10 @@ class UploadPostClient:
     def update_bluesky_list(self, list_id: str, user: str, **params) -> Dict:
         """Update a list.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Merges the fields sent.
 
         ``PATCH /api/uploadposts/bluesky/lists/{list_id}``
 
@@ -7321,8 +7453,10 @@ class UploadPostClient:
     def delete_bluesky_list(self, list_id: str, user: str, confirm: bool, **params) -> Dict:
         """Delete a list and its members.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true.
 
         ``DELETE /api/uploadposts/bluesky/lists/{list_id}``
 
@@ -7337,8 +7471,10 @@ class UploadPostClient:
     def list_bluesky_list_members(self, list_id: str, user: str, **params) -> Dict:
         """List members.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        getList items.
 
         ``GET /api/uploadposts/bluesky/lists/{list_id}/members``
 
@@ -7352,8 +7488,10 @@ class UploadPostClient:
     def add_bluesky_list_member(self, list_id: str, user: str, actor: str, **params) -> Dict:
         """Add a member.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        One account per call.
 
         ``POST /api/uploadposts/bluesky/lists/{list_id}/members``
 
@@ -7368,8 +7506,10 @@ class UploadPostClient:
     def remove_bluesky_list_member(self, list_id: str, user: str, actor: str, **params) -> Dict:
         """Remove a member.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        One account per call.
 
         ``DELETE /api/uploadposts/bluesky/lists/{list_id}/members``
 
@@ -7384,8 +7524,10 @@ class UploadPostClient:
     def opt_out_bluesky_list(self, user: str, list: str, **params) -> Dict:
         """Ask not to appear in a reference list.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        referencelistoptout.
 
         ``POST /api/uploadposts/bluesky/lists/opt-out``
 
@@ -7399,8 +7541,8 @@ class UploadPostClient:
     def remove_opt_out_bluesky_list(self, user: str, list: str, **params) -> Dict:
         """Withdraw the opt-out.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
 
         ``DELETE /api/uploadposts/bluesky/lists/opt-out``
 
@@ -7414,8 +7556,8 @@ class UploadPostClient:
     def list_bluesky_starter_packs(self, user: str, **params) -> Dict:
         """The account's starter packs.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
 
         ``GET /api/uploadposts/bluesky/starter-packs``
 
@@ -7428,8 +7570,8 @@ class UploadPostClient:
     def create_bluesky_starter_pack(self, user: str, name: str, **params) -> Dict:
         """Create a starter pack.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
 
         ``POST /api/uploadposts/bluesky/starter-packs``
 
@@ -7448,8 +7590,8 @@ class UploadPostClient:
     def get_bluesky_starter_pack(self, pack_id: str, user: str, **params) -> Dict:
         """A starter pack.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
 
         ``GET /api/uploadposts/bluesky/starter-packs/{pack_id}``
 
@@ -7463,8 +7605,10 @@ class UploadPostClient:
     def update_bluesky_starter_pack(self, pack_id: str, user: str, **params) -> Dict:
         """Update a starter pack.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        name, description, feeds.
 
         ``PATCH /api/uploadposts/bluesky/starter-packs/{pack_id}``
 
@@ -7484,8 +7628,10 @@ class UploadPostClient:
     def delete_bluesky_starter_pack(self, pack_id: str, user: str, confirm: bool, **params) -> Dict:
         """Delete a starter pack.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true; delete_list=true also deletes its list.
 
         ``DELETE /api/uploadposts/bluesky/starter-packs/{pack_id}``
 
@@ -7501,8 +7647,8 @@ class UploadPostClient:
     def list_bluesky_feeds(self, user: str, **params) -> Dict:
         """Feeds declared by the account.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
 
         ``GET /api/uploadposts/bluesky/feeds``
 
@@ -7515,8 +7661,10 @@ class UploadPostClient:
     def create_bluesky_feed(self, user: str, rkey: str, did: str, display_name: str, **params) -> Dict:
         """Declare a custom feed.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Points to a feed generator service run by someone else.
 
         ``POST /api/uploadposts/bluesky/feeds``
 
@@ -7537,8 +7685,8 @@ class UploadPostClient:
     def update_bluesky_feed(self, rkey: str, user: str, **params) -> Dict:
         """Update a feed declaration.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
 
         ``PATCH /api/uploadposts/bluesky/feeds/{rkey}``
 
@@ -7559,8 +7707,10 @@ class UploadPostClient:
     def delete_bluesky_feed(self, rkey: str, user: str, confirm: bool, **params) -> Dict:
         """Delete a feed declaration.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true.
 
         ``DELETE /api/uploadposts/bluesky/feeds/{rkey}``
 
@@ -7575,8 +7725,10 @@ class UploadPostClient:
     def report_on_bluesky(self, user: str, reason_type: str, confirm: bool, **params) -> Dict:
         """Report a post or account to Bluesky moderation.
 
-        **Not generally available yet: answers `503` `bluesky_feature_disabled` until it
-        is turned on.**
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true. Up to 20 reports per account per UTC day.
 
         ``POST /api/uploadposts/bluesky/report``
 
@@ -7851,6 +8003,9 @@ class UploadPostClient:
     def update_google_business_account(self, user: str, account_name: str, **params) -> Dict:
         """Rename a Google Business account.
 
+        Not generally available yet. Off by default: answers `403` with
+        `ownership_changes_disabled` until the feature is available.
+
         Renames a business account (only the name). With `validate_only: true` Google
         checks the request without changing anything (no `confirm` needed); that mode
         works today. A real rename is not generally available yet: 403
@@ -7872,6 +8027,8 @@ class UploadPostClient:
 
     def create_google_business_admin(self, user: str, role: str, confirm: bool, **params) -> Dict:
         """Invite an admin.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
 
         Google emails the invitation; the person gets access once they accept. Not
         generally available yet: answers 403 `ownership_changes_disabled` (do it in
@@ -7900,6 +8057,8 @@ class UploadPostClient:
     def update_google_business_admin(self, user: str, admin_name: str, role: str, confirm: bool, **params) -> Dict:
         """Change an admin's role.
 
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
         Changes the role of an admin (`admin_name` from GET /admins). If the role is
         already that one, the answer has `unchanged: true` and nothing is sent. Refused
         with 409 `last_owner` if it would demote the last owner and 409
@@ -7925,6 +8084,8 @@ class UploadPostClient:
     def delete_google_business_admin(self, user: str, admin_name: str, confirm: bool, **params) -> Dict:
         """Remove an admin.
 
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
         Removes an admin at once (they would have to be invited again). Refused with 409
         `last_owner` / `connected_identity` like the role change. JSON body. Not
         generally available yet: answers 403 `ownership_changes_disabled` (do it in
@@ -7946,6 +8107,8 @@ class UploadPostClient:
     def accept_google_business_invitation(self, user: str, invitation: str, confirm: bool, **params) -> Dict:
         """Accept an invitation.
 
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
         Accepts a pending invitation (404 `invitation_not_found` otherwise). Not
         generally available yet: answers 403 `ownership_changes_disabled` (do it in
         Google Business Profile). When enabled, only the owner of the Upload-Post
@@ -7966,6 +8129,8 @@ class UploadPostClient:
     def decline_google_business_invitation(self, user: str, invitation: str, confirm: bool, **params) -> Dict:
         """Decline an invitation.
 
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
         Declines a pending invitation (404 `invitation_not_found` otherwise). Not
         generally available yet: answers 403 `ownership_changes_disabled` (do it in
         Google Business Profile). When enabled, only the owner of the Upload-Post
@@ -7985,6 +8150,8 @@ class UploadPostClient:
 
     def transfer_google_business_location(self, user: str, location_id: str, destination_account: str, confirm: bool, **params) -> Dict:
         """Transfer a location to another account.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
 
         Moves a location to another Google account. Google only allows it when the
         connected user owns the location and manages the destination account. Not
@@ -8009,7 +8176,7 @@ class UploadPostClient:
     def create_google_business_location(self, user: str, language_code: str, **params) -> Dict:
         """Create a location.
 
-        Not generally available yet: answers 503 `gbp_feature_disabled` before anything
+        Not generally available yet. Answers 503 `gbp_feature_disabled` before anything
         else is checked. Send `location` (a Google Location object) or the friendly
         fields of location info, plus `language_code`. `title`, `primary_category` and
         `language_code` are required. Needs `confirm: true` (not with `dry_run`).
@@ -8041,7 +8208,7 @@ class UploadPostClient:
     def delete_google_business_location(self, user: str, location_id: str, confirm: bool, **params) -> Dict:
         """Delete a location.
 
-        Not generally available yet: answers 503 `gbp_feature_disabled` before anything
+        Not generally available yet. Answers 503 `gbp_feature_disabled` before anything
         else is checked. Irreversible. Needs `confirm: true`. If Google does not allow
         deleting it through the API: 409 `location_cannot_be_deleted` (delete it from
         business.google.com).
@@ -8060,7 +8227,7 @@ class UploadPostClient:
     def get_google_business_notification_settings(self, user: str, **params) -> Dict:
         """Get real-time notification settings.
 
-        Not generally available yet: answers 503 `gbp_notifications_unavailable` and no
+        Not generally available yet. Answers 503 `gbp_notifications_unavailable` and no
         Google Business event is sent to webhooks. Google keeps one notification setting
         per Google account; when another tool owns it, `other_tool_configured` is
         `true`.
@@ -8078,7 +8245,7 @@ class UploadPostClient:
     def update_google_business_notification_settings(self, user: str, confirm: bool, **params) -> Dict:
         """Turn real-time notifications on or off.
 
-        Not generally available yet: answers 503 `gbp_notifications_unavailable` and no
+        Not generally available yet. Answers 503 `gbp_notifications_unavailable` and no
         Google Business event is sent to webhooks. Turns notifications on or off for the
         Google account; webhooks must also list the events (`review_received`,
         `review_updated`, `customer_media_received`, `listing_google_update`,
@@ -8106,69 +8273,10 @@ class UploadPostClient:
         """
         return self._op("updateGoogleBusinessNotificationSettings", params, user=user, confirm=confirm)
 
-    def update_google_business_notification_settings_patch(self, user: str, confirm: bool, **params) -> Dict:
-        """Turn real-time notifications on or off (PATCH).
-
-        Not generally available yet: answers 503 `gbp_notifications_unavailable` and no
-        Google Business event is sent to webhooks. Turns notifications on or off for the
-        Google account; webhooks must also list the events (`review_received`,
-        `review_updated`, `customer_media_received`, `listing_google_update`,
-        `listing_duplicate`, `listing_control_changed`) in `webhook_events`. Needs
-        `confirm: true`. If Google does not confirm the change (`outcome_unknown:
-        true`), read the setting before retrying. Same as PUT.
-
-        ``PATCH /api/uploadposts/google-business/notifications``
-
-        Args:
-            user: Profile username with Google Business connected (alias `profile`).
-            account (str, optional): Google account, `accounts/{id}` or a bare id.
-                Default: the account saved when Google Business was connected.
-            enabled (bool, optional): `true` (default) or `false`.
-            types (List[str], optional): Types to receive (alias
-                `notification_types`). Default: all six.
-            confirm: Must be `true`: this replaces any other tool's setting for this
-                Google account.
-            force (bool, optional): `true` to replace a setting that belongs to
-                another tool.
-            confirm_other_tool (bool, optional): With `enabled: false` and `force:
-                true` on another tool's setting: switch that tool's notifications off
-                too.
-            **params: Any other API field, by its API name.
-        """
-        return self._op("updateGoogleBusinessNotificationSettingsPatch", params, user=user, confirm=confirm)
-
-    def batch_get_google_business_reviews_post(self, user: str, **params) -> Dict:
-        """Batch get reviews (JSON body).
-
-        Reviews of several locations in one call (`locations:batchGetReviews`).
-        Locations of several Google accounts are fetched with one call per account;
-        `nextPageToken` (starting with `up1:`) carries every account's cursor: pass it
-        back unchanged. Google's own errors keep Google's HTTP status (e.g. 409, 412,
-        500, 503) with details in `google_error`. Some validation errors carry only
-        `error`, without `error_code`. Same as GET, with a JSON body.
-
-        ``POST /api/uploadposts/google-business/reviews/batch``
-
-        Args:
-            user: Profile username with Google Business connected (alias `profile`).
-            location_ids (Any, optional): Comma-separated list or JSON array (bare
-                ids, `locations/{id}` or full paths). Default: the account's selected
-                location.
-            page_size (int, optional): 1-50 (alias `pageSize`).
-            page_token (str, optional): Cursor from `nextPageToken` (alias
-                `pageToken`).
-            order_by (str, optional): `updateTime desc` (default), `rating` or
-                `rating desc`; shortcuts `newest`, `lowest`, `highest`. Alias `orderBy`.
-            ignoreRatingOnlyReviews (bool, optional): `true` skips reviews without
-                text (deprecated by Google).
-            **params: Any other API field, by its API name.
-        """
-        return self._op("batchGetGoogleBusinessReviewsPost", params, user=user)
-
     def start_google_business_verification(self, user: str, method: str, confirm: bool, **params) -> Dict:
         """Start a verification.
 
-        Not generally available yet: answers 503 `gbp_feature_disabled`. Google contacts
+        Not generally available yet. Answers 503 `gbp_feature_disabled`. Google contacts
         the business (postcard, SMS, call or email), so `confirm: true` is required. 3
         verifications a day per location (429 `daily_limit_reached`, `scope: location`).
         `AUTO` verifications are `COMPLETED` at once; the others wait for the code. On
@@ -8202,7 +8310,7 @@ class UploadPostClient:
     def complete_google_business_verification(self, user: str, pin: str, **params) -> Dict:
         """Enter the verification code.
 
-        Not generally available yet: answers 503 `gbp_feature_disabled`. Sends the code
+        Not generally available yet. Answers 503 `gbp_feature_disabled`. Sends the code
         Google sent. 10 attempts a day per account and location (429
         `daily_limit_reached`); only codes Google actually checked count. `state:
         COMPLETED` when Google accepts it.
@@ -8225,7 +8333,7 @@ class UploadPostClient:
     def generate_google_business_verification_token(self, user: str, **params) -> Dict:
         """Get an instant verification token.
 
-        Not generally available yet: answers 503 `gbp_feature_disabled`. Asks Google for
+        Not generally available yet. Answers 503 `gbp_feature_disabled`. Asks Google for
         an instant verification token. When Google reserves it to its vetted partners,
         403 `partner_only`: use verification/start instead.
 

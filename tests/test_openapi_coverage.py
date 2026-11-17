@@ -144,6 +144,24 @@ class TestEveryOperationHasAMethod(unittest.TestCase):
                 expected = MAP.get("overrides", {}).get(op_id, {}).get("path") or by_id[op_id]["route"]
                 self.assertEqual(route, expected)
 
+    def test_availability_notes_come_from_x_availability(self):
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
+            region = fh.read().split("<!-- openapi:availability -->")[1].split("<!-- /openapi:availability -->")[0]
+        for route, item in SPEC["paths"].items():
+            for verb in ("get", "post", "put", "patch", "delete"):
+                op = item.get(verb)
+                if not op:
+                    continue
+                na = op.get("x-availability") == "not_generally_available"
+                with self.subTest(operation=op["operationId"]):
+                    if op["operationId"] in TABLE:
+                        self.assertEqual(bool(TABLE[op["operationId"]][2].get("na")), na)
+                        doc = getattr(UploadPostClient, method_for({"id": op["operationId"]})).__doc__
+                        self.assertEqual("Not generally available yet" in doc, na)
+                    elif op["operationId"] in MAP["existing"]:
+                        row = f'| `{MAP["existing"][op["operationId"]]}` | `{verb.upper()} /api{route}`'
+                        self.assertEqual(row in region, na)
+
     def test_named_methods_exist(self):
         absent = [o["id"] for o in OPS if method_for(o) and not callable(getattr(UploadPostClient, method_for(o), None))]
         self.assertEqual(absent, [])

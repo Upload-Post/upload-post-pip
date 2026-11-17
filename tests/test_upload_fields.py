@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from upload_post import UploadPostClient
+from upload_post import UploadPostClient, UploadPostError
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 with open(os.path.join(ROOT, "codegen", "openapi.json"), encoding="utf-8") as fh:
@@ -137,6 +137,56 @@ class TestUploadFields(unittest.TestCase):
         files = [k for k, _ in self.post.call_args[1]["files"]]
         self.assertIn("thumbnail", files)
         self.assertIn("cover_image", files)
+
+
+
+class TestFirstCommentMedia(unittest.TestCase):
+    """The API reads first_comment_media[] from the uploaded files only."""
+
+    def setUp(self):
+        self.client = UploadPostClient("secret-key")
+        response = MagicMock()
+        response.json.return_value = {"success": True}
+        response.raise_for_status.return_value = None
+        self.post = patch.object(self.client.session, "post", return_value=response).start()
+        image = MagicMock()
+        image.content = b"PNGDATA"
+        image.headers = {"Content-Type": "image/png"}
+        image.raise_for_status.return_value = None
+        self.download = patch("upload_post.api_client.requests.get", return_value=image).start()
+        self.addCleanup(patch.stopall)
+        handle, self.file = tempfile.mkstemp(suffix=".jpg")
+        os.write(handle, b"x")
+        os.close(handle)
+        self.addCleanup(os.remove, self.file)
+
+    def test_a_url_is_downloaded_and_sent_as_a_file(self):
+        calls = [
+            lambda media: self.client.upload_video("https://example.com/v.mp4", "t", "u", ["reddit"], first_comment_media=media),
+            lambda media: self.client.upload_photos(["https://example.com/a.jpg"], "t", "u", ["reddit"], first_comment_media=media),
+            lambda media: self.client.upload_text("t", "u", ["reddit"], first_comment_media=media),
+        ]
+        for call in calls:
+            with self.subTest(call=call):
+                self.post.reset_mock()
+                call(["https://images.example.com/chart.png?x=1", self.file])
+                parts = [v for k, v in self.post.call_args[1]["files"] if k == "first_comment_media[]"]
+                self.assertEqual(parts[0], ("chart.png", b"PNGDATA", "image/png"))
+                self.assertEqual(parts[1][0], os.path.basename(self.file))
+
+    def test_the_download_does_not_carry_the_api_key(self):
+        self.client.upload_text("t", "u", ["reddit"], first_comment_media=["https://images.example.com/a.jpg"])
+        args, kwargs = self.download.call_args
+        self.assertEqual(args[0], "https://images.example.com/a.jpg")
+        self.assertNotIn("headers", kwargs)
+
+    def test_a_url_that_cannot_be_downloaded_fails_before_uploading(self):
+        import requests
+        self.download.side_effect = requests.exceptions.ConnectionError("down")
+        with self.assertRaises(UploadPostError) as ctx:
+            self.client.upload_text("t", "u", ["reddit"], first_comment_media=["https://images.example.com/x.png"])
+        self.assertIn("https://images.example.com/x.png", str(ctx.exception))
+        self.post.assert_not_called()
 
 
 if __name__ == "__main__":

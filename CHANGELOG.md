@@ -8,7 +8,7 @@ result.
 
 ### Added
 
-- 182 methods generated from the OpenAPI spec (`codegen/openapi.json`) by
+- 180 methods generated from the OpenAPI spec (`codegen/openapi.json`) by
   `codegen/generate.py` (required fields are arguments, the rest `**params`):
   - Webhook subscriptions: `create_webhook_subscription`, `list_webhook_subscriptions`,
     `get_webhook_subscription`, `delete_webhook_subscription`, `test_webhook_subscription`.
@@ -30,8 +30,12 @@ result.
     detail, thumbnail and preview, resumable media uploads, `analyze_shorts`,
     `rewrite_captions`, `send_feedback`, `test_notifications`, Instagram / Threads
     publishing limits.
-  - Methods marked *not generally available* in their docstring answer HTTP 503
+  - Methods whose operation the spec marks `x-availability: not_generally_available`
+    say so in their docstring and in the README (generated methods and, in their
+    own table, the hand-written ones): they answer an error (usually HTTP 503)
     until the feature is switched on for the account.
+  - The six deprecated aliases of the spec (POST/PATCH copies of Google Business
+    routes the client already calls with the right verb) are left out on purpose.
 - Upload fields the API accepts and the client dropped: `reddit_title`,
   `exclude_reply_user_ids`, `telegram_allow_paid_broadcast`, `telegram_send_title`,
   `share_mode` (Instagram Trial Reels), `thumbnail` (YouTube, a local file),
@@ -41,6 +45,13 @@ result.
 - `UploadPostError.error_type` (the `error_type` of the answer, where the API sends one).
 
 ### Fixed
+
+- `first_comment_media` URLs: the API reads `first_comment_media[]` from uploaded
+  files only. A URL used to fail with "First comment media file not found"; now
+  `upload_video`, `upload_photos` and `upload_text` download it (a plain request,
+  without the API key) and send it as a file. A URL that cannot be downloaded
+  raises `UploadPostError` naming it, before the upload is sent. Local paths
+  work as before; bytes are accepted too.
 
 - `validate_jwt` always failed with HTTP 405: it sent a POST with the token in
   the body. It now sends the GET with `Authorization: Bearer <jwt>` the API

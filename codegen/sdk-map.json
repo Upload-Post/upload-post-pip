@@ -85,6 +85,7 @@
     "getGoogleBusinessGoogleUpdatedLocationInfo": "get_google_business_google_updates",
     "getGoogleBusinessGoogleUpdatedLodging": "get_google_business_lodging_google_updated",
     "getGoogleBusinessLocationInfo": "get_google_business_location_info",
+    "getGoogleBusinessLocations": "get_google_business_locations",
     "getGoogleBusinessLodging": "get_google_business_lodging",
     "getGoogleBusinessMedia": "get_google_business_media",
     "getGoogleBusinessPerformance": "get_google_business_performance",
@@ -137,7 +138,6 @@
     "listBlueskyActivitySubscriptions": "get_bluesky_activity_subscriptions",
     "listBlueskyDrafts": "list_bluesky_drafts",
     "listBlueskyNotifications": "get_bluesky_notifications",
-    "listGoogleBusinessAccountLocations": "list_google_business_locations",
     "listGoogleBusinessAccounts": "list_google_business_accounts",
     "listGoogleBusinessAdmins": "list_google_business_admins",
     "listGoogleBusinessAvailableAttributes": "get_google_business_available_attributes",
@@ -145,7 +145,7 @@
     "listGoogleBusinessCustomerMedia": "list_google_business_customer_media",
     "listGoogleBusinessInvitations": "list_google_business_invitations",
     "listGoogleBusinessLocationChoices": "get_google_business_pinned_location",
-    "listGoogleBusinessLocations": "get_google_business_locations",
+    "listGoogleBusinessLocations": "list_google_business_locations",
     "listGoogleBusinessMedia": "list_google_business_media",
     "listGoogleBusinessPlaceActionTypes": "get_google_business_place_action_types",
     "listGoogleBusinessPlaceActions": "list_google_business_place_actions",
@@ -287,14 +287,10 @@
     "updateGoogleBusinessAttributesPost": "Deprecated POST alias of PATCH /uploadposts/google-business/attributes; updateGoogleBusinessAttributes covers it.",
     "updateGoogleBusinessLocationInfoPost": "Deprecated POST alias of PATCH /uploadposts/google-business/location-info; updateGoogleBusinessLocationInfo covers it.",
     "deleteGoogleBusinessLocationPost": "Deprecated POST alias of DELETE /uploadposts/google-business/locations/delete; deleteGoogleBusinessLocation covers it.",
-    "replyToGoogleBusinessReviewPost": "Deprecated POST alias of PUT /uploadposts/google-business/reviews/reply; replyToGoogleBusinessReview covers it."
+    "replyToGoogleBusinessReviewPost": "Deprecated POST alias of PUT /uploadposts/google-business/reviews/reply; replyToGoogleBusinessReview covers it.",
+    "batchGetGoogleBusinessReviewsPost": "Deprecated POST alias of GET /uploadposts/google-business/reviews/batch; batchGetGoogleBusinessReviews covers it.",
+    "updateGoogleBusinessNotificationSettingsPatch": "Deprecated PATCH alias of PUT /uploadposts/google-business/notifications; updateGoogleBusinessNotificationSettings covers it."
   },
   "names": {},
-  "overrides": {
-    "getRedditDetailedPosts": {
-      "auth": "apikey",
-      "path": "/uploadposts/reddit/detailed-posts/",
-      "why": "The spec says BearerAuth and no trailing slash; the API authenticates it with the API key and the route ends in '/'. Same as the npm SDK."
-    }
-  }
+  "overrides": {}
 }
