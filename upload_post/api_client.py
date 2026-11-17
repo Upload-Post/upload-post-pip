@@ -1276,6 +1276,10 @@ class UploadPostClient:
 
         Returns:
             API response with request_id for async uploads.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails or video file not found.
@@ -1431,6 +1435,10 @@ class UploadPostClient:
 
         Returns:
             API response.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails or photo file not found.
@@ -1544,6 +1552,10 @@ class UploadPostClient:
 
         Returns:
             API response.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails.
@@ -1606,6 +1618,10 @@ class UploadPostClient:
 
         Returns:
             API response.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails or document file not found.
@@ -2191,11 +2207,14 @@ class UploadPostClient:
         """
         Create a new user/profile.
 
+        A username that already exists fails with 409 ("Username already in
+        use"); the profile limit of the plan with 403 ``PROFILE_LIMIT_REACHED``.
+
         Args:
             username: Profile name to create.
 
         Returns:
-            Created user.
+            ``{"success": True, "profile": {...}}``.
         """
         return self._request("/uploadposts/users", "POST", json_data={"username": username})
 
@@ -2223,7 +2242,8 @@ class UploadPostClient:
         connect_title: Optional[str] = None,
         connect_description: Optional[str] = None,
         language: Optional[str] = None,
-        ui_labels: Optional[Dict[str, str]] = None
+        ui_labels: Optional[Dict[str, str]] = None,
+        client_approval: Optional[bool] = None
     ) -> Dict:
         """
         Generate a JWT for platform integration.
@@ -2247,6 +2267,12 @@ class UploadPostClient:
                 e.g. {"connect.title": "Link your accounts"}. Max 100 entries; keys
                 must match ^[a-zA-Z0-9_.]+$ and values are strings of up to 300
                 characters. Echoed back in the 'profile' object of validate_jwt.
+            client_approval: Not generally available yet (post approvals). True
+                lets the end client approve or reject the pending posts of this
+                profile from the connect page (``list_client_post_approvals``,
+                ``approve_client_post_approval``, ``reject_client_post_approval``
+                with this JWT). Stored on the profile; generate again with False
+                to turn it off.
 
         Returns:
             JWT and connection URL.
@@ -2272,6 +2298,8 @@ class UploadPostClient:
             body["language"] = language
         if ui_labels:
             body["ui_labels"] = ui_labels
+        if client_approval is not None:
+            body["client_approval"] = client_approval
         return self._request("/uploadposts/users/generate-jwt", "POST", json_data=body)
 
     def validate_jwt(self, jwt: str) -> Dict:
@@ -2284,7 +2312,8 @@ class UploadPostClient:
         Returns:
             Validation result. The 'profile' object echoes back the connection
             page settings, including 'language' and any 'ui_labels' sent to
-            generate_jwt.
+            generate_jwt. While post approvals are on, 'client_approval' says
+            whether the end client may approve posts with this JWT.
         """
         # The API reads the token from the Authorization header, on a GET (a POST
         # with the token in the body was answered 405).
@@ -2403,11 +2432,20 @@ class UploadPostClient:
     # ==================== Teams ====================
 
     def list_team_members(self) -> Dict:
-        """Owner: the team members, with ``suspended`` / ``suspended_reason``."""
+        """Owner: the team members, with ``suspended`` / ``suspended_reason``.
+
+        With team roles on, each member also has ``role`` (admin, editor,
+        contributor, viewer) and ``profiles`` (``None`` = every profile).
+        Inviting members and changing roles is done by the owner in the
+        dashboard, not with the API key.
+        """
         return self._request("/uploadposts/teams/members", "GET")
 
     def list_shared_accounts(self) -> Dict:
-        """Member: the accounts shared with you (pass the owner's email as ``act_as_user``)."""
+        """Member: the accounts shared with you (pass the owner's email as ``act_as_user``).
+
+        With team roles on, each account also has your ``role`` and ``profiles`` there.
+        """
         return self._request("/uploadposts/teams/shared-with-me", "GET")
 
     # ==================== Webhook deliveries ====================
@@ -2633,6 +2671,9 @@ class UploadPostClient:
 
     def get_queue_settings(self, profile_username: str, **params) -> Dict:
         """Queue settings, including `slots_mode`, `auto_slots` and `effective_slots`.
+
+        ``configured`` is False while the queue of the profile was never saved
+        (``queue_settings`` then shows the defaults).
 
         Required: ``profile_username``. Any other API field goes in ``**params``
         with its API name. Docs: https://docs.upload-post.com/api/queue-system

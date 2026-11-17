@@ -185,7 +185,8 @@ client.cancel_scheduled("job-id")
 # List all profiles
 users = client.list_users()
 
-# Create a new profile
+# Create a new profile (409 "Username already in use" if it exists,
+# 403 PROFILE_LIMIT_REACHED at the plan's profile limit)
 client.create_user("new-profile")
 
 # Delete a profile
@@ -445,8 +446,9 @@ client.comment_action(
 
 One pair of methods for every messaging platform: `instagram`, `facebook`
 (Messenger), `whatsapp` and `bluesky`. `send_dm` also sends from your own
-Telegram bot (`platform="telegram"`) to people who started it; reading Telegram
-conversations is not available yet.
+Telegram bot (`platform="telegram"`) to people who started it, and
+`get_dm_conversations(platform="telegram", ...)` reads them once the bot's
+updates are turned on.
 
 ```python
 # Instagram: by the person's Instagram-scoped id, inside the 24-hour window
@@ -653,6 +655,40 @@ frees a seat.
 on the team and `suspended` / `suspended_reason`. Profile webhooks:
 `get_profile_webhook`, `set_profile_webhook`, `delete_profile_webhook`; also
 `delete_notification_webhook()` and `rotate_webhook_secret()`.
+
+### Roles and post approvals (not generally available yet)
+
+Team roles (admin, editor, contributor, viewer) and the approval queue are
+**not generally available yet**: while they are switched off the approval
+methods answer HTTP 503 (`post_approvals_disabled`) and every member acts as an
+Admin. The owner invites members and sets their role and profiles in the
+dashboard; that is not done with the API key. With the API you can read them:
+`get_team_roles()` (roles and your own), `list_team_members()` and
+`list_shared_accounts()` (each entry adds `role` and `profiles`, `None` = every
+profile) and `list_team_audit()` (owner and Admins).
+
+When an Editor uploads, the post is **not** published or scheduled: the upload
+answers HTTP 202 with `pending_approval: True`, `approval_id`,
+`approval_status: "pending_approval"` and `job_id: None` (a Contributor gets
+`approval_status: "draft"`). A reviewer (owner or Admin) decides:
+
+```python
+items = client.list_post_approvals(status="pending_approval")["items"]
+counts = client.list_post_approvals(count_only=True)  # {"counts": {...}, "total": n}
+
+item = client.get_post_approval(items[0]["approval_id"])["item"]
+# version is required: the item["version"] you reviewed (409 approval_version_changed otherwise)
+client.approve_post_approval(item["approval_id"], version=item["version"])
+# or: comment is required to reject
+client.reject_post_approval(item["approval_id"], comment="Fix the caption")
+```
+
+`edit_post_approval()` and `withdraw_post_approval()` change or withdraw an
+open item. The end client of a white-label profile can decide too: generate the
+profile JWT with `generate_jwt(username, client_approval=True)` and call
+`list_client_post_approvals(token)`, `approve_client_post_approval(token,
+approval_id, version)` or `reject_client_post_approval(token, approval_id,
+comment)` with that JWT instead of the API key.
 
 ## Post actions, best times, queue, Telegram, Bluesky and Google Business
 

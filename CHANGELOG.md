@@ -43,6 +43,13 @@ result.
   and on `upload_document` `platforms=["telegram"]` (default still LinkedIn only)
   with the Telegram fields.
 - `UploadPostError.error_type` (the `error_type` of the answer, where the API sends one).
+- `generate_jwt(..., client_approval=True|False)`: lets the end client approve
+  posts from the connect page (post approvals, not generally available yet).
+- Docs for the new answers: uploads by an Editor or Contributor team member
+  (HTTP 202 `pending_approval`, `approval_id`, `approval_status`), `role` /
+  `profiles` in `list_team_members` and `list_shared_accounts`, `configured` in
+  `get_queue_settings`, `client_approval` in `validate_jwt`. README: roles and
+  post approvals, and reading Telegram DMs (`get_dm_conversations`).
 
 ### Fixed
 
@@ -63,5 +70,6 @@ result.
   each method sends the HTTP method and path of its operation; the generated code
   is up to date with the spec.
 - `tests/test_upload_fields.py`: the uploads send every form field the spec gives them.
+- `tests/test_resource_endpoints.py`: `generate_jwt` sends every body field of the spec.
 - `.github/workflows/test.yml` runs the tests and the checks on every push and
   pull request.

@@ -239,5 +239,46 @@ class TestPublishFields(ClientTestCase):
         self.assertEqual(last["pinterest_sponsor_id"], "9")
 
 
+class TestGenerateJwt(ClientTestCase):
+    """generate_jwt builds its body from named arguments: one the API gains is dropped until added."""
+
+    def test_sends_every_body_field_of_the_spec(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "codegen", "openapi.json"), encoding="utf-8") as fh:
+            spec = json.load(fh)
+
+        def deref(node):
+            while isinstance(node, dict) and "$ref" in node:
+                target = spec
+                for part in node["$ref"][2:].split("/"):
+                    target = target[part]
+                node = target
+            return node
+
+        schema = deref(spec["paths"]["/uploadposts/users/generate-jwt"]["post"]["requestBody"]
+                       ["content"]["application/json"]["schema"])
+        samples = {"boolean": True, "array": ["tiktok"], "object": {"connect.title": "x"}}
+        kwargs = {}
+        for name, prop in schema["properties"].items():
+            if name != "username":
+                prop = deref(prop)
+                kwargs[name] = samples.get(prop.get("type"), (prop.get("enum") or ["x"])[0])
+        self.client.generate_jwt("p", **kwargs)
+        _, call = self.sent("POST")
+        for name in schema["properties"]:
+            self.assertIn(name, call["json"], f"generate_jwt drops {name}")
+
+    def test_client_approval_false_is_sent(self):
+        self.client.generate_jwt("p", client_approval=False)
+        _, call = self.sent("POST")
+        self.assertIs(call["json"]["client_approval"], False)
+
+    def test_validate_jwt_is_a_get_with_bearer(self):
+        self.client.validate_jwt("tok")
+        path, call = self.sent("GET")
+        self.assertEqual(path, "/uploadposts/users/validate-jwt")
+        self.assertEqual(call["headers"]["Authorization"], "Bearer tok")
+
+
 if __name__ == "__main__":
     unittest.main()
