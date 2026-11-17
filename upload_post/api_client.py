@@ -2243,7 +2243,8 @@ class UploadPostClient:
         connect_description: Optional[str] = None,
         language: Optional[str] = None,
         ui_labels: Optional[Dict[str, str]] = None,
-        client_approval: Optional[bool] = None
+        client_approval: Optional[bool] = None,
+        connect_theme: Optional[str] = None
     ) -> Dict:
         """
         Generate a JWT for platform integration.
@@ -2273,6 +2274,8 @@ class UploadPostClient:
                 ``approve_client_post_approval``, ``reject_client_post_approval``
                 with this JWT). Stored on the profile; generate again with False
                 to turn it off.
+            connect_theme: Force the connection page theme: 'light', 'dark', or
+                'auto' to follow the visitor's preference again.
 
         Returns:
             JWT and connection URL.
@@ -2300,6 +2303,8 @@ class UploadPostClient:
             body["ui_labels"] = ui_labels
         if client_approval is not None:
             body["client_approval"] = client_approval
+        if connect_theme is not None:
+            body["connect_theme"] = connect_theme
         return self._request("/uploadposts/users/generate-jwt", "POST", json_data=body)
 
     def validate_jwt(self, jwt: str) -> Dict:
