@@ -28,6 +28,7 @@ class UploadPostError(Exception):
       ``"comment_not_found"``, ``"webhook_removed"``).
     - ``response``: the decoded JSON body (``None`` if it was not JSON).
     - ``retry_after``: the ``Retry-After`` header in seconds, when present.
+    - ``error_type``: the ``error_type`` of the answer, when it has one.
     """
 
     def __init__(
@@ -39,6 +40,8 @@ class UploadPostError(Exception):
         retry_after: Optional[float] = None,
     ):
         super().__init__(message)
+        # error_type: the Google Business / Ads zones' kind of failure, when sent.
+        self.error_type: Optional[str] = None
         self.status_code = status_code
         self.error_code = error_code
         self.response = response
@@ -134,36 +137,44 @@ class UploadPostClient:
             return response.json()
             
         except requests.exceptions.RequestException as e:
-            error_msg = str(e)
-            status_code = error_code = error_data = retry_after = None
-            if hasattr(e, 'response') and e.response is not None:
-                status_code = getattr(e.response, "status_code", None)
-                try:
-                    error_data = e.response.json()
-                except ValueError:
-                    error_data = None
-                if isinstance(error_data, dict):
-                    error_msg = (error_data.get('message') or error_data.get('detail')
-                                 or error_data.get('error') or str(error_data))
-                    if not isinstance(error_msg, str):
-                        error_msg = str(error_msg)
-                    for key in ("error_code", "code", "reason"):
-                        if isinstance(error_data.get(key), str) and error_data[key]:
-                            error_code = error_data[key]
-                            break
-                headers = getattr(e.response, "headers", None) or {}
-                try:
-                    raw = headers.get("Retry-After")
-                    retry_after = float(raw) if raw not in (None, "") else None
-                except (TypeError, ValueError, AttributeError):
-                    retry_after = None
-            raise UploadPostError(
-                f"API request failed: {error_msg}",
-                status_code=status_code,
-                error_code=error_code,
-                response=error_data,
-                retry_after=retry_after,
-            ) from e
+            raise self._api_error(e) from e
+
+    @staticmethod
+    def _api_error(e: "requests.exceptions.RequestException") -> "UploadPostError":
+        """The UploadPostError for a failed request, with what the API answered."""
+        error_msg = str(e)
+        status_code = error_code = error_data = retry_after = None
+        if hasattr(e, 'response') and e.response is not None:
+            status_code = getattr(e.response, "status_code", None)
+            try:
+                error_data = e.response.json()
+            except ValueError:
+                error_data = None
+            if isinstance(error_data, dict):
+                error_msg = (error_data.get('message') or error_data.get('detail')
+                             or error_data.get('error') or str(error_data))
+                if not isinstance(error_msg, str):
+                    error_msg = str(error_msg)
+                for key in ("error_code", "code", "reason"):
+                    if isinstance(error_data.get(key), str) and error_data[key]:
+                        error_code = error_data[key]
+                        break
+            headers = getattr(e.response, "headers", None) or {}
+            try:
+                raw = headers.get("Retry-After")
+                retry_after = float(raw) if raw not in (None, "") else None
+            except (TypeError, ValueError, AttributeError):
+                retry_after = None
+        error = UploadPostError(
+            f"API request failed: {error_msg}",
+            status_code=status_code,
+            error_code=error_code,
+            response=error_data,
+            retry_after=retry_after,
+        )
+        if isinstance(error_data, dict) and isinstance(error_data.get("error_type"), str):
+            error.error_type = error_data["error_type"]
+        return error
 
     def _add_common_params(
         self,
@@ -306,6 +317,46 @@ class UploadPostClient:
             files.append((key, (path.name, fh)))
             return
         data.append((key, val))
+
+    def _add_first_comment_media(self, files: List[tuple], opened: List, items) -> None:
+        """Attach the first comment images (``first_comment_media[]``).
+
+        The API takes them as files only (a URL in that field was ignored), so
+        local paths are opened, bytes are sent as they are, and http(s) URLs are
+        downloaded here and sent as files. A URL that cannot be downloaded, or a
+        path that does not exist, raises UploadPostError instead of publishing
+        without the images.
+        """
+        if not items:
+            return
+        if isinstance(items, (str, Path, bytes, bytearray)):
+            items = [items]
+        for item in items:
+            if isinstance(item, (bytes, bytearray)):
+                files.append(("first_comment_media[]", ("image.jpg", bytes(item))))
+                continue
+            value = str(item)
+            if value.lower().startswith(("http://", "https://")):
+                try:
+                    # Plain request, not the session: the API key must not go to another host.
+                    response = requests.get(value, timeout=60)
+                    response.raise_for_status()
+                except requests.exceptions.RequestException as e:
+                    raise UploadPostError(
+                        f"Could not download first_comment_media {value} ({e}). The API takes "
+                        "first comment images as files: pass a local path or bytes instead."
+                    ) from e
+                name = os.path.basename(value.split("?", 1)[0].rstrip("/")) or "image.jpg"
+                content_type = (response.headers.get("Content-Type") or "").split(";")[0] or None
+                part = (name, response.content, content_type) if content_type else (name, response.content)
+                files.append(("first_comment_media[]", part))
+                continue
+            p = Path(value)
+            if not p.exists():
+                raise UploadPostError(f"First comment media file not found: {item}")
+            f = open(p, "rb")
+            opened.append(f)
+            files.append(("first_comment_media[]", (p.name, f)))
 
     def _add_all_platform_params(
         self,
@@ -455,6 +506,14 @@ class UploadPostClient:
         if is_video:
             if kwargs.get("share_to_feed") is not None:
                 data.append(("share_to_feed", str(kwargs["share_to_feed"]).lower()))
+            # Trial Reels: TRIAL_REELS_SHARE_TO_FOLLOWERS_IF_LIKED or TRIAL_REELS_DONT_SHARE_TO_FOLLOWERS.
+            self._put(data, "share_mode", kwargs.get("share_mode"))
+            # The Reels cover as a local file (cover_url takes a URL or a path too).
+            cover_image = kwargs.get("cover_image")
+            if cover_image and files is not None:
+                cover_path = Path(str(cover_image))
+                if cover_path.is_file():
+                    files.append(("cover_image", (cover_path.name, cover_path.open("rb"))))
             if kwargs.get("cover_url"):
                 cover_val = str(kwargs["cover_url"])
                 if cover_val.lower().startswith(("http://", "https://")):
@@ -494,6 +553,12 @@ class UploadPostClient:
             data.append(("publicStatsViewable", str(kwargs["publicStatsViewable"]).lower()))
         if kwargs.get("thumbnail_url"):
             data.append(("thumbnail_url", kwargs["thumbnail_url"]))
+        # Custom thumbnail as a local file (thumbnail_url takes a URL).
+        thumbnail = kwargs.get("thumbnail")
+        if thumbnail and files is not None:
+            thumb_path = Path(str(thumbnail))
+            if thumb_path.is_file():
+                files.append(("thumbnail", (thumb_path.name, thumb_path.open("rb"))))
         if kwargs.get("selfDeclaredMadeForKids") is not None:
             data.append(("selfDeclaredMadeForKids", str(kwargs["selfDeclaredMadeForKids"]).lower()))
         if kwargs.get("containsSyntheticMedia") is not None:
@@ -687,6 +752,8 @@ class UploadPostClient:
             data.append(("direct_message_deep_link", kwargs["direct_message_deep_link"]))
         if kwargs.get("x_long_text_as_post") is not None:
             data.append(("x_long_text_as_post", str(kwargs["x_long_text_as_post"]).lower()))
+        # Users who may not reply (with reply_to_id): a list, or comma-separated.
+        self._put(data, "exclude_reply_user_ids", kwargs.get("exclude_reply_user_ids"), "list")
         
         if not is_text:
             if kwargs.get("tagged_user_ids"):
@@ -779,6 +846,7 @@ class UploadPostClient:
             ("reddit_resubmit", "bool"),
             ("reddit_send_replies", "bool"),
             ("reddit_flair_text", "str"),
+            ("reddit_title", "str"),
             ("reddit_gallery_captions", "list"),
             ("reddit_gallery_urls", "list"),
         ))
@@ -950,6 +1018,8 @@ class UploadPostClient:
             ("telegram_duration", "str"),
             ("telegram_length", "str"),
             ("telegram_emoji", "str"),
+            ("telegram_allow_paid_broadcast", "bool"),
+            ("telegram_send_title", "bool"),
         ))
 
     def _add_mastodon_params(self, data: List[tuple], **kwargs):
@@ -1206,6 +1276,10 @@ class UploadPostClient:
 
         Returns:
             API response with request_id for async uploads.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails or video file not found.
@@ -1231,6 +1305,9 @@ class UploadPostClient:
                 data, platforms, is_video=True, is_text=False,
                 files=files, opened=opened_files, **kwargs,
             )
+
+            # Images for the first comment (Reddit), as on photos and text posts.
+            self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
             return self._request("/upload", "POST", data=data, files=files if files else None)
             
@@ -1352,11 +1429,16 @@ class UploadPostClient:
                 gbp_topic_type: STANDARD, EVENT or OFFER
                 gbp_cta_type / gbp_cta_url: Call-to-action button
 
-            first_comment_media: List of file paths to attach as images in
+            first_comment_media: Local paths, bytes or URLs (downloaded and sent as
+                files) of images to attach in
                 the first comment. Supported on Reddit and X.
 
         Returns:
             API response.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails or photo file not found.
@@ -1384,15 +1466,7 @@ class UploadPostClient:
                 files=files, opened=opened_files, **kwargs,
             )
 
-            first_comment_media = kwargs.get("first_comment_media")
-            if first_comment_media:
-                for media_path in first_comment_media:
-                    p = Path(media_path)
-                    if not p.exists():
-                        raise UploadPostError(f"First comment media file not found: {media_path}")
-                    f = open(p, "rb")
-                    opened_files.append(f)
-                    files.append(("first_comment_media[]", (p.name, f)))
+            self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
             return self._request("/upload_photos", "POST", data=data, files=files if files else None)
 
@@ -1472,11 +1546,16 @@ class UploadPostClient:
                     gbp_event_end_date / gbp_event_end_time: Used with EVENT
                 gbp_offer_coupon / gbp_offer_redeem_url / gbp_offer_terms: Used with OFFER
 
-            first_comment_media: List of file paths to attach as images in
+            first_comment_media: Local paths, bytes or URLs (downloaded and sent as
+                files) of images to attach in
                 the first comment. Supported on Reddit and X.
 
         Returns:
             API response.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails.
@@ -1496,15 +1575,7 @@ class UploadPostClient:
             files=files, opened=opened_files, **kwargs,
         )
 
-        first_comment_media = kwargs.get("first_comment_media")
-        if first_comment_media:
-            for media_path in first_comment_media:
-                p = Path(media_path)
-                if not p.exists():
-                    raise UploadPostError(f"First comment media file not found: {media_path}")
-                f = open(p, "rb")
-                opened_files.append(f)
-                files.append(("first_comment_media[]", (p.name, f)))
+        self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
         try:
             return self._request("/upload_text", "POST", data=data, files=files if files else None)
@@ -1541,10 +1612,16 @@ class UploadPostClient:
             add_to_queue: Add to posting queue.
             async_upload: Process asynchronously.
             **kwargs: Extra LinkedIn form fields (linkedin_disable_reshare,
-                linkedin_visibility, targeting, …).
+                linkedin_visibility, targeting, …). ``platforms=["telegram"]``
+                (or ``["linkedin", "telegram"]``) sends the file to Telegram as
+                well, with the ``telegram_*`` fields of upload_video.
 
         Returns:
             API response.
+            Team roles and post approvals (not generally available yet): for an
+            Editor or Contributor team member the post is not published; the
+            answer (HTTP 202) has ``pending_approval: True``, ``approval_id``,
+            ``approval_status`` ("pending_approval" or "draft") and ``job_id: None``.
 
         Raises:
             UploadPostError: If upload fails or document file not found.
@@ -1567,7 +1644,11 @@ class UploadPostClient:
             
             data.append(("user", user))
             data.append(("title", title))
-            data.append(("platform[]", "linkedin"))
+            # LinkedIn by default; platforms=["telegram"] (or both) sends the file
+            # to Telegram too. Other platforms do not take documents.
+            doc_platforms = [p for p in (kwargs.get("platforms") or []) if p in ("linkedin", "telegram")]
+            for platform in doc_platforms or ["linkedin"]:
+                data.append(("platform[]", platform))
             
             if description:
                 data.append(("description", description))
@@ -1586,6 +1667,9 @@ class UploadPostClient:
             self._add_linkedin_params(
                 data, files=files, opened=opened_files, **kwargs
             )
+            if "telegram" in doc_platforms:
+                self._add_telegram_params(data, files=files, opened=opened_files, **kwargs)
+                self._put(data, "telegram_first_comment", kwargs.get("telegram_first_comment"))
             
             return self._request("/upload_document", "POST", data=data, files=files if files else None)
             
@@ -2123,11 +2207,14 @@ class UploadPostClient:
         """
         Create a new user/profile.
 
+        A username that already exists fails with 409 ("Username already in
+        use"); the profile limit of the plan with 403 ``PROFILE_LIMIT_REACHED``.
+
         Args:
             username: Profile name to create.
 
         Returns:
-            Created user.
+            ``{"success": True, "profile": {...}}``.
         """
         return self._request("/uploadposts/users", "POST", json_data={"username": username})
 
@@ -2155,7 +2242,9 @@ class UploadPostClient:
         connect_title: Optional[str] = None,
         connect_description: Optional[str] = None,
         language: Optional[str] = None,
-        ui_labels: Optional[Dict[str, str]] = None
+        ui_labels: Optional[Dict[str, str]] = None,
+        client_approval: Optional[bool] = None,
+        connect_theme: Optional[str] = None
     ) -> Dict:
         """
         Generate a JWT for platform integration.
@@ -2179,6 +2268,14 @@ class UploadPostClient:
                 e.g. {"connect.title": "Link your accounts"}. Max 100 entries; keys
                 must match ^[a-zA-Z0-9_.]+$ and values are strings of up to 300
                 characters. Echoed back in the 'profile' object of validate_jwt.
+            client_approval: Not generally available yet (post approvals). True
+                lets the end client approve or reject the pending posts of this
+                profile from the connect page (``list_client_post_approvals``,
+                ``approve_client_post_approval``, ``reject_client_post_approval``
+                with this JWT). Stored on the profile; generate again with False
+                to turn it off.
+            connect_theme: Force the connection page theme: 'light', 'dark', or
+                'auto' to follow the visitor's preference again.
 
         Returns:
             JWT and connection URL.
@@ -2204,6 +2301,10 @@ class UploadPostClient:
             body["language"] = language
         if ui_labels:
             body["ui_labels"] = ui_labels
+        if client_approval is not None:
+            body["client_approval"] = client_approval
+        if connect_theme is not None:
+            body["connect_theme"] = connect_theme
         return self._request("/uploadposts/users/generate-jwt", "POST", json_data=body)
 
     def validate_jwt(self, jwt: str) -> Dict:
@@ -2216,9 +2317,20 @@ class UploadPostClient:
         Returns:
             Validation result. The 'profile' object echoes back the connection
             page settings, including 'language' and any 'ui_labels' sent to
-            generate_jwt.
+            generate_jwt. While post approvals are on, 'client_approval' says
+            whether the end client may approve posts with this JWT.
         """
-        return self._request("/uploadposts/users/validate-jwt", "POST", json_data={"jwt": jwt})
+        # The API reads the token from the Authorization header, on a GET (a POST
+        # with the token in the body was answered 405).
+        try:
+            response = self.session.get(
+                f"{self.BASE_URL}/uploadposts/users/validate-jwt",
+                headers={"Authorization": f"Bearer {jwt}"},
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            raise self._api_error(e) from e
 
     def get_user_preferences(self) -> Dict:
         """
@@ -2325,11 +2437,20 @@ class UploadPostClient:
     # ==================== Teams ====================
 
     def list_team_members(self) -> Dict:
-        """Owner: the team members, with ``suspended`` / ``suspended_reason``."""
+        """Owner: the team members, with ``suspended`` / ``suspended_reason``.
+
+        With team roles on, each member also has ``role`` (admin, editor,
+        contributor, viewer) and ``profiles`` (``None`` = every profile).
+        Inviting members and changing roles is done by the owner in the
+        dashboard, not with the API key.
+        """
         return self._request("/uploadposts/teams/members", "GET")
 
     def list_shared_accounts(self) -> Dict:
-        """Member: the accounts shared with you (pass the owner's email as ``act_as_user``)."""
+        """Member: the accounts shared with you (pass the owner's email as ``act_as_user``).
+
+        With team roles on, each account also has your ``role`` and ``profiles`` there.
+        """
         return self._request("/uploadposts/teams/shared-with-me", "GET")
 
     # ==================== Webhook deliveries ====================
@@ -2555,6 +2676,9 @@ class UploadPostClient:
 
     def get_queue_settings(self, profile_username: str, **params) -> Dict:
         """Queue settings, including `slots_mode`, `auto_slots` and `effective_slots`.
+
+        ``configured`` is False while the queue of the profile was never saved
+        (``queue_settings`` then shows the defaults).
 
         Required: ``profile_username``. Any other API field goes in ``**params``
         with its API name. Docs: https://docs.upload-post.com/api/queue-system
@@ -5122,3 +5246,4087 @@ class UploadPostClient:
                 "gbp_location_id on the upload, or pin_google_business_location(profile, location_id)."
             )
         return self.pin_google_business_location(profile, location_id)
+
+    # ==================== Generated from the OpenAPI spec ====================
+    #
+    # One method per API operation that has no hand-written method above. Written
+    # by codegen/generate.py from codegen/openapi.json: do not edit by hand, edit
+    # the spec (or codegen/sdk-map.json) and run `python3 codegen/generate.py`.
+
+    def _op(self, operation_id: str, params: Dict, **args) -> Any:
+        """Run one operation of the OpenAPI spec (behind every generated method).
+
+        Keywords go by their API name: path parameters into the URL, query
+        parameters into the query string and the rest into the JSON body. A file
+        field given as a local path, bytes or an open file turns the body into
+        multipart/form-data. ``None`` values are not sent.
+        """
+        method, route, meta = self._OPENAPI_OPERATIONS[operation_id]
+        body = {k: v for k, v in params.items() if v is not None}
+        body.update({k: v for k, v in args.items() if v is not None})
+        headers = {}
+        if meta.get("bearer"):
+            token = body.pop("token", None)
+            if not token:
+                raise UploadPostError("token (the profile JWT) is required")
+            headers["Authorization"] = f"Bearer {token}"
+        endpoint = route
+        for name in re.findall(r"\{(\w+)\}", route):
+            value = body.pop(name, None)
+            if value is None or value == "":
+                raise UploadPostError(f"{name} is required")
+            endpoint = endpoint.replace("{%s}" % name, quote(str(value), safe=""))
+        query = {}
+        for key in list(body):
+            if method == "GET" or key in meta.get("q", ()) or (method == "DELETE" and not meta.get("b")):
+                query[key] = self._query_value(body.pop(key))
+
+        kwargs: Dict[str, Any] = {"params": query or None}
+        if headers:
+            kwargs["headers"] = headers
+        opened: List = []
+        try:
+            if method != "GET" and (body or meta.get("b") or method in ("POST", "PUT", "PATCH")):
+                files: List[tuple] = []
+                file_fields = set(meta.get("f", ())) | self._FILE_FIELDS
+                for key in list(body):
+                    if key not in file_fields:
+                        continue
+                    values = body[key] if isinstance(body[key], (list, tuple)) else [body[key]]
+                    parts = []
+                    for value in values:
+                        if isinstance(value, (bytes, bytearray)):
+                            parts.append((key, (key.rstrip("[]") or key, bytes(value))))
+                        elif hasattr(value, "read"):
+                            parts.append((key, (os.path.basename(getattr(value, "name", key)) or key, value)))
+                        elif isinstance(value, (str, Path)) and not str(value).lower().startswith(("http://", "https://")) \
+                                and Path(value).is_file():
+                            fh = Path(value).open("rb")
+                            opened.append(fh)
+                            parts.append((key, (Path(value).name, fh)))
+                        else:
+                            parts = None
+                            break
+                    if parts:
+                        files.extend(parts)
+                        body.pop(key)
+                if files or meta.get("mp"):
+                    kwargs["data"] = [(k, self._form_value(v)) for k, v in body.items()]
+                    kwargs["files"] = files or None
+                elif body or method != "DELETE":
+                    kwargs["json"] = body
+            response = self.session.request(method, f"{self.BASE_URL}{endpoint}", **kwargs)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise self._api_error(e) from e
+        finally:
+            for fh in opened:
+                fh.close()
+        if meta.get("raw") == "binary":
+            return response.content
+        if meta.get("raw") == "text":
+            return response.text
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError as e:
+            raise UploadPostError(f"API answered something that is not JSON: {response.text[:200]}",
+                                  status_code=response.status_code) from e
+
+    # Operations behind the generated methods: operationId -> (HTTP method, path,
+    # details). Details: q = query parameters, b = body fields, f = file fields,
+    # mp = multipart only, bearer = profile JWT instead of the API key, raw = the
+    # answer is a file, na = not generally available yet (HTTP 503 until on).
+    # <openapi:methods>
+    _OPENAPI_OPERATIONS = {
+        "sendTelegramGift": ("POST", "/uploadposts/telegram/gifts", {"b": ["user", "user_id", "chat_id", "gift_id", "max_star_count", "pay_for_upgrade", "text", "text_parse_mode", "text_entities", "confirm", "idempotency_key"], "na": True}),
+        "giftTelegramPremium": ("POST", "/uploadposts/telegram/gifts/premium", {"b": ["user", "user_id", "month_count", "star_count", "text", "confirm", "idempotency_key"], "na": True}),
+        "getTelegramPaymentSettings": ("GET", "/uploadposts/telegram/payments/settings", {"q": ["user"]}),
+        "updateTelegramPaymentSettings": ("PUT", "/uploadposts/telegram/payments/settings", {"b": ["user", "pre_checkout", "max_total_amount", "allowed_payload_prefixes", "error_message", "shipping", "shipping_options", "shipping_countries", "only_upload_post_invoices", "confirm"]}),
+        "setTelegramUpdates": ("POST", "/uploadposts/telegram/updates", {"b": ["user", "enabled", "replace_existing_webhook", "forward_url", "business_chats", "auto_answer_callbacks", "extra_updates"], "na": True}),
+        "answerTelegramQuery": ("POST", "/uploadposts/telegram/answer", {"b": ["user", "type", "query_id", "text", "show_alert", "url", "cache_time", "results", "is_personal", "next_offset", "button", "result", "web_app_url", "data", "ok", "shipping_options", "error_message"]}),
+        "getTelegramBusinessConnections": ("GET", "/uploadposts/telegram/business-connections", {"q": ["user", "business_connection_id"], "na": True}),
+        "getTelegramBusinessProfile": ("GET", "/uploadposts/telegram/business-profile", {"q": ["user", "business_connection_id"], "na": True}),
+        "updateTelegramBusinessProfile": ("PATCH", "/uploadposts/telegram/business-profile", {"b": ["user", "business_connection_id", "first_name", "last_name", "username", "bio", "media_url", "is_public", "remove_photo", "gift_settings"], "na": True}),
+        "postTelegramStory": ("POST", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"], "na": True}),
+        "editTelegramStory": ("PATCH", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"], "na": True}),
+        "deleteTelegramStory": ("DELETE", "/uploadposts/telegram/business-stories", {"b": ["user", "business_connection_id", "media_url", "active_period", "caption", "parse_mode", "caption_entities", "areas", "post_to_chat_page", "protect_content", "story_id"], "na": True}),
+        "repostTelegramStory": ("POST", "/uploadposts/telegram/business-stories/repost", {"b": ["user", "business_connection_id", "from_chat_id", "from_story_id", "active_period", "post_to_chat_page", "protect_content"], "na": True}),
+        "getTelegramBusinessGifts": ("GET", "/uploadposts/telegram/business-gifts", {"q": ["user", "business_connection_id"], "na": True}),
+        "manageTelegramBusinessGift": ("POST", "/uploadposts/telegram/business-gifts", {"b": ["user", "business_connection_id", "action", "owned_gift_id", "confirm", "keep_original_details", "star_count", "idempotency_key", "new_owner_chat_id"], "na": True}),
+        "getTelegramBusinessStars": ("GET", "/uploadposts/telegram/business-stars", {"q": ["user", "business_connection_id"], "na": True}),
+        "transferTelegramBusinessStars": ("POST", "/uploadposts/telegram/business-stars/transfer", {"b": ["user", "business_connection_id", "star_count", "idempotency_key", "confirm"], "na": True}),
+        "analyzeShorts": ("POST", "/uploadposts/analyze-shorts", {"b": ["video", "platforms", "language"], "f": ["video"], "mp": True}),
+        "rewriteCaptions": ("POST", "/uploadposts/rewrite-captions", {"b": ["content", "language", "platforms"]}),
+        "createMediaUpload": ("POST", "/uploadposts/media-uploads", {"b": ["media_type", "filename", "content_type", "content_length", "source"]}),
+        "completeMediaUpload": ("POST", "/uploadposts/media-uploads/{upload_id}/complete", {}),
+        "getMediaUpload": ("GET", "/uploadposts/media-uploads/{upload_id}", {"q": ["include_url"]}),
+        "deleteMediaUpload": ("DELETE", "/uploadposts/media-uploads/{upload_id}", {}),
+        "getScheduledPost": ("GET", "/uploadposts/schedule/{job_id}", {}),
+        "getScheduledPostThumbnail": ("GET", "/uploadposts/schedule/{job_id}/thumbnail", {}),
+        "getScheduledPostPreview": ("GET", "/uploadposts/schedule/{job_id}/preview", {}),
+        "createPinterestBoard": ("POST", "/uploadposts/pinterest/boards", {"q": ["profile", "user"], "b": ["user", "name", "description", "privacy", "profile"]}),
+        "queryYoutubeAnalytics": ("GET", "/uploadposts/youtube/analytics/query", {"q": ["user", "start_date", "end_date", "metrics", "dimensions", "filters", "sort", "max_results", "start_index", "report"], "na": True}),
+        "listYoutubeAnalyticsReports": ("GET", "/uploadposts/youtube/analytics/reports", {"q": ["user"], "na": True}),
+        "listYoutubeAnalyticsGroups": ("GET", "/uploadposts/youtube/analytics/groups", {"q": ["user", "ids", "page_token"], "na": True}),
+        "listYoutubeAnalyticsGroupItems": ("GET", "/uploadposts/youtube/analytics/groups/{group_id}/items", {"q": ["user"], "na": True}),
+        "getYoutubeAnalyticsUsage": ("GET", "/uploadposts/youtube/analytics/usage", {"na": True}),
+        "listYoutubeReportTypes": ("GET", "/uploadposts/youtube/reporting/report-types", {"q": ["user", "page_token", "page_size"], "na": True}),
+        "listYoutubeReportingJobs": ("GET", "/uploadposts/youtube/reporting/jobs", {"q": ["user", "page_token", "page_size"], "na": True}),
+        "createYoutubeReportingJob": ("POST", "/uploadposts/youtube/reporting/jobs", {"b": ["user", "report_type_id", "name"], "na": True}),
+        "getYoutubeReportingJob": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}", {"q": ["user"], "na": True}),
+        "deleteYoutubeReportingJob": ("DELETE", "/uploadposts/youtube/reporting/jobs/{job_id}", {"b": ["user", "confirm"], "na": True}),
+        "listYoutubeReports": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports", {"q": ["user", "created_after", "start_time_at_or_after", "start_time_before", "page_token", "page_size"], "na": True}),
+        "getYoutubeReport": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}", {"q": ["user"], "na": True}),
+        "downloadYoutubeReport": ("GET", "/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}/download", {"q": ["user"], "raw": 'text', "na": True}),
+        "getYoutubePush": ("GET", "/uploadposts/youtube/push", {"q": ["user"], "na": True}),
+        "enableYoutubePush": ("POST", "/uploadposts/youtube/push", {"b": ["user"], "na": True}),
+        "disableYoutubePush": ("DELETE", "/uploadposts/youtube/push", {"b": ["user"], "na": True}),
+        "getInstagramPublishingLimit": ("GET", "/uploadposts/instagram/publishing_limit", {"q": ["profile", "refresh"]}),
+        "getThreadsPublishingLimit": ("GET", "/uploadposts/threads/publishing_limit", {"q": ["user", "profile", "refresh"]}),
+        "listPinterestBoardSections": ("GET", "/uploadposts/pinterest/boards/{board_id}/sections", {"q": ["profile"]}),
+        "createPinterestBoardSection": ("POST", "/uploadposts/pinterest/boards/{board_id}/sections", {"q": ["profile", "user"], "b": ["user", "name", "profile"]}),
+        "getFacebookPageInfo": ("GET", "/uploadposts/facebook/page-info", {"q": ["user", "page_id"]}),
+        "updateFacebookPageInfo": ("PATCH", "/uploadposts/facebook/page-info", {"b": ["user", "page_id", "validate_only", "about", "description", "website", "phone", "emails", "hours", "picture_url", "cover_url"]}),
+        "listRedditSubreddits": ("GET", "/uploadposts/reddit/subreddits", {"q": ["profile"]}),
+        "getRedditPostTypes": ("GET", "/uploadposts/reddit/post-types", {"q": ["profile", "subreddit"]}),
+        "listRedditFlairs": ("GET", "/uploadposts/reddit/flairs", {"q": ["profile", "subreddit"]}),
+        "getRedditDetailedPosts": ("GET", "/uploadposts/reddit/detailed-posts/", {"q": ["profile_username"]}),
+        "getUserProfile": ("GET", "/uploadposts/users/{username}", {}),
+        "renameUserProfile": ("PATCH", "/uploadposts/users/{username}", {"b": ["display_name"]}),
+        "disconnectSocialAccount": ("DELETE", "/uploadposts/users/social", {"b": ["profile_username", "social_platform"]}),
+        "connectDiscordCredentials": ("POST", "/uploadposts/users/discord/credentials", {"b": ["profile_username", "webhook_url", "name"]}),
+        "connectTelegramCredentials": ("POST", "/uploadposts/users/telegram/credentials", {"b": ["profile_username", "bot_token", "chat_id", "receive_updates", "replace_existing_webhook", "forward_url", "auto_answer_callbacks", "extra_updates", "name"]}),
+        "connectSlackCredentials": ("POST", "/uploadposts/users/slack/credentials", {"b": ["profile_username", "webhook_url", "name"]}),
+        "connectMastodonCredentials": ("POST", "/uploadposts/users/mastodon/credentials", {"b": ["profile_username", "instance_url", "access_token", "name"]}),
+        "connectNostrCredentials": ("POST", "/uploadposts/users/nostr/credentials", {"b": ["profile_username", "private_key", "relays", "name"]}),
+        "connectLemmyCredentials": ("POST", "/uploadposts/users/lemmy/credentials", {"b": ["profile_username", "instance_url", "username", "password", "community", "name"]}),
+        "connectDevToCredentials": ("POST", "/uploadposts/users/devto/credentials", {"b": ["profile_username", "api_key", "name"]}),
+        "connectHashnodeCredentials": ("POST", "/uploadposts/users/hashnode/credentials", {"b": ["profile_username", "pat", "publication_id", "name"]}),
+        "connectWordPressCredentials": ("POST", "/uploadposts/users/wordpress/credentials", {"b": ["profile_username", "site_url", "username", "application_password", "name"]}),
+        "connectWhopCredentials": ("POST", "/uploadposts/users/whop/credentials", {"b": ["profile_username", "api_key", "experience_id", "name"]}),
+        "connectListmonkCredentials": ("POST", "/uploadposts/users/listmonk/credentials", {"b": ["profile_username", "instance_url", "username", "password", "list_id", "name"]}),
+        "listFacebookPageChoices": ("GET", "/uploadposts/users/facebook-page", {"q": ["profile_username"]}),
+        "setFacebookPage": ("POST", "/uploadposts/users/facebook-page", {"b": ["profile_username", "facebook_page_id"]}),
+        "clearFacebookPage": ("DELETE", "/uploadposts/users/facebook-page", {"b": ["profile_username"]}),
+        "listLinkedInPageChoices": ("GET", "/uploadposts/users/linkedin-page", {"q": ["profile_username"]}),
+        "setLinkedInPage": ("POST", "/uploadposts/users/linkedin-page", {"b": ["profile_username", "linkedin_page_id"]}),
+        "clearLinkedInPage": ("DELETE", "/uploadposts/users/linkedin-page", {"b": ["profile_username"]}),
+        "connectBlueskyCredentials": ("POST", "/uploadposts/users/bluesky/credentials", {"b": ["profile_username", "handle", "password"]}),
+        "setYoutubeOAuthClient": ("POST", "/uploadposts/users/youtube/credentials", {"b": ["profile_username", "client_id", "client_secret"]}),
+        "getCurrentUser": ("GET", "/uploadposts/me", {}),
+        "startOAuthConnection": ("POST", "/uploadposts/oauth/{platform}/start", {"b": ["profile", "redirect_url"]}),
+        "createFfmpegJob": ("POST", "/uploadposts/ffmpeg/jobs/upload", {"b": ["files", "full_command", "output_extension", "publish", "file", "file1", "file2"], "f": ["file", "file1", "file2"]}),
+        "getFfmpegJobStatus": ("GET", "/uploadposts/ffmpeg/jobs/{job_id}", {}),
+        "downloadFfmpegResult": ("GET", "/uploadposts/ffmpeg/jobs/{job_id}/download", {"raw": 'binary'}),
+        "getFfmpegConsumption": ("GET", "/uploadposts/ffmpeg/consumption", {}),
+        "listWebhookSubscriptions": ("GET", "/uploadposts/webhooks/subscriptions", {"q": ["status", "source", "url"], "na": True}),
+        "createWebhookSubscription": ("POST", "/uploadposts/webhooks/subscriptions", {"b": ["url", "events", "profile_username", "source", "name"], "na": True}),
+        "getWebhookSubscription": ("GET", "/uploadposts/webhooks/subscriptions/{subscription_id}", {"na": True}),
+        "deleteWebhookSubscription": ("DELETE", "/uploadposts/webhooks/subscriptions/{subscription_id}", {"na": True}),
+        "testWebhookSubscription": ("POST", "/uploadposts/webhooks/subscriptions/{subscription_id}/test", {"b": ["event"], "na": True}),
+        "testNotifications": ("POST", "/uploadposts/users/notifications/test", {"b": ["platform", "media_type", "title", "caption", "profile_username", "message", "result"]}),
+        "deleteCommentPost": ("POST", "/uploadposts/comments/delete", {"b": ["platform", "user", "comment_id", "post_id"]}),
+        "deleteBlueskyChatAccount": ("POST", "/uploadposts/dms/bluesky/account/delete", {"b": ["user", "confirm", "confirm_handle"], "na": True}),
+        "listBlueskyMutualGroups": ("GET", "/uploadposts/dms/bluesky/groups", {"q": ["user", "subject", "limit", "cursor"], "na": True}),
+        "createBlueskyGroup": ("POST", "/uploadposts/dms/bluesky/groups", {"b": ["user", "name", "members", "idempotency_key"], "na": True}),
+        "editBlueskyGroup": ("PATCH", "/uploadposts/dms/bluesky/groups/{conversation_id}", {"b": ["user", "name", "locked"], "na": True}),
+        "listBlueskyGroupMembers": ("GET", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"q": ["user"], "na": True}),
+        "addBlueskyGroupMembers": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"b": ["user", "members"], "na": True}),
+        "removeBlueskyGroupMembers": ("DELETE", "/uploadposts/dms/bluesky/groups/{conversation_id}/members", {"b": ["user", "members"], "na": True}),
+        "manageBlueskyJoinLink": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-link", {"b": ["user", "action", "require_approval", "join_rule"], "na": True}),
+        "listBlueskyJoinRequests": ("GET", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests", {"q": ["user"], "na": True}),
+        "answerBlueskyJoinRequest": ("POST", "/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests", {"b": ["user", "action", "member"], "na": True}),
+        "previewBlueskyJoinLinks": ("GET", "/uploadposts/dms/bluesky/join-links", {"q": ["user", "codes"], "na": True}),
+        "joinBlueskyGroup": ("POST", "/uploadposts/dms/bluesky/join-links", {"b": ["user", "code"], "na": True}),
+        "downloadDmMedia": ("GET", "/uploadposts/dms/media", {"q": ["platform", "user", "media_id"], "raw": 'binary'}),
+        "blueskyGraphAction": ("POST", "/uploadposts/bluesky/graph", {"b": ["user", "action", "actor", "list", "post_id", "only_reposts", "only_quoteposts"], "na": True}),
+        "listBlueskyLists": ("GET", "/uploadposts/bluesky/lists", {"q": ["user", "purposes", "cursor"], "na": True}),
+        "createBlueskyList": ("POST", "/uploadposts/bluesky/lists", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"], "na": True}),
+        "getBlueskyList": ("GET", "/uploadposts/bluesky/lists/{list_id}", {"q": ["user"], "na": True}),
+        "updateBlueskyList": ("PATCH", "/uploadposts/bluesky/lists/{list_id}", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"], "na": True}),
+        "deleteBlueskyList": ("DELETE", "/uploadposts/bluesky/lists/{list_id}", {"b": ["user", "confirm"], "na": True}),
+        "listBlueskyListMembers": ("GET", "/uploadposts/bluesky/lists/{list_id}/members", {"q": ["user"], "na": True}),
+        "addBlueskyListMember": ("POST", "/uploadposts/bluesky/lists/{list_id}/members", {"b": ["user", "actor"], "na": True}),
+        "removeBlueskyListMember": ("DELETE", "/uploadposts/bluesky/lists/{list_id}/members", {"b": ["user", "actor"], "na": True}),
+        "optOutBlueskyList": ("POST", "/uploadposts/bluesky/lists/opt-out", {"b": ["user", "list"], "na": True}),
+        "removeOptOutBlueskyList": ("DELETE", "/uploadposts/bluesky/lists/opt-out", {"b": ["user", "list"], "na": True}),
+        "listBlueskyStarterPacks": ("GET", "/uploadposts/bluesky/starter-packs", {"q": ["user"], "na": True}),
+        "createBlueskyStarterPack": ("POST", "/uploadposts/bluesky/starter-packs", {"b": ["user", "name", "description", "feeds", "list", "members"], "na": True}),
+        "getBlueskyStarterPack": ("GET", "/uploadposts/bluesky/starter-packs/{pack_id}", {"q": ["user"], "na": True}),
+        "updateBlueskyStarterPack": ("PATCH", "/uploadposts/bluesky/starter-packs/{pack_id}", {"b": ["user", "name", "description", "feeds", "list", "members"], "na": True}),
+        "deleteBlueskyStarterPack": ("DELETE", "/uploadposts/bluesky/starter-packs/{pack_id}", {"b": ["user", "confirm", "delete_list"], "na": True}),
+        "listBlueskyFeeds": ("GET", "/uploadposts/bluesky/feeds", {"q": ["user"], "na": True}),
+        "createBlueskyFeed": ("POST", "/uploadposts/bluesky/feeds", {"b": ["user", "rkey", "did", "display_name", "description", "avatar", "accepts_interactions", "content_mode"], "f": ["avatar"], "na": True}),
+        "updateBlueskyFeed": ("PATCH", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "did", "display_name", "description", "avatar", "accepts_interactions", "content_mode"], "f": ["avatar"], "na": True}),
+        "deleteBlueskyFeed": ("DELETE", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "confirm"], "na": True}),
+        "reportOnBluesky": ("POST", "/uploadposts/bluesky/report", {"b": ["user", "post_id", "actor", "reason_type", "reason", "confirm"], "na": True}),
+        "listPostApprovals": ("GET", "/uploadposts/approvals", {"q": ["status", "profile_username", "author", "limit", "before", "count_only"], "na": True}),
+        "getPostApproval": ("GET", "/uploadposts/approvals/{approval_id}", {"na": True}),
+        "editPostApproval": ("PATCH", "/uploadposts/approvals/{approval_id}", {"b": ["title", "caption", "description", "platform_content", "fields", "scheduled_date", "timezone", "cover_image_base64", "remove_cover"], "na": True}),
+        "withdrawPostApproval": ("DELETE", "/uploadposts/approvals/{approval_id}", {"na": True}),
+        "approvePostApproval": ("POST", "/uploadposts/approvals/{approval_id}/approve", {"b": ["version", "comment", "scheduled_date", "timezone", "publish_now"], "na": True}),
+        "rejectPostApproval": ("POST", "/uploadposts/approvals/{approval_id}/reject", {"b": ["comment"], "na": True}),
+        "listClientPostApprovals": ("GET", "/uploadposts/approvals/client", {"bearer": True, "na": True}),
+        "approveClientPostApproval": ("POST", "/uploadposts/approvals/client/{approval_id}/approve", {"b": ["version", "comment"], "bearer": True, "na": True}),
+        "rejectClientPostApproval": ("POST", "/uploadposts/approvals/client/{approval_id}/reject", {"b": ["comment"], "bearer": True, "na": True}),
+        "getTeamRoles": ("GET", "/uploadposts/teams/roles", {}),
+        "listTeamAudit": ("GET", "/uploadposts/teams/audit", {"q": ["actor", "action", "profile_username", "target_id", "since", "until", "limit", "cursor"]}),
+        "sendFeedback": ("POST", "/uploadposts/feedback", {"b": ["message", "category", "endpoint", "request_id", "agent"]}),
+        "updateGoogleBusinessAccount": ("PATCH", "/uploadposts/google-business/accounts", {"b": ["user", "account", "account_name", "validate_only", "confirm"], "na": True}),
+        "createGoogleBusinessAdmin": ("POST", "/uploadposts/google-business/admins", {"b": ["user", "scope", "account", "location_id", "admin", "admin_account", "role", "confirm"], "na": True}),
+        "updateGoogleBusinessAdmin": ("PATCH", "/uploadposts/google-business/admins", {"b": ["user", "admin_name", "role", "confirm"], "na": True}),
+        "deleteGoogleBusinessAdmin": ("DELETE", "/uploadposts/google-business/admins", {"b": ["user", "admin_name", "confirm"], "na": True}),
+        "acceptGoogleBusinessInvitation": ("POST", "/uploadposts/google-business/invitations/accept", {"b": ["user", "invitation", "confirm"], "na": True}),
+        "declineGoogleBusinessInvitation": ("POST", "/uploadposts/google-business/invitations/decline", {"b": ["user", "invitation", "confirm"], "na": True}),
+        "transferGoogleBusinessLocation": ("POST", "/uploadposts/google-business/locations/transfer", {"b": ["user", "location_id", "destination_account", "confirm"], "na": True}),
+        "createGoogleBusinessLocation": ("POST", "/uploadposts/google-business/locations/create", {"b": ["user", "account", "location", "language_code", "title", "primary_category", "request_id", "dry_run", "confirm"], "na": True}),
+        "deleteGoogleBusinessLocation": ("DELETE", "/uploadposts/google-business/locations/delete", {"b": ["user", "location_id", "confirm"], "na": True}),
+        "getGoogleBusinessNotificationSettings": ("GET", "/uploadposts/google-business/notifications", {"q": ["user", "account"], "na": True}),
+        "updateGoogleBusinessNotificationSettings": ("PUT", "/uploadposts/google-business/notifications", {"b": ["user", "account", "enabled", "types", "confirm", "force", "confirm_other_tool"], "na": True}),
+        "startGoogleBusinessVerification": ("POST", "/uploadposts/google-business/verification/start", {"b": ["user", "location_id", "method", "phone_number", "email_address", "mailer_contact", "trusted_partner_token", "token", "language_code", "context", "confirm"], "na": True}),
+        "completeGoogleBusinessVerification": ("POST", "/uploadposts/google-business/verification/complete", {"b": ["user", "location_id", "verification_name", "verification_id", "pin"], "na": True}),
+        "generateGoogleBusinessVerificationToken": ("POST", "/uploadposts/google-business/verification/token", {"b": ["user", "location_id"], "na": True}),
+        "connectChatgptAdsAccount": ("POST", "/uploadposts/ads/chatgpt/connect", {"b": ["api_key", "profile_username", "name", "default"]}),
+        "listChatgptAdsAccounts": ("GET", "/uploadposts/ads/chatgpt/accounts", {}),
+        "disconnectChatgptAdsAccount": ("DELETE", "/uploadposts/ads/chatgpt/accounts/{ad_account_id}", {"q": ["profile_username"]}),
+        "getChatgptAdsAccount": ("GET", "/uploadposts/ads/chatgpt/account", {"q": ["ad_account_id", "profile_username"]}),
+        "listChatgptAdsCampaigns": ("GET", "/uploadposts/ads/chatgpt/campaigns", {"q": ["limit", "after", "before", "order", "ad_account_id", "profile_username"]}),
+        "createChatgptAdsCampaign": ("POST", "/uploadposts/ads/chatgpt/campaigns", {"q": ["ad_account_id", "profile_username"], "b": ["name", "budget", "budget_micros", "status", "description", "start_time", "end_time", "bidding_type", "conversion_event_setting_ids", "mode", "product_feed_id", "locations", "custom_audience_ids", "excluded_custom_audience_ids", "targeting", "ad_account_id", "profile_username"]}),
+        "getChatgptAdsCampaign": ("GET", "/uploadposts/ads/chatgpt/campaigns/{campaign_id}", {"q": ["ad_account_id", "profile_username"]}),
+        "updateChatgptAdsCampaign": ("POST", "/uploadposts/ads/chatgpt/campaigns/{campaign_id}", {"q": ["ad_account_id", "profile_username"], "b": ["name", "budget", "budget_micros", "status", "description", "start_time", "end_time", "locations", "custom_audience_ids", "excluded_custom_audience_ids", "targeting", "ad_account_id", "profile_username"]}),
+        "activateChatgptAdsCampaign": ("POST", "/uploadposts/ads/chatgpt/campaigns/{campaign_id}/activate", {"q": ["ad_account_id", "profile_username"]}),
+        "pauseChatgptAdsCampaign": ("POST", "/uploadposts/ads/chatgpt/campaigns/{campaign_id}/pause", {"q": ["ad_account_id", "profile_username"]}),
+        "archiveChatgptAdsCampaign": ("POST", "/uploadposts/ads/chatgpt/campaigns/{campaign_id}/archive", {"q": ["ad_account_id", "profile_username"]}),
+        "getChatgptAdsCampaignInsights": ("GET", "/uploadposts/ads/chatgpt/campaigns/{campaign_id}/insights", {"q": ["since", "until", "time_granularity", "aggregation_level", "fields", "segments", "filters", "sort", "time_ranges", "limit", "after", "before", "ad_account_id", "profile_username"]}),
+        "listChatgptAdsAdGroups": ("GET", "/uploadposts/ads/chatgpt/adgroups", {"q": ["campaign_id", "limit", "after", "before", "order", "ad_account_id", "profile_username"]}),
+        "createChatgptAdsAdGroup": ("POST", "/uploadposts/ads/chatgpt/adgroups", {"q": ["ad_account_id", "profile_username"], "b": ["campaign_id", "name", "max_bid", "max_bid_micros", "billing_event_type", "bidding_config", "status", "description", "context_hints", "product_set", "ad_account_id", "profile_username"]}),
+        "getChatgptAdsAdGroup": ("GET", "/uploadposts/ads/chatgpt/adgroups/{ad_group_id}", {"q": ["ad_account_id", "profile_username"]}),
+        "updateChatgptAdsAdGroup": ("POST", "/uploadposts/ads/chatgpt/adgroups/{ad_group_id}", {"q": ["ad_account_id", "profile_username"], "b": ["name", "max_bid", "max_bid_micros", "billing_event_type", "bidding_config", "status", "description", "context_hints", "product_set", "ad_account_id", "profile_username"]}),
+        "activateChatgptAdsAdGroup": ("POST", "/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/activate", {"q": ["ad_account_id", "profile_username"]}),
+        "pauseChatgptAdsAdGroup": ("POST", "/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/pause", {"q": ["ad_account_id", "profile_username"]}),
+        "archiveChatgptAdsAdGroup": ("POST", "/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/archive", {"q": ["ad_account_id", "profile_username"]}),
+        "getChatgptAdsAdGroupInsights": ("GET", "/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/insights", {"q": ["since", "until", "time_granularity", "aggregation_level", "fields", "segments", "filters", "sort", "time_ranges", "limit", "after", "before", "ad_account_id", "profile_username"]}),
+        "listChatgptAdsAds": ("GET", "/uploadposts/ads/chatgpt/ads", {"q": ["ad_group_id", "limit", "after", "before", "order", "ad_account_id", "profile_username"]}),
+        "createChatgptAdsAd": ("POST", "/uploadposts/ads/chatgpt/ads", {"q": ["ad_account_id", "profile_username"], "b": ["ad_group_id", "name", "title", "body", "target_url", "file_id", "price", "type", "status", "creative", "ad_account_id", "profile_username"]}),
+        "getChatgptAdsAd": ("GET", "/uploadposts/ads/chatgpt/ads/{ad_id}", {"q": ["ad_account_id", "profile_username"]}),
+        "updateChatgptAdsAd": ("POST", "/uploadposts/ads/chatgpt/ads/{ad_id}", {"q": ["ad_account_id", "profile_username"], "b": ["name", "status", "creative", "ad_account_id", "profile_username"]}),
+        "activateChatgptAdsAd": ("POST", "/uploadposts/ads/chatgpt/ads/{ad_id}/activate", {"q": ["ad_account_id", "profile_username"]}),
+        "pauseChatgptAdsAd": ("POST", "/uploadposts/ads/chatgpt/ads/{ad_id}/pause", {"q": ["ad_account_id", "profile_username"]}),
+        "archiveChatgptAdsAd": ("POST", "/uploadposts/ads/chatgpt/ads/{ad_id}/archive", {"q": ["ad_account_id", "profile_username"]}),
+        "getChatgptAdsAdInsights": ("GET", "/uploadposts/ads/chatgpt/ads/{ad_id}/insights", {"q": ["since", "until", "time_granularity", "aggregation_level", "fields", "segments", "filters", "sort", "time_ranges", "limit", "after", "before", "ad_account_id", "profile_username"]}),
+        "previewChatgptAdsAd": ("POST", "/uploadposts/ads/chatgpt/ads/{ad_id}/preview", {"q": ["ad_account_id", "profile_username"]}),
+        "uploadChatgptAdsCreative": ("POST", "/uploadposts/ads/chatgpt/creatives", {"q": ["ad_account_id", "profile_username"], "b": ["image_url", "ad_account_id", "profile_username", "file"], "f": ["file"]}),
+        "getChatgptAdsAccountInsights": ("GET", "/uploadposts/ads/chatgpt/insights", {"q": ["since", "until", "time_granularity", "aggregation_level", "fields", "segments", "filters", "sort", "time_ranges", "limit", "after", "before", "ad_account_id", "profile_username"]}),
+        "promoteChatgptAds": ("POST", "/uploadposts/ads/chatgpt/promote", {"q": ["ad_account_id", "profile_username"], "b": ["title", "body", "target_url", "image_url", "file_id", "budget", "budget_micros", "max_bid", "max_bid_micros", "name", "status", "bidding_type", "billing_event_type", "start_time", "end_time", "description", "conversion_event_setting_ids", "locations", "custom_audience_ids", "excluded_custom_audience_ids", "targeting", "context_hints", "price", "ad_group_name", "ad_name", "ad_account_id", "profile_username"]}),
+    }
+
+    # ---- Telegram ----
+    def send_telegram_gift(self, user: str, gift_id: str, max_star_count: int, confirm: bool, idempotency_key: str, **params) -> Dict:
+        """Send a gift from the bot's Stars.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_stars_spend_disabled` until the feature is available.
+
+        sendGift. Spends the bot's Stars. Requires confirm=true and max_star_count
+        (checked against the current price).
+
+        ``POST /api/uploadposts/telegram/gifts``
+
+        Args:
+            user: Profile username.
+            user_id (int, optional)
+            chat_id (str, optional)
+            gift_id
+            max_star_count
+            pay_for_upgrade (bool, optional)
+            text (str, optional)
+            text_parse_mode (str, optional)
+            text_entities (List[Dict[str, Any]], optional)
+            confirm
+            idempotency_key
+            **params: Any other API field, by its API name.
+        """
+        return self._op("sendTelegramGift", params, user=user, gift_id=gift_id, max_star_count=max_star_count, confirm=confirm, idempotency_key=idempotency_key)
+
+    def gift_telegram_premium(self, user: str, user_id: int, month_count: int, star_count: int, confirm: bool, idempotency_key: str, **params) -> Dict:
+        """Gift Telegram Premium from the bot's Stars.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_stars_spend_disabled` until the feature is available.
+
+        Spends the bot's Stars.
+
+        ``POST /api/uploadposts/telegram/gifts/premium``
+
+        Args:
+            user: Profile username.
+            user_id
+            month_count
+            star_count
+            text (str, optional)
+            confirm
+            idempotency_key
+            **params: Any other API field, by its API name.
+        """
+        return self._op("giftTelegramPremium", params, user=user, user_id=user_id, month_count=month_count, star_count=star_count, confirm=confirm, idempotency_key=idempotency_key)
+
+    def get_telegram_payment_settings(self, user: str, **params) -> Dict:
+        """Automatic pre-checkout rules.
+
+        **The automatic answers need the bot's updates turned on (POST
+        /api/uploadposts/telegram/updates).**
+
+        ``GET /api/uploadposts/telegram/payments/settings``
+
+        Args:
+            user: Profile username with Telegram connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTelegramPaymentSettings", params, user=user)
+
+    def update_telegram_payment_settings(self, user: str, **params) -> Dict:
+        """Set automatic pre-checkout rules.
+
+        **The automatic answers need the bot's updates turned on (POST
+        /api/uploadposts/telegram/updates).**
+
+        ``PUT /api/uploadposts/telegram/payments/settings``
+
+        Args:
+            user: Profile username.
+            pre_checkout (str, optional)
+            max_total_amount (Dict[str, Any], optional): Required for approve:
+                maximum order total per currency, e.g. {"XTR": 500}. Setting
+                pre_checkout to off without it clears the stored value.
+            allowed_payload_prefixes (List[str], optional)
+            error_message (str, optional)
+            shipping (str, optional)
+            shipping_options (List[Dict[str, Any]], optional)
+            shipping_countries (List[str], optional)
+            only_upload_post_invoices (bool, optional)
+            confirm (bool, optional): Required to save a rule that answers (approve,
+                reject, shipping static).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateTelegramPaymentSettings", params, user=user)
+
+    def set_telegram_updates(self, user: str, enabled: bool, **params) -> Dict:
+        """Turn Telegram updates on or off.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_updates_unavailable` until the feature is available.
+
+        Opt-in per bot. A webhook that is not Upload-Post's is never replaced without
+        replace_existing_webhook=true (409 telegram_webhook_in_use otherwise). With no
+        webhook, the answer warns that a getUpdates integration stops receiving.
+
+        ``POST /api/uploadposts/telegram/updates``
+
+        Args:
+            user: Profile username.
+            enabled: true to receive, false to stop.
+            replace_existing_webhook (bool, optional): Replace a webhook that is not
+                Upload-Post's.
+            forward_url (str, optional): https URL that also gets every raw update,
+                signed with your webhook secret (required), one attempt.
+            business_chats (bool, optional): Also receive and keep the chats of the
+                connected Telegram Business account (default false).
+            auto_answer_callbacks (bool, optional): Empty answerCallbackQuery if you
+                did not answer a button press in ~8 s.
+            extra_updates (List[str], optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("setTelegramUpdates", params, user=user, enabled=enabled)
+
+    def answer_telegram_query(self, user: str, type: str, **params) -> Dict:
+        """Answer a Telegram query.
+
+        Answer a callback_query, inline_query, join request, guest/widget query,
+        shipping or pre-checkout query received as a telegram_update event. 410
+        telegram_query_expired when Telegram's time is up.
+
+        ``POST /api/uploadposts/telegram/answer``
+
+        Args:
+            user: Profile username.
+            type
+            query_id (str, optional): The query id (or the official field:
+                callback_query_id, inline_query_id...).
+            text (str, optional): callback: 0-200 characters.
+            show_alert (bool, optional): callback.
+            url (str, optional): callback.
+            cache_time (int, optional): callback / inline.
+            results (List[Dict[str, Any]], optional): inline: up to 50
+                InlineQueryResult.
+            is_personal (bool, optional): inline.
+            next_offset (str, optional): inline.
+            button (Dict[str, Any], optional): inline: InlineQueryResultsButton.
+            result (Any, optional): join_request: approve|decline|queue. guest:
+                InlineQueryResult.
+            web_app_url (str, optional): join_request_web_app: https URL.
+            data (str, optional): widget: up to 1024 bytes.
+            ok (bool, optional): shipping / pre_checkout.
+            shipping_options (List[Dict[str, Any]], optional)
+            error_message (str, optional): shipping / pre_checkout when ok is false.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("answerTelegramQuery", params, user=user, type=type)
+
+    def get_telegram_business_connections(self, user: str, **params) -> Dict:
+        """Telegram Business connections.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        Connections of the bot with Telegram Business accounts (rights, enabled).
+
+        ``GET /api/uploadposts/telegram/business-connections``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional): Optional when the bot has one
+                active Business connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTelegramBusinessConnections", params, user=user)
+
+    def get_telegram_business_profile(self, user: str, **params) -> Dict:
+        """Telegram Business account.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        The connected account.
+
+        ``GET /api/uploadposts/telegram/business-profile``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional): Optional when the bot has one
+                active Business connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTelegramBusinessProfile", params, user=user)
+
+    def update_telegram_business_profile(self, user: str, **params) -> Dict:
+        """Update the Telegram Business profile.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        first_name/last_name, username, bio, photo (multipart or media_url, is_public),
+        remove_photo, gift_settings.
+
+        ``PATCH /api/uploadposts/telegram/business-profile``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional)
+            first_name (str, optional): 1-64.
+            last_name (str, optional): 0-64.
+            username (str, optional): 0-32.
+            bio (str, optional): 0-140.
+            media_url (str, optional): Public URL of the new photo (JPG) or
+                animation (MP4).
+            is_public (bool, optional)
+            remove_photo (bool, optional)
+            gift_settings (Dict[str, Any], optional): {show_gift_button,
+                accepted_gift_types}.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateTelegramBusinessProfile", params, user=user)
+
+    def post_telegram_story(self, user: str, **params) -> Dict:
+        """Post a Telegram story.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        postStory on behalf of the Business account. Photos 1080x1920 up to 10 MB;
+        videos 720x1280 H.265 up to 30 MB, 60 s.
+
+        ``POST /api/uploadposts/telegram/business-stories``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional)
+            media_url (str, optional): Or a multipart 'file'.
+            active_period (int, optional): 6, 12, 24 or 48 (hours) or the seconds.
+            caption (str, optional): 0-2048.
+            parse_mode (str, optional)
+            caption_entities (List[Dict[str, Any]], optional)
+            areas (List[Dict[str, Any]], optional)
+            post_to_chat_page (bool, optional)
+            protect_content (bool, optional)
+            story_id (int, optional): PATCH / DELETE.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("postTelegramStory", params, user=user)
+
+    def edit_telegram_story(self, user: str, **params) -> Dict:
+        """Edit a Telegram story.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        editStory.
+
+        ``PATCH /api/uploadposts/telegram/business-stories``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional)
+            media_url (str, optional): Or a multipart 'file'.
+            active_period (int, optional): 6, 12, 24 or 48 (hours) or the seconds.
+            caption (str, optional): 0-2048.
+            parse_mode (str, optional)
+            caption_entities (List[Dict[str, Any]], optional)
+            areas (List[Dict[str, Any]], optional)
+            post_to_chat_page (bool, optional)
+            protect_content (bool, optional)
+            story_id (int, optional): PATCH / DELETE.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("editTelegramStory", params, user=user)
+
+    def delete_telegram_story(self, user: str, story_id: int, **params) -> Dict:
+        """Delete a Telegram story.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        deleteStory.
+
+        ``DELETE /api/uploadposts/telegram/business-stories``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional)
+            media_url (str, optional): Or a multipart 'file'.
+            active_period (int, optional): 6, 12, 24 or 48 (hours) or the seconds.
+            caption (str, optional): 0-2048.
+            parse_mode (str, optional)
+            caption_entities (List[Dict[str, Any]], optional)
+            areas (List[Dict[str, Any]], optional)
+            post_to_chat_page (bool, optional)
+            protect_content (bool, optional)
+            story_id: PATCH / DELETE.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteTelegramStory", params, user=user, story_id=story_id)
+
+    def repost_telegram_story(self, user: str, from_chat_id: int, from_story_id: int, active_period: int, **params) -> Dict:
+        """Repost a Telegram story.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        repostStory from another Business account of the same bot.
+
+        ``POST /api/uploadposts/telegram/business-stories/repost``
+
+        Args:
+            user
+            business_connection_id (str, optional)
+            from_chat_id
+            from_story_id
+            active_period
+            post_to_chat_page (bool, optional)
+            protect_content (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("repostTelegramStory", params, user=user, from_chat_id=from_chat_id, from_story_id=from_story_id, active_period=active_period)
+
+    def get_telegram_business_gifts(self, user: str, **params) -> Dict:
+        """Telegram Business gifts.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        getBusinessAccountGifts with Telegram's filters.
+
+        ``GET /api/uploadposts/telegram/business-gifts``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional): Optional when the bot has one
+                active Business connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTelegramBusinessGifts", params, user=user)
+
+    def manage_telegram_business_gift(self, user: str, action: str, owned_gift_id: str, confirm: bool, idempotency_key: str, **params) -> Dict:
+        """Convert, upgrade, transfer or delete a gift.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        Irreversible: requires confirm=true and an idempotency_key (a repeat with the
+        same key returns the first answer).
+
+        ``POST /api/uploadposts/telegram/business-gifts``
+
+        Args:
+            user
+            business_connection_id (str, optional)
+            action
+            owned_gift_id
+            confirm: Must be true.
+            keep_original_details (bool, optional): upgrade.
+            star_count (int, optional): upgrade / transfer.
+            idempotency_key: Required. Unique string (max 128): a repeat with the
+                same key returns the first answer.
+            new_owner_chat_id (int, optional): transfer.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("manageTelegramBusinessGift", params, user=user, action=action, owned_gift_id=owned_gift_id, confirm=confirm, idempotency_key=idempotency_key)
+
+    def get_telegram_business_stars(self, user: str, **params) -> Dict:
+        """Telegram Business Stars balance.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        getBusinessAccountStarBalance.
+
+        ``GET /api/uploadposts/telegram/business-stars``
+
+        Args:
+            user: Profile username.
+            business_connection_id (str, optional): Optional when the bot has one
+                active Business connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTelegramBusinessStars", params, user=user)
+
+    def transfer_telegram_business_stars(self, user: str, star_count: int, idempotency_key: str, confirm: bool, **params) -> Dict:
+        """Move Stars to the bot.
+
+        Not generally available yet. Off by default: answers `503` with
+        `telegram_business_unavailable` until the feature is available.
+
+        transferBusinessAccountStars (1-10000). Requires confirm=true and an
+        idempotency_key.
+
+        ``POST /api/uploadposts/telegram/business-stars/transfer``
+
+        Args:
+            user
+            business_connection_id (str, optional)
+            star_count: 1-10000.
+            idempotency_key: Required. Unique string (max 128): a repeat with the
+                same key returns the first answer.
+            confirm: Must be true.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("transferTelegramBusinessStars", params, user=user, star_count=star_count, idempotency_key=idempotency_key, confirm=confirm)
+
+    # ---- Content Upload ----
+    def analyze_shorts(self, video: Any, **params) -> Dict:
+        """AI titles and captions for a short video.
+
+        Watches the video and writes a title/description (YouTube) and captions
+        (Instagram, TikTok, Facebook). Counts against the monthly AI Shorts quota (a
+        failed analysis is not counted).
+
+        ``POST /api/uploadposts/analyze-shorts``
+
+        Args:
+            video: Max 100 MB and 5 minutes.
+            platforms (str, optional): Comma-separated: youtube, instagram, tiktok,
+                facebook.
+            language (str, optional): Output language (default: the video's).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("analyzeShorts", params, video=video)
+
+    def rewrite_captions(self, content: Dict[str, Any], language: str, **params) -> Dict:
+        """Translate or rewrite captions with AI.
+
+        Rewrites texts with the same shape analyze-shorts returns into another language.
+        Uses the AI Shorts quota.
+
+        ``POST /api/uploadposts/rewrite-captions``
+
+        Args:
+            content
+            language
+            platforms (List[str], optional): Subset of the platforms in content
+                (default all).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("rewriteCaptions", params, content=content, language=language)
+
+    def create_media_upload(self, filename: str, content_length: int, **params) -> Dict:
+        """Get a signed URL to upload a file.
+
+        For clients that cannot send large files in a multipart request (AI agents, the
+        MCP server): create the upload, PUT the bytes to upload_url with the returned
+        headers, call /complete, then pass media_url to the upload endpoints. Files
+        expire after staging_ttl_hours. Per-file size, files in progress and monthly
+        files/bytes depend on the plan.
+
+        ``POST /api/uploadposts/media-uploads``
+
+        Args:
+            media_type (str, optional)
+            filename: With an allowed extension (video: mp4, mov, m4v, webm, mpeg,
+                mpg, avi, mkv; image: jpg, jpeg, png, webp, gif; document: pdf, ppt,
+                pptx, doc, docx).
+            content_type (str, optional): MIME type matching media_type.
+            content_length: Size in bytes.
+            source (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createMediaUpload", params, filename=filename, content_length=content_length)
+
+    def complete_media_upload(self, upload_id: str, **params) -> Dict:
+        """Confirm a signed upload.
+
+        Checks the uploaded object (size, type) and returns media_url.
+
+        ``POST /api/uploadposts/media-uploads/{upload_id}/complete``
+
+        Args:
+            upload_id: Upload id.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("completeMediaUpload", params, upload_id=upload_id)
+
+    def get_media_upload(self, upload_id: str, **params) -> Dict:
+        """Get a signed upload.
+
+        ``GET /api/uploadposts/media-uploads/{upload_id}``
+
+        Args:
+            upload_id: Upload id.
+            include_url (bool, optional): Include media_url (when uploaded).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getMediaUpload", params, upload_id=upload_id)
+
+    def delete_media_upload(self, upload_id: str, **params) -> Dict:
+        """Delete a signed upload.
+
+        ``DELETE /api/uploadposts/media-uploads/{upload_id}``
+
+        Args:
+            upload_id: Upload id.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteMediaUpload", params, upload_id=upload_id)
+
+    # ---- Upload Management ----
+    def get_scheduled_post(self, job_id: str, **params) -> Dict:
+        """Get a scheduled post.
+
+        The options a scheduled post was scheduled with (limited to what PATCH can
+        change), signed media URLs and whether it can still be edited.
+
+        ``GET /api/uploadposts/schedule/{job_id}``
+
+        Args:
+            job_id: The unique job identifier.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getScheduledPost", params, job_id=job_id)
+
+    def get_scheduled_post_thumbnail(self, job_id: str, **params) -> Dict:
+        """Get a scheduled post's thumbnail.
+
+        Signed URL of a small JPEG of the post's video or first image. A post without
+        one gets it built once and kept. Call it only for posts you display; the list
+        already carries most thumbnails.
+
+        ``GET /api/uploadposts/schedule/{job_id}/thumbnail``
+
+        Args:
+            job_id: The unique job identifier.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getScheduledPostThumbnail", params, job_id=job_id)
+
+    def get_scheduled_post_preview(self, job_id: str, **params) -> Dict:
+        """Preview URLs of a scheduled post.
+
+        Signed, short-lived URLs of the media, cover and thumbnail of one scheduled job
+        (the listing only says has_preview).
+
+        ``GET /api/uploadposts/schedule/{job_id}/preview``
+
+        Args:
+            job_id: The unique job identifier.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getScheduledPostPreview", params, job_id=job_id)
+
+    # ---- Platform Integration ----
+    def create_pinterest_board(self, name: str, **params) -> Dict:
+        """Create a Pinterest board.
+
+        Without a profile the first profile of the account with a Pinterest account is
+        used.
+
+        ``POST /api/uploadposts/pinterest/boards``
+
+        Args:
+            profile (str, optional): Profile username (alias user); default the
+                first profile with Pinterest.
+            user (str, optional): Alias of profile.
+            name
+            description (str, optional)
+            privacy (str, optional): SECRET is rejected (400).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createPinterestBoard", params, name=name)
+
+    def query_youtube_analytics(self, user: str, start_date: str, end_date: str, metrics: str, **params) -> Dict:
+        """Run a YouTube Analytics channel report.
+
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
+        enabled. reports.query for the profile's channel with any dimensions, metrics,
+        filters and sort of YouTube's channel reports. Validated against the official
+        report tables before it reaches YouTube (invalid combinations: 400
+        youtube_analytics_unsupported_query with hints, nothing spent). Revenue and ad
+        metrics are not available. Answers are cached (12 h; 7 days for ranges that
+        ended more than 5 days ago). Each uncached call counts 1 request of the
+        account's daily Analytics allowance. Data has a 48-72 h delay.
+
+        ``GET /api/uploadposts/youtube/analytics/query``
+
+        Args:
+            user: Profile username with a YouTube channel connected.
+            start_date: YYYY-MM-DD
+            end_date: YYYY-MM-DD
+            metrics: Comma-separated metrics.
+            dimensions (str, optional): Comma-separated dimensions.
+            filters (str, optional): dimension==value joined with ';'
+                (video/playlist accept up to 500 comma-separated IDs).
+            sort (str, optional): Comma-separated; '-' for descending.
+            max_results (int, optional)
+            start_index (int, optional)
+            report (str, optional): Optional report ID from GET
+                /uploadposts/youtube/analytics/reports.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("queryYoutubeAnalytics", params, user=user, start_date=start_date, end_date=end_date, metrics=metrics)
+
+    def list_youtube_analytics_reports(self, user: str, **params) -> Dict:
+        """YouTube Analytics report catalog.
+
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
+        enabled. The 47 YouTube channel reports with their dimensions, metrics, filters,
+        sort options and row limits. Does not call YouTube.
+
+        ``GET /api/uploadposts/youtube/analytics/reports``
+
+        Args:
+            user: Profile username with a YouTube channel connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listYoutubeAnalyticsReports", params, user=user)
+
+    def list_youtube_analytics_groups(self, user: str, **params) -> Dict:
+        """List YouTube Analytics groups.
+
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
+        enabled. groups.list of the channel (mine=true, or ids). Cached 30 minutes; 1
+        request of the Analytics allowance per uncached call.
+
+        ``GET /api/uploadposts/youtube/analytics/groups``
+
+        Args:
+            user: Profile username with a YouTube channel connected.
+            ids (str, optional): Up to 50 group IDs, comma separated.
+            page_token (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listYoutubeAnalyticsGroups", params, user=user)
+
+    def list_youtube_analytics_group_items(self, group_id: str, user: str, **params) -> Dict:
+        """List the items of a YouTube Analytics group.
+
+        Not generally available yet. Answers 503 youtube_analytics_disabled until it is
+        enabled. groupItems.list. Cached 30 minutes.
+
+        ``GET /api/uploadposts/youtube/analytics/groups/{group_id}/items``
+
+        Args:
+            group_id: Group ID.
+            user: Profile username with a YouTube channel connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listYoutubeAnalyticsGroupItems", params, group_id=group_id, user=user)
+
+    def get_youtube_analytics_usage(self, **params) -> Dict:
+        """Daily allowance of YouTube Analytics and bulk reports.
+
+        Not generally available yet. Off by default: answers `503` with
+        `youtube_feature_disabled` until the feature is available.
+
+        The caller's own usage today of the Analytics and bulk reports allowances. While
+        Analytics and bulk reports are not generally available yet, each service shows
+        enabled: false.
+
+        ``GET /api/uploadposts/youtube/analytics/usage``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("getYoutubeAnalyticsUsage", params)
+
+    def list_youtube_report_types(self, user: str, **params) -> Dict:
+        """List YouTube bulk report types.
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. reportTypes.list for the channel (one page, cached 24 h).
+        can_create_job marks the channel/playlist types that can be scheduled.
+
+        ``GET /api/uploadposts/youtube/reporting/report-types``
+
+        Args:
+            user: Profile username with a YouTube channel connected.
+            page_token (str, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listYoutubeReportTypes", params, user=user)
+
+    def list_youtube_reporting_jobs(self, user: str, **params) -> Dict:
+        """List YouTube reporting jobs.
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. jobs.list of the channel (one page). used_by_upload_post marks the job
+        behind Upload-Post's thumbnail impressions.
+
+        ``GET /api/uploadposts/youtube/reporting/jobs``
+
+        Args:
+            user: Profile username with a YouTube channel connected.
+            page_token (str, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listYoutubeReportingJobs", params, user=user)
+
+    def create_youtube_reporting_job(self, user: str, report_type_id: str, **params) -> Dict:
+        """Create a YouTube reporting job.
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. jobs.create: YouTube then generates one CSV per day (first ones within
+        ~48 h, covering the previous 30 days). One job per report type and up to 20 per
+        channel.
+
+        ``POST /api/uploadposts/youtube/reporting/jobs``
+
+        Args:
+            user
+            report_type_id
+            name (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createYoutubeReportingJob", params, user=user, report_type_id=report_type_id)
+
+    def get_youtube_reporting_job(self, job_id: str, user: str, **params) -> Dict:
+        """Get a YouTube reporting job.
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. jobs.get.
+
+        ``GET /api/uploadposts/youtube/reporting/jobs/{job_id}``
+
+        Args:
+            job_id: Job ID.
+            user: Profile username with a YouTube channel connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getYoutubeReportingJob", params, job_id=job_id, user=user)
+
+    def delete_youtube_reporting_job(self, job_id: str, user: str, confirm: bool, **params) -> Dict:
+        """Delete a YouTube reporting job.
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. jobs.delete: stops the daily reports. Requires confirm: true. A
+        channel_reach_basic_a1 job (used by Upload-Post for thumbnail impressions)
+        cannot be deleted (409 youtube_reporting_job_in_use). 502
+        youtube_write_outcome_unknown: list the jobs to check.
+
+        ``DELETE /api/uploadposts/youtube/reporting/jobs/{job_id}``
+
+        Args:
+            job_id: Job ID.
+            user
+            confirm
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteYoutubeReportingJob", params, job_id=job_id, user=user, confirm=confirm)
+
+    def list_youtube_reports(self, job_id: str, user: str, **params) -> Dict:
+        """List the reports of a YouTube reporting job.
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. jobs.reports.list (one page). Each item has download_path.
+
+        ``GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports``
+
+        Args:
+            job_id: Job ID.
+            user: Profile username with a YouTube channel connected.
+            created_after (str, optional): RFC 3339
+            start_time_at_or_after (str, optional): RFC 3339
+            start_time_before (str, optional): RFC 3339
+            page_token (str, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listYoutubeReports", params, job_id=job_id, user=user)
+
+    def get_youtube_report(self, job_id: str, report_id: str, user: str, **params) -> Dict:
+        """Get a YouTube report.
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. jobs.reports.get (metadata).
+
+        ``GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}``
+
+        Args:
+            job_id: Job ID.
+            report_id: Report ID.
+            user: Profile username with a YouTube channel connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getYoutubeReport", params, job_id=job_id, report_id=report_id, user=user)
+
+    def download_youtube_report(self, job_id: str, report_id: str, user: str, **params) -> str:
+        """Download a YouTube report (CSV).
+
+        Not generally available yet. Answers 503 youtube_reporting_disabled until it is
+        enabled. The report's CSV file, streamed. Up to 100 MB; up to 2 downloads at a
+        time per account. Counts 2 requests of the bulk reports allowance.
+
+        ``GET /api/uploadposts/youtube/reporting/jobs/{job_id}/reports/{report_id}/download``
+        Returns the file as text.
+
+        Args:
+            job_id: Job ID.
+            report_id: Report ID.
+            user: Profile username with a YouTube channel connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("downloadYoutubeReport", params, job_id=job_id, report_id=report_id, user=user)
+
+    def get_youtube_push(self, user: str, **params) -> Dict:
+        """YouTube new video notifications status.
+
+        Not generally available yet. Answers 503 youtube_feature_disabled until it is
+        enabled. State of the push subscription of the profile's channel (null when
+        off). No YouTube quota.
+
+        ``GET /api/uploadposts/youtube/push``
+
+        Args:
+            user: Profile username with a YouTube channel connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getYoutubePush", params, user=user)
+
+    def enable_youtube_push(self, user: str, **params) -> Dict:
+        """Turn on YouTube new video notifications.
+
+        Not generally available yet. Answers 503 youtube_feature_disabled until it is
+        enabled. Requires a webhook listing youtube_video_published and/or
+        youtube_video_updated. No YouTube quota.
+
+        ``POST /api/uploadposts/youtube/push``
+
+        Args:
+            user: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("enableYoutubePush", params, user=user)
+
+    def disable_youtube_push(self, user: str, **params) -> Dict:
+        """Turn off YouTube new video notifications.
+
+        Not generally available yet. Answers 503 youtube_feature_disabled until it is
+        enabled. No YouTube quota.
+
+        ``DELETE /api/uploadposts/youtube/push``
+
+        Args:
+            user: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("disableYoutubePush", params, user=user)
+
+    def get_instagram_publishing_limit(self, profile: str, **params) -> Dict:
+        """Instagram publishing quota.
+
+        Instagram content publishing usage of the connected account (Instagram allows a
+        limited number of posts per 24 h). Cached; refresh=true skips the cache.
+
+        ``GET /api/uploadposts/instagram/publishing_limit``
+
+        Args:
+            profile: Profile username (alias user).
+            refresh (bool, optional): Skip the cache.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getInstagramPublishingLimit", params, profile=profile)
+
+    def get_threads_publishing_limit(self, **params) -> Dict:
+        """Threads publishing quota.
+
+        Send user or profile (one is required: 400 without both).
+
+        ``GET /api/uploadposts/threads/publishing_limit``
+
+        Args:
+            user (str, optional): Profile username (or use profile).
+            profile (str, optional): Alias of user.
+            refresh (bool, optional): Skip the cache.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getThreadsPublishingLimit", params)
+
+    def list_pinterest_board_sections(self, board_id: str, **params) -> Dict:
+        """List the sections of a Pinterest board.
+
+        ``GET /api/uploadposts/pinterest/boards/{board_id}/sections``
+
+        Args:
+            board_id: Board id.
+            profile (str, optional): Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listPinterestBoardSections", params, board_id=board_id)
+
+    def create_pinterest_board_section(self, board_id: str, name: str, **params) -> Dict:
+        """Create a section in a Pinterest board.
+
+        Without a profile the first profile of the account with a Pinterest account is
+        used.
+
+        ``POST /api/uploadposts/pinterest/boards/{board_id}/sections``
+
+        Args:
+            board_id: Board id.
+            profile (str, optional): Profile username (alias user); default the
+                first profile with Pinterest.
+            user (str, optional): Alias of profile.
+            name
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createPinterestBoardSection", params, board_id=board_id, name=name)
+
+    def get_facebook_page_info(self, user: str, **params) -> Dict:
+        """Read a Facebook Page's public info.
+
+        ``GET /api/uploadposts/facebook/page-info``
+
+        Args:
+            user: Profile username.
+            page_id (str, optional): Page id (required if the account manages
+                several Pages).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getFacebookPageInfo", params, user=user)
+
+    def update_facebook_page_info(self, user: str, **params) -> Dict:
+        """Update a Facebook Page's public info.
+
+        Only the fields sent change. validate_only: true checks without writing. Needs
+        Meta's pages_manage_metadata permission (pending App Review: 403
+        facebook_permission_missing until then). POST is accepted as an alias.
+
+        ``PATCH /api/uploadposts/facebook/page-info``
+
+        Args:
+            user
+            page_id (str, optional)
+            validate_only (bool, optional)
+            about (str, optional)
+            description (str, optional)
+            website (str, optional)
+            phone (str, optional)
+            emails (Any, optional)
+            hours (Any, optional): At most 2 ranges per day.
+            picture_url (str, optional)
+            cover_url (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateFacebookPageInfo", params, user=user)
+
+    def list_reddit_subreddits(self, profile: str, **params) -> Dict:
+        """Subreddits the Reddit account belongs to.
+
+        ``GET /api/uploadposts/reddit/subreddits``
+
+        Args:
+            profile: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listRedditSubreddits", params, profile=profile)
+
+    def get_reddit_post_types(self, profile: str, subreddit: str, **params) -> Dict:
+        """Post types a subreddit allows.
+
+        ``GET /api/uploadposts/reddit/post-types``
+
+        Args:
+            profile: Profile username.
+            subreddit: Subreddit name without r/.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getRedditPostTypes", params, profile=profile, subreddit=subreddit)
+
+    def list_reddit_flairs(self, profile: str, subreddit: str, **params) -> Dict:
+        """Post flairs of a subreddit.
+
+        Pass the id as reddit_flair_id when publishing; editable flairs take
+        reddit_flair_text.
+
+        ``GET /api/uploadposts/reddit/flairs``
+
+        Args:
+            profile: Profile username.
+            subreddit: Subreddit name without r/.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listRedditFlairs", params, profile=profile, subreddit=subreddit)
+
+    def get_reddit_detailed_posts(self, profile_username: str, **params) -> Dict:
+        """Get Reddit detailed posts.
+
+        Retrieve detailed posts from a Reddit account connected to a profile, including
+        complete media information. Supports automatic pagination up to 2000 posts. The
+        path ends with a slash (`/detailed-posts/`); without it the API answers a 308
+        redirect.
+
+        ``GET /api/uploadposts/reddit/detailed-posts/``
+
+        Args:
+            profile_username: Username of the profile with a connected Reddit
+                account.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getRedditDetailedPosts", params, profile_username=profile_username)
+
+    # ---- User Management ----
+    def get_user_profile(self, username: str, **params) -> Dict:
+        """Get a specific user profile.
+
+        Retrieve information for a single user profile by username.
+
+        ``GET /api/uploadposts/users/{username}``
+
+        Args:
+            username: The username of the profile to retrieve.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getUserProfile", params, username=username)
+
+    def rename_user_profile(self, username: str, display_name: str, **params) -> Dict:
+        """Rename a user profile.
+
+        Set the profile's display_name, the label shown in the dashboard. The username
+        does not change: it stays the `user` value of every API call, so history,
+        scheduled posts, analytics and existing integrations keep working. An empty
+        string or null removes the display name. display_name is the only editable
+        field; any other field returns 400 FIELD_NOT_EDITABLE.
+
+        ``PATCH /api/uploadposts/users/{username}``
+
+        Args:
+            username: The username of the profile to rename. It is not changed.
+            display_name: New label. Trimmed; no line breaks. Empty string or null
+                clears it.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("renameUserProfile", params, username=username, display_name=display_name)
+
+    def disconnect_social_account(self, profile_username: str, social_platform: str, **params) -> Dict:
+        """Disconnect a social account from a profile.
+
+        Unlink one social platform from a user profile. Other platforms connected to the
+        same profile are not touched. The stored credentials are deleted only if no
+        other profile of your account still uses that social account. Fires the
+        `social_account_disconnected` webhook with `reason: "manual_disconnect"`.
+        Disconnecting a platform that is already disconnected returns 200.
+
+        ``DELETE /api/uploadposts/users/social``
+
+        Args:
+            profile_username: The profile to disconnect the account from.
+            social_platform: The platform key as it appears in the profile's
+                `social_accounts` object (e.g. `instagram`, `tiktok`, `facebook`,
+                `youtube`, `linkedin`, `x`).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("disconnectSocialAccount", params, profile_username=profile_username, social_platform=social_platform)
+
+    def connect_discord_credentials(self, profile_username: str, webhook_url: str, **params) -> Dict:
+        """Connect Discord with credentials.
+
+        Discord channel incoming webhook (no OAuth). No OAuth and no browser redirect:
+        Upload-Post validates the credentials, encrypts the secret and links the account
+        to the profile. Also accepted with the profile JWT of the white-label connect
+        page.
+
+        ``POST /api/uploadposts/users/discord/credentials``
+
+        Args:
+            profile_username
+            webhook_url: https://discord.com/api/webhooks/...
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectDiscordCredentials", params, profile_username=profile_username, webhook_url=webhook_url)
+
+    def connect_telegram_credentials(self, profile_username: str, bot_token: str, chat_id: str, **params) -> Dict:
+        """Connect Telegram with credentials.
+
+        Telegram bot token + target chat. Upload-Post validates both (getMe, getChat)
+        and stores the token encrypted. No OAuth and no browser redirect: Upload-Post
+        validates the credentials, encrypts the secret and links the account to the
+        profile. Also accepted with the profile JWT of the white-label connect page.
+
+        ``POST /api/uploadposts/users/telegram/credentials``
+
+        Args:
+            profile_username
+            bot_token
+            chat_id: Public channel @username or numeric chat id.
+            receive_updates (bool, optional): Also receive the bot's DMs and other
+                updates (same options as POST /uploadposts/telegram/updates).
+            replace_existing_webhook (bool, optional)
+            forward_url (str, optional)
+            auto_answer_callbacks (bool, optional)
+            extra_updates (List[str], optional)
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectTelegramCredentials", params, profile_username=profile_username, bot_token=bot_token, chat_id=chat_id)
+
+    def connect_slack_credentials(self, profile_username: str, webhook_url: str, **params) -> Dict:
+        """Connect Slack with credentials.
+
+        Slack channel Incoming Webhook URL (text only). No OAuth and no browser
+        redirect: Upload-Post validates the credentials, encrypts the secret and links
+        the account to the profile. Also accepted with the profile JWT of the
+        white-label connect page.
+
+        ``POST /api/uploadposts/users/slack/credentials``
+
+        Args:
+            profile_username
+            webhook_url
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectSlackCredentials", params, profile_username=profile_username, webhook_url=webhook_url)
+
+    def connect_mastodon_credentials(self, profile_username: str, instance_url: str, access_token: str, **params) -> Dict:
+        """Connect Mastodon with credentials.
+
+        Mastodon instance access token. No OAuth and no browser redirect: Upload-Post
+        validates the credentials, encrypts the secret and links the account to the
+        profile. Also accepted with the profile JWT of the white-label connect page.
+
+        ``POST /api/uploadposts/users/mastodon/credentials``
+
+        Args:
+            profile_username
+            instance_url
+            access_token
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectMastodonCredentials", params, profile_username=profile_username, instance_url=instance_url, access_token=access_token)
+
+    def connect_nostr_credentials(self, profile_username: str, private_key: str, **params) -> Dict:
+        """Connect Nostr with credentials.
+
+        Nostr private key (nsec or hex) and optional relays. No OAuth and no browser
+        redirect: Upload-Post validates the credentials, encrypts the secret and links
+        the account to the profile. Also accepted with the profile JWT of the
+        white-label connect page.
+
+        ``POST /api/uploadposts/users/nostr/credentials``
+
+        Args:
+            profile_username
+            private_key
+            relays (str, optional): Comma-separated wss:// relays (defaults used if
+                omitted).
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectNostrCredentials", params, profile_username=profile_username, private_key=private_key)
+
+    def connect_lemmy_credentials(self, profile_username: str, instance_url: str, username: str, password: str, community: str, **params) -> Dict:
+        """Connect Lemmy with credentials.
+
+        Lemmy instance, login and target community. No OAuth and no browser redirect:
+        Upload-Post validates the credentials, encrypts the secret and links the account
+        to the profile. Also accepted with the profile JWT of the white-label connect
+        page.
+
+        ``POST /api/uploadposts/users/lemmy/credentials``
+
+        Args:
+            profile_username
+            instance_url
+            username
+            password
+            community
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectLemmyCredentials", params, profile_username=profile_username, instance_url=instance_url, username=username, password=password, community=community)
+
+    def connect_devto_credentials(self, profile_username: str, api_key: str, **params) -> Dict:
+        """Connect Dev.to with credentials.
+
+        Dev.to API key. No OAuth and no browser redirect: Upload-Post validates the
+        credentials, encrypts the secret and links the account to the profile. Also
+        accepted with the profile JWT of the white-label connect page.
+
+        ``POST /api/uploadposts/users/devto/credentials``
+
+        Args:
+            profile_username
+            api_key
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectDevToCredentials", params, profile_username=profile_username, api_key=api_key)
+
+    def connect_hashnode_credentials(self, profile_username: str, pat: str, publication_id: str, **params) -> Dict:
+        """Connect Hashnode with credentials.
+
+        Hashnode Personal Access Token and publication id. No OAuth and no browser
+        redirect: Upload-Post validates the credentials, encrypts the secret and links
+        the account to the profile. Also accepted with the profile JWT of the
+        white-label connect page.
+
+        ``POST /api/uploadposts/users/hashnode/credentials``
+
+        Args:
+            profile_username
+            pat
+            publication_id
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectHashnodeCredentials", params, profile_username=profile_username, pat=pat, publication_id=publication_id)
+
+    def connect_wordpress_credentials(self, profile_username: str, site_url: str, username: str, application_password: str, **params) -> Dict:
+        """Connect WordPress with credentials.
+
+        Self-hosted WordPress site, username and Application Password. No OAuth and no
+        browser redirect: Upload-Post validates the credentials, encrypts the secret and
+        links the account to the profile. Also accepted with the profile JWT of the
+        white-label connect page.
+
+        ``POST /api/uploadposts/users/wordpress/credentials``
+
+        Args:
+            profile_username
+            site_url
+            username
+            application_password
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectWordPressCredentials", params, profile_username=profile_username, site_url=site_url, username=username, application_password=application_password)
+
+    def connect_whop_credentials(self, profile_username: str, api_key: str, experience_id: str, **params) -> Dict:
+        """Connect Whop with credentials.
+
+        Whop API key (forum:post:create) and experience id. No OAuth and no browser
+        redirect: Upload-Post validates the credentials, encrypts the secret and links
+        the account to the profile. Also accepted with the profile JWT of the
+        white-label connect page.
+
+        ``POST /api/uploadposts/users/whop/credentials``
+
+        Args:
+            profile_username
+            api_key
+            experience_id
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectWhopCredentials", params, profile_username=profile_username, api_key=api_key, experience_id=experience_id)
+
+    def connect_listmonk_credentials(self, profile_username: str, instance_url: str, username: str, password: str, list_id: str, **params) -> Dict:
+        """Connect Listmonk with credentials.
+
+        Listmonk instance, login and list id (each post sends a campaign). No OAuth and
+        no browser redirect: Upload-Post validates the credentials, encrypts the secret
+        and links the account to the profile. Also accepted with the profile JWT of the
+        white-label connect page.
+
+        ``POST /api/uploadposts/users/listmonk/credentials``
+
+        Args:
+            profile_username
+            instance_url
+            username
+            password
+            list_id
+            name (str, optional): Display name of the connection.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectListmonkCredentials", params, profile_username=profile_username, instance_url=instance_url, username=username, password=password, list_id=list_id)
+
+    def list_facebook_page_choices(self, profile_username: str, **params) -> Dict:
+        """List the Facebook Pages a profile can publish to.
+
+        Every Facebook Page of the profile's connected account and the one selected for
+        publishing.
+
+        ``GET /api/uploadposts/users/facebook-page``
+
+        Args:
+            profile_username: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listFacebookPageChoices", params, profile_username=profile_username)
+
+    def set_facebook_page(self, profile_username: str, facebook_page_id: str, **params) -> Dict:
+        """Select the Facebook Page used when publishing.
+
+        ``POST /api/uploadposts/users/facebook-page``
+
+        Args:
+            profile_username
+            facebook_page_id
+            **params: Any other API field, by its API name.
+        """
+        return self._op("setFacebookPage", params, profile_username=profile_username, facebook_page_id=facebook_page_id)
+
+    def clear_facebook_page(self, profile_username: str, **params) -> Dict:
+        """Clear the selected Facebook Page.
+
+        Back to the default (the first one of the account).
+
+        ``DELETE /api/uploadposts/users/facebook-page``
+
+        Args:
+            profile_username
+            **params: Any other API field, by its API name.
+        """
+        return self._op("clearFacebookPage", params, profile_username=profile_username)
+
+    def list_linkedin_page_choices(self, profile_username: str, **params) -> Dict:
+        """List the LinkedIn Pages a profile can publish to.
+
+        Every LinkedIn Page of the profile's connected account and the one selected for
+        publishing.
+
+        ``GET /api/uploadposts/users/linkedin-page``
+
+        Args:
+            profile_username: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listLinkedInPageChoices", params, profile_username=profile_username)
+
+    def set_linkedin_page(self, profile_username: str, linkedin_page_id: str, **params) -> Dict:
+        """Select the LinkedIn Page used when publishing.
+
+        ``POST /api/uploadposts/users/linkedin-page``
+
+        Args:
+            profile_username
+            linkedin_page_id
+            **params: Any other API field, by its API name.
+        """
+        return self._op("setLinkedInPage", params, profile_username=profile_username, linkedin_page_id=linkedin_page_id)
+
+    def clear_linkedin_page(self, profile_username: str, **params) -> Dict:
+        """Clear the selected LinkedIn Page.
+
+        Back to the default (the first one of the account).
+
+        ``DELETE /api/uploadposts/users/linkedin-page``
+
+        Args:
+            profile_username
+            **params: Any other API field, by its API name.
+        """
+        return self._op("clearLinkedInPage", params, profile_username=profile_username)
+
+    def connect_bluesky_credentials(self, profile_username: str, handle: str, password: str, **params) -> Dict:
+        """Connect Bluesky with an app password.
+
+        Logs in to Bluesky with the handle and an app password, stores the password
+        encrypted and links the account to the profile. Also accepted with the profile
+        JWT of the connect page.
+
+        ``POST /api/uploadposts/users/bluesky/credentials``
+
+        Args:
+            profile_username
+            handle
+            password: Bluesky app password (one with DM access to use Bluesky DMs).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectBlueskyCredentials", params, profile_username=profile_username, handle=handle, password=password)
+
+    def set_youtube_oauth_client(self, profile_username: str, client_id: str, client_secret: str, **params) -> Dict:
+        """Use your own Google OAuth client for a profile's YouTube.
+
+        Stores (encrypted) the client_id and client_secret of your own Google Cloud
+        OAuth client; that profile then authorizes YouTube against it (its own API
+        quota).
+
+        ``POST /api/uploadposts/users/youtube/credentials``
+
+        Args:
+            profile_username
+            client_id
+            client_secret
+            **params: Any other API field, by its API name.
+        """
+        return self._op("setYoutubeOAuthClient", params, profile_username=profile_username, client_id=client_id, client_secret=client_secret)
+
+    # ---- Authentication ----
+    def get_current_user(self, **params) -> Dict:
+        """Get current user.
+
+        Verify the validity of your API key and retrieve basic account information
+        including email and subscription plan.
+
+        ``GET /api/uploadposts/me``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("getCurrentUser", params)
+
+    def start_oauth_connection(self, platform: str, **params) -> Dict:
+        """Connect API: start connecting a social account.
+
+        Build your own connect page: returns the platform's authorize_url for a profile.
+        Send the user there; Upload-Post finishes the OAuth and sends them back to
+        redirect_url. Authenticate with the API key (then `profile` is required) or with
+        the profile JWT of POST /uploadposts/users/generate-jwt (profile taken from the
+        token). The state is single-use: a retry needs a new start.
+
+        ``POST /api/uploadposts/oauth/{platform}/start``
+
+        Args:
+            platform: Platform to connect.
+            profile (str, optional): Profile username (API key auth only).
+            redirect_url (str, optional): Absolute http(s) URL to return to.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("startOAuthConnection", params, platform=platform)
+
+    # ---- FFmpeg Editor ----
+    def create_ffmpeg_job(self, full_command: str, output_extension: str, **params) -> Dict:
+        """Create FFmpeg job.
+
+        Submit a media processing job using an FFmpeg command template. Supports single
+        or multiple input files via multipart upload or JSON with URLs. Jobs are
+        asynchronous — poll the status endpoint until finished.
+
+        ``POST /api/uploadposts/ffmpeg/jobs/upload``
+
+        Args:
+            files (List[str], optional): Array of input file URLs. Referenced as
+                {input0}, {input1}, etc.
+            full_command: FFmpeg command template using {input0}, {input1}, etc. and
+                {output} placeholders.
+            output_extension: Desired output file extension.
+            publish (bool, optional): Whether to publish the result.
+            file (Any, optional): Primary media file to process. Referenced as
+                {input} or {input0}.
+            file1 (Any, optional): Second input file. Referenced as {input1}.
+            file2 (Any, optional): Third input file. Referenced as {input2}.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createFfmpegJob", params, full_command=full_command, output_extension=output_extension)
+
+    def get_ffmpeg_job_status(self, job_id: str, **params) -> Dict:
+        """Get FFmpeg job status.
+
+        Poll the status of an FFmpeg processing job. Statuses: PENDING, PROCESSING,
+        FINISHED, ERROR.
+
+        ``GET /api/uploadposts/ffmpeg/jobs/{job_id}``
+
+        Args:
+            job_id: The unique job identifier.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getFfmpegJobStatus", params, job_id=job_id)
+
+    def download_ffmpeg_result(self, job_id: str, **params) -> bytes:
+        """Download FFmpeg result.
+
+        Download the processed file when job status is FINISHED. Returns binary media
+        with appropriate Content-Type and Content-Disposition headers.
+
+        ``GET /api/uploadposts/ffmpeg/jobs/{job_id}/download``
+        Returns the file as bytes.
+
+        Args:
+            job_id: The unique job identifier.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("downloadFfmpegResult", params, job_id=job_id)
+
+    def get_ffmpeg_consumption(self, **params) -> Dict:
+        """Get FFmpeg consumption.
+
+        Check your current FFmpeg usage, remaining quota, and processing history for the
+        current month.
+
+        ``GET /api/uploadposts/ffmpeg/consumption``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("getFfmpegConsumption", params)
+
+    # ---- Webhooks ----
+    def list_webhook_subscriptions(self, **params) -> Dict:
+        """List webhook subscriptions.
+
+        Not generally available yet. While webhook subscriptions are switched off for
+        your account every route of this group answers `503` with `reason:
+        webhook_subscriptions_disabled`.
+
+        Newest first, active and disabled. An n8n trigger checks whether its
+        subscription exists with `?url=<its url>&status=active`.
+
+        ``GET /api/uploadposts/webhooks/subscriptions``
+
+        Args:
+            status (str, optional): Only active or disabled ones.
+            source (str, optional): Only this source label (e.g. n8n).
+            url (str, optional): Only this exact URL.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listWebhookSubscriptions", params)
+
+    def create_webhook_subscription(self, url: str, events: List[str], **params) -> Dict:
+        """Create a webhook subscription.
+
+        Not generally available yet. While webhook subscriptions are switched off for
+        your account every route of this group answers `503` with `reason:
+        webhook_subscriptions_disabled`.
+
+        Adds a destination that receives the listed events, besides the account webhook.
+        Idempotent: the same url + events + profile_username returns the existing
+        subscription (200, `created: false`) and reactivates it if it was disabled
+        (`reactivated: true`); `name` and `source` are updated when sent. At most 10
+        active subscriptions per account. Team members (X-Act-As-User) cannot create
+        them.
+
+        ``POST /api/uploadposts/webhooks/subscriptions``
+
+        Args:
+            url: Public https URL.
+            events: Event names. youtube_video_* only while YouTube push is on and
+                post_approval_* only while post approvals are on; otherwise 400
+                invalid_events with allowed_events.
+            profile_username (str, optional): Only events of this profile.
+            source (str, optional)
+            name (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createWebhookSubscription", params, url=url, events=events)
+
+    def get_webhook_subscription(self, subscription_id: str, **params) -> Dict:
+        """Get a webhook subscription.
+
+        Not generally available yet. While webhook subscriptions are switched off for
+        your account every route of this group answers `503` with `reason:
+        webhook_subscriptions_disabled`.
+
+        ``GET /api/uploadposts/webhooks/subscriptions/{subscription_id}``
+
+        Args:
+            subscription_id: Subscription id (whsub_...).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getWebhookSubscription", params, subscription_id=subscription_id)
+
+    def delete_webhook_subscription(self, subscription_id: str, **params) -> Dict:
+        """Delete a webhook subscription.
+
+        Not generally available yet. While webhook subscriptions are switched off for
+        your account every route of this group answers `503` with `reason:
+        webhook_subscriptions_disabled`.
+
+        Stops sending to it right away. A second DELETE answers 404 (an integration can
+        treat 404 as already deleted).
+
+        ``DELETE /api/uploadposts/webhooks/subscriptions/{subscription_id}``
+
+        Args:
+            subscription_id: Subscription id (whsub_...).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteWebhookSubscription", params, subscription_id=subscription_id)
+
+    def test_webhook_subscription(self, subscription_id: str, **params) -> Dict:
+        """Send a test event to a subscription.
+
+        Not generally available yet. While webhook subscriptions are switched off for
+        your account every route of this group answers `503` with `reason:
+        webhook_subscriptions_disabled`.
+
+        Sends one signed sample now, with the keys of the real event and `test: true`.
+        Logged as a test delivery: never retried and never counted towards disabling the
+        subscription. `ok` tells whether the destination answered 2xx. For the post
+        approval events the sample has the shape of the real event ({event, user_email,
+        profile_username, approval: {...}, created_at}).
+
+        ``POST /api/uploadposts/webhooks/subscriptions/{subscription_id}/test``
+
+        Args:
+            subscription_id: Subscription id (whsub_...).
+            event (str, optional): One of the subscription's events; default its
+                first event.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("testWebhookSubscription", params, subscription_id=subscription_id)
+
+    def test_notifications(self, **params) -> Dict:
+        """Send a test notification.
+
+        Sends a sample upload_completed through the configured channels (logged as a
+        test delivery, never retried). Only our own outcome per channel is returned,
+        never the destination's answer.
+
+        ``POST /api/uploadposts/users/notifications/test``
+
+        Args:
+            platform (str, optional)
+            media_type (str, optional)
+            title (str, optional)
+            caption (str, optional)
+            profile_username (str, optional)
+            message (str, optional): Telegram text (default: built from the other
+                fields).
+            result (Dict[str, Any], optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("testNotifications", params)
+
+    # ---- Instagram Interactions ----
+    def delete_comment_post(self, platform: str, user: str, comment_id: str, **params) -> Dict:
+        """Delete a comment (POST alias).
+
+        POST alias of DELETE /uploadposts/comments/delete, for clients that cannot send
+        a body with DELETE. Same body and behavior.
+
+        ``POST /api/uploadposts/comments/delete``
+
+        Args:
+            platform: Target platform.
+            user: Profile username as configured in Upload-Post.
+            comment_id: ID of the comment to delete.
+            post_id (str, optional): Required for LinkedIn only — the post URN
+                (urn:li:ugcPost:...) the comment belongs to.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteCommentPost", params, platform=platform, user=user, comment_id=comment_id)
+
+    def delete_bluesky_chat_account(self, user: str, confirm: bool, confirm_handle: str, **params) -> Dict:
+        """Delete the Bluesky chat account.
+
+        Not generally available yet. Answers `403` `bluesky_chat_delete_disabled`.
+
+        Deletes every conversation and message of the account's Bluesky chat account
+        (not the Bluesky account). Needs confirm: true and confirm_handle; not enabled
+        yet (403 bluesky_chat_delete_disabled). Account owner only; every attempt is
+        recorded.
+
+        ``POST /api/uploadposts/dms/bluesky/account/delete``
+
+        Args:
+            user: Profile username.
+            confirm
+            confirm_handle
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteBlueskyChatAccount", params, user=user, confirm=confirm, confirm_handle=confirm_handle)
+
+    def list_bluesky_mutual_groups(self, user: str, subject: str, **params) -> Dict:
+        """Bluesky groups shared with someone.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
+
+        ``GET /api/uploadposts/dms/bluesky/groups``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            subject
+            limit (int, optional)
+            cursor (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listBlueskyMutualGroups", params, user=user, subject=subject)
+
+    def create_bluesky_group(self, user: str, name: str, members: List[str], **params) -> Dict:
+        """Create a Bluesky group chat.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Members get a request to accept. Every invited member counts as one DM (all or
+        nothing); at most 10 members by handle per request. Idempotent for 10 minutes
+        per idempotency_key (or name + members). Experimental on Bluesky: answers carry
+        experimental: true; 403 bluesky_dm_experimental_disabled while not enabled.
+
+        ``POST /api/uploadposts/dms/bluesky/groups``
+
+        Args:
+            user: Profile username.
+            name
+            members
+            idempotency_key (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createBlueskyGroup", params, user=user, name=name, members=members)
+
+    def edit_bluesky_group(self, conversation_id: str, user: str, **params) -> Dict:
+        """Rename, lock or unlock a Bluesky group.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
+
+        ``PATCH /api/uploadposts/dms/bluesky/groups/{conversation_id}``
+
+        Args:
+            conversation_id
+            user: Profile username.
+            name (str, optional)
+            locked (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("editBlueskyGroup", params, conversation_id=conversation_id, user=user)
+
+    def list_bluesky_group_members(self, conversation_id: str, user: str, **params) -> Dict:
+        """Bluesky group members.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
+
+        ``GET /api/uploadposts/dms/bluesky/groups/{conversation_id}/members``
+
+        Args:
+            conversation_id
+            user: Profile username as configured in Upload-Post.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listBlueskyGroupMembers", params, conversation_id=conversation_id, user=user)
+
+    def add_bluesky_group_members(self, conversation_id: str, user: str, members: List[str], **params) -> Dict:
+        """Add members to a Bluesky group.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. One DM of quota per added member. Experimental on Bluesky: answers
+        carry experimental: true; 403 bluesky_dm_experimental_disabled while not
+        enabled.
+
+        ``POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/members``
+
+        Args:
+            conversation_id
+            user: Profile username.
+            members
+            **params: Any other API field, by its API name.
+        """
+        return self._op("addBlueskyGroupMembers", params, conversation_id=conversation_id, user=user, members=members)
+
+    def remove_bluesky_group_members(self, conversation_id: str, user: str, members: List[str], **params) -> Dict:
+        """Remove members from a Bluesky group.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
+
+        ``DELETE /api/uploadposts/dms/bluesky/groups/{conversation_id}/members``
+
+        Args:
+            conversation_id
+            user: Profile username.
+            members
+            **params: Any other API field, by its API name.
+        """
+        return self._op("removeBlueskyGroupMembers", params, conversation_id=conversation_id, user=user, members=members)
+
+    def manage_bluesky_join_link(self, conversation_id: str, user: str, action: str, **params) -> Dict:
+        """Manage a Bluesky group join link.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        action: create, edit, enable or disable. Experimental on Bluesky: answers carry
+        experimental: true; 403 bluesky_dm_experimental_disabled while not enabled.
+
+        ``POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-link``
+
+        Args:
+            conversation_id
+            user: Profile username.
+            action
+            require_approval (bool, optional)
+            join_rule (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("manageBlueskyJoinLink", params, conversation_id=conversation_id, user=user, action=action)
+
+    def list_bluesky_join_requests(self, conversation_id: str, user: str, **params) -> Dict:
+        """Pending requests to join a Bluesky group.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Owner only. Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
+
+        ``GET /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests``
+
+        Args:
+            conversation_id
+            user: Profile username as configured in Upload-Post.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listBlueskyJoinRequests", params, conversation_id=conversation_id, user=user)
+
+    def answer_bluesky_join_request(self, conversation_id: str, user: str, action: str, **params) -> Dict:
+        """Answer or withdraw a Bluesky join request.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        action: approve / reject (with member), mark_read, or withdraw (your own
+        request). Experimental on Bluesky: answers carry experimental: true; 403
+        bluesky_dm_experimental_disabled while not enabled.
+
+        ``POST /api/uploadposts/dms/bluesky/groups/{conversation_id}/join-requests``
+
+        Args:
+            conversation_id
+            user: Profile username.
+            action
+            member (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("answerBlueskyJoinRequest", params, conversation_id=conversation_id, user=user, action=action)
+
+    def preview_bluesky_join_links(self, user: str, codes: str, **params) -> Dict:
+        """Preview Bluesky join links.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        Up to 50 codes; status active, disabled or invalid. Experimental on Bluesky:
+        answers carry experimental: true; 403 bluesky_dm_experimental_disabled while not
+        enabled.
+
+        ``GET /api/uploadposts/dms/bluesky/join-links``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            codes: Comma-separated join link codes.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("previewBlueskyJoinLinks", params, user=user, codes=codes)
+
+    def join_bluesky_group(self, user: str, code: str, **params) -> Dict:
+        """Ask to join a Bluesky group.
+
+        Not generally available yet. Group chats answer `403`
+        `bluesky_dm_experimental_disabled` until they are turned on.
+
+        status is joined or pending. Experimental on Bluesky: answers carry
+        experimental: true; 403 bluesky_dm_experimental_disabled while not enabled.
+
+        ``POST /api/uploadposts/dms/bluesky/join-links``
+
+        Args:
+            user: Profile username.
+            code
+            **params: Any other API field, by its API name.
+        """
+        return self._op("joinBlueskyGroup", params, user=user, code=code)
+
+    def download_dm_media(self, platform: str, user: str, media_id: str, **params) -> bytes:
+        """Download a DM attachment.
+
+        Returns the file of an attachment received in a DM (the media_id in
+        dm_received). Telegram: bots download up to 20 MB.
+
+        ``GET /api/uploadposts/dms/media``
+        Returns the file as bytes.
+
+        Args:
+            platform: Platform of the conversation.
+            user: Profile username.
+            media_id: media_id of the attachment (Telegram file_id).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("downloadDmMedia", params, platform=platform, user=user, media_id=media_id)
+
+    # ---- Bluesky ----
+    def bluesky_graph_action(self, user: str, action: str, **params) -> Dict:
+        """Follow, block or mute (one target per call).
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        follow/unfollow (daily limit), block/unblock, mute/unmute (only_reposts,
+        only_quoteposts), mute_list/unmute_list, block_list/unblock_list (moderation
+        lists), mute_thread/unmute_thread.
+
+        ``POST /api/uploadposts/bluesky/graph``
+
+        Args:
+            user: Profile username.
+            action
+            actor (str, optional): Handle, DID or bsky.app profile link.
+            list (str, optional): List at:// URI, bsky.app link or own list id.
+            post_id (str, optional): First post of the thread.
+            only_reposts (bool, optional)
+            only_quoteposts (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("blueskyGraphAction", params, user=user, action=action)
+
+    def list_bluesky_lists(self, user: str, **params) -> Dict:
+        """The account's lists.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        getLists for the account.
+
+        ``GET /api/uploadposts/bluesky/lists``
+
+        Args:
+            user: Profile username.
+            purposes (str, optional)
+            cursor (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listBlueskyLists", params, user=user)
+
+    def create_bluesky_list(self, user: str, name: str, purpose: str, **params) -> Dict:
+        """Create a list.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Curated, moderation or reference list.
+
+        ``POST /api/uploadposts/bluesky/lists``
+
+        Args:
+            user: Profile username.
+            name: Up to 64 bytes.
+            purpose
+            description (str, optional): Up to 300 characters.
+            avatar (Any, optional): PNG or JPEG file, up to 1,000,000 bytes
+                (multipart).
+            avatar_url (str, optional)
+            remove_avatar (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createBlueskyList", params, user=user, name=name, purpose=purpose)
+
+    def get_bluesky_list(self, list_id: str, user: str, **params) -> Dict:
+        """A list and its members.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        getList.
+
+        ``GET /api/uploadposts/bluesky/lists/{list_id}``
+
+        Args:
+            list_id: The list's record key.
+            user: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getBlueskyList", params, list_id=list_id, user=user)
+
+    def update_bluesky_list(self, list_id: str, user: str, **params) -> Dict:
+        """Update a list.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Merges the fields sent.
+
+        ``PATCH /api/uploadposts/bluesky/lists/{list_id}``
+
+        Args:
+            list_id: The list's record key.
+            user: Profile username.
+            name (str, optional): Up to 64 bytes.
+            purpose (str, optional)
+            description (str, optional): Up to 300 characters.
+            avatar (Any, optional): PNG or JPEG file, up to 1,000,000 bytes
+                (multipart).
+            avatar_url (str, optional)
+            remove_avatar (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateBlueskyList", params, list_id=list_id, user=user)
+
+    def delete_bluesky_list(self, list_id: str, user: str, confirm: bool, **params) -> Dict:
+        """Delete a list and its members.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true.
+
+        ``DELETE /api/uploadposts/bluesky/lists/{list_id}``
+
+        Args:
+            list_id: The list's record key.
+            user: Profile username.
+            confirm: Must be true: this cannot be undone.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteBlueskyList", params, list_id=list_id, user=user, confirm=confirm)
+
+    def list_bluesky_list_members(self, list_id: str, user: str, **params) -> Dict:
+        """List members.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        getList items.
+
+        ``GET /api/uploadposts/bluesky/lists/{list_id}/members``
+
+        Args:
+            list_id: The list's record key.
+            user: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listBlueskyListMembers", params, list_id=list_id, user=user)
+
+    def add_bluesky_list_member(self, list_id: str, user: str, actor: str, **params) -> Dict:
+        """Add a member.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        One account per call.
+
+        ``POST /api/uploadposts/bluesky/lists/{list_id}/members``
+
+        Args:
+            list_id: The list's record key.
+            user: Profile username.
+            actor
+            **params: Any other API field, by its API name.
+        """
+        return self._op("addBlueskyListMember", params, list_id=list_id, user=user, actor=actor)
+
+    def remove_bluesky_list_member(self, list_id: str, user: str, actor: str, **params) -> Dict:
+        """Remove a member.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        One account per call.
+
+        ``DELETE /api/uploadposts/bluesky/lists/{list_id}/members``
+
+        Args:
+            list_id: The list's record key.
+            user: Profile username.
+            actor
+            **params: Any other API field, by its API name.
+        """
+        return self._op("removeBlueskyListMember", params, list_id=list_id, user=user, actor=actor)
+
+    def opt_out_bluesky_list(self, user: str, list: str, **params) -> Dict:
+        """Ask not to appear in a reference list.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        referencelistoptout.
+
+        ``POST /api/uploadposts/bluesky/lists/opt-out``
+
+        Args:
+            user: Profile username.
+            list
+            **params: Any other API field, by its API name.
+        """
+        return self._op("optOutBlueskyList", params, user=user, list=list)
+
+    def remove_opt_out_bluesky_list(self, user: str, list: str, **params) -> Dict:
+        """Withdraw the opt-out.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        ``DELETE /api/uploadposts/bluesky/lists/opt-out``
+
+        Args:
+            user: Profile username.
+            list
+            **params: Any other API field, by its API name.
+        """
+        return self._op("removeOptOutBlueskyList", params, user=user, list=list)
+
+    def list_bluesky_starter_packs(self, user: str, **params) -> Dict:
+        """The account's starter packs.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        ``GET /api/uploadposts/bluesky/starter-packs``
+
+        Args:
+            user: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listBlueskyStarterPacks", params, user=user)
+
+    def create_bluesky_starter_pack(self, user: str, name: str, **params) -> Dict:
+        """Create a starter pack.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        ``POST /api/uploadposts/bluesky/starter-packs``
+
+        Args:
+            user: Profile username.
+            name: Up to 50 characters.
+            description (str, optional)
+            feeds (List[str], optional): Up to 3 feed at:// URIs.
+            list (str, optional): Own list to use.
+            members (List[str], optional): Up to 25 accounts per request (a new list
+                is created; add more through /lists/{list_id}/members).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createBlueskyStarterPack", params, user=user, name=name)
+
+    def get_bluesky_starter_pack(self, pack_id: str, user: str, **params) -> Dict:
+        """A starter pack.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        ``GET /api/uploadposts/bluesky/starter-packs/{pack_id}``
+
+        Args:
+            pack_id: The starter pack's record key.
+            user: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getBlueskyStarterPack", params, pack_id=pack_id, user=user)
+
+    def update_bluesky_starter_pack(self, pack_id: str, user: str, **params) -> Dict:
+        """Update a starter pack.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        name, description, feeds.
+
+        ``PATCH /api/uploadposts/bluesky/starter-packs/{pack_id}``
+
+        Args:
+            pack_id: The starter pack's record key.
+            user: Profile username.
+            name (str, optional): Up to 50 characters.
+            description (str, optional)
+            feeds (List[str], optional): Up to 3 feed at:// URIs.
+            list (str, optional): Own list to use.
+            members (List[str], optional): Up to 25 accounts per request (a new list
+                is created; add more through /lists/{list_id}/members).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateBlueskyStarterPack", params, pack_id=pack_id, user=user)
+
+    def delete_bluesky_starter_pack(self, pack_id: str, user: str, confirm: bool, **params) -> Dict:
+        """Delete a starter pack.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true; delete_list=true also deletes its list.
+
+        ``DELETE /api/uploadposts/bluesky/starter-packs/{pack_id}``
+
+        Args:
+            pack_id: The starter pack's record key.
+            user: Profile username.
+            confirm: Must be true: this cannot be undone.
+            delete_list (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteBlueskyStarterPack", params, pack_id=pack_id, user=user, confirm=confirm)
+
+    def list_bluesky_feeds(self, user: str, **params) -> Dict:
+        """Feeds declared by the account.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        ``GET /api/uploadposts/bluesky/feeds``
+
+        Args:
+            user: Profile username.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listBlueskyFeeds", params, user=user)
+
+    def create_bluesky_feed(self, user: str, rkey: str, did: str, display_name: str, **params) -> Dict:
+        """Declare a custom feed.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Points to a feed generator service run by someone else.
+
+        ``POST /api/uploadposts/bluesky/feeds``
+
+        Args:
+            user: Profile username.
+            rkey: 1-15 letters, digits or dashes (create only).
+            did: Feed generator service DID.
+            display_name: Up to 24 characters.
+            description (str, optional)
+            avatar (Any, optional): PNG or JPEG file, up to 1,000,000 bytes
+                (multipart).
+            accepts_interactions (bool, optional)
+            content_mode (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createBlueskyFeed", params, user=user, rkey=rkey, did=did, display_name=display_name)
+
+    def update_bluesky_feed(self, rkey: str, user: str, **params) -> Dict:
+        """Update a feed declaration.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        ``PATCH /api/uploadposts/bluesky/feeds/{rkey}``
+
+        Args:
+            rkey: The feed's record key.
+            user: Profile username.
+            did (str, optional): Feed generator service DID.
+            display_name (str, optional): Up to 24 characters.
+            description (str, optional)
+            avatar (Any, optional): PNG or JPEG file, up to 1,000,000 bytes
+                (multipart).
+            accepts_interactions (bool, optional)
+            content_mode (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateBlueskyFeed", params, rkey=rkey, user=user)
+
+    def delete_bluesky_feed(self, rkey: str, user: str, confirm: bool, **params) -> Dict:
+        """Delete a feed declaration.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true.
+
+        ``DELETE /api/uploadposts/bluesky/feeds/{rkey}``
+
+        Args:
+            rkey: The feed's record key.
+            user: Profile username.
+            confirm: Must be true: this cannot be undone.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteBlueskyFeed", params, rkey=rkey, user=user, confirm=confirm)
+
+    def report_on_bluesky(self, user: str, reason_type: str, confirm: bool, **params) -> Dict:
+        """Report a post or account to Bluesky moderation.
+
+        Not generally available yet. Answers `503` `bluesky_feature_disabled` until it
+        is turned on.
+
+        Needs confirm=true. Up to 20 reports per account per UTC day.
+
+        ``POST /api/uploadposts/bluesky/report``
+
+        Args:
+            user: Profile username.
+            post_id (str, optional)
+            actor (str, optional)
+            reason_type: spam, violation, misleading, sexual, rude, other, appeal,
+                or tools.ozone.report.defs#reason... values.
+            reason (str, optional): Up to 2,000 characters.
+            confirm: Must be true: this cannot be undone.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("reportOnBluesky", params, user=user, reason_type=reason_type, confirm=confirm)
+
+    # ---- Teams and Approvals ----
+    def list_post_approvals(self, **params) -> Dict:
+        """List posts awaiting approval.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        Open items by default (pending_approval and draft). Editors and Contributors
+        only see their own; members limited to some profiles only see those. Page with
+        `before` = the previous `next_before`.
+
+        ``GET /api/uploadposts/approvals``
+
+        Args:
+            status (str, optional): Comma-separated statuses (default the open
+                ones).
+            profile_username (str, optional): Only this profile.
+            author (str, optional): Only this author email.
+            limit (int, optional): Page size.
+            before (str, optional): created_at of the last item of the previous page
+                (next_before).
+            count_only (bool, optional): true (or 1): answer only how many items
+                there are per status, with the same filters (status, profile_username,
+                author; limit and before are ignored). Nothing is listed or signed.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listPostApprovals", params)
+
+    def get_post_approval(self, approval_id: str, **params) -> Dict:
+        """Get a post awaiting approval.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        The author or a reviewer (owner or Admin). Adds fields, preview_url,
+        thumbnail_url and destinations_effective.
+
+        ``GET /api/uploadposts/approvals/{approval_id}``
+
+        Args:
+            approval_id: Approval id.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getPostApproval", params, approval_id=approval_id)
+
+    def edit_post_approval(self, approval_id: str, **params) -> Dict:
+        """Edit a post awaiting approval.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        The author or a reviewer, while it is open. Same body and validations as `PATCH
+        /uploadposts/schedule/{job_id}`. Every edit raises `version` by one.
+
+        ``PATCH /api/uploadposts/approvals/{approval_id}``
+
+        Args:
+            approval_id: Approval id.
+            title (str, optional)
+            caption (str, optional)
+            description (str, optional): Alias of caption.
+            platform_content (Dict[str, Any], optional)
+            fields (Dict[str, Any], optional)
+            scheduled_date (str, optional)
+            timezone (str, optional)
+            cover_image_base64 (str, optional)
+            remove_cover (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("editPostApproval", params, approval_id=approval_id)
+
+    def withdraw_post_approval(self, approval_id: str, **params) -> Dict:
+        """Withdraw or discard a post awaiting approval.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        The author withdraws it or a reviewer discards it: status withdrawn; its media
+        is deleted.
+
+        ``DELETE /api/uploadposts/approvals/{approval_id}``
+
+        Args:
+            approval_id: Approval id.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("withdrawPostApproval", params, approval_id=approval_id)
+
+    def approve_post_approval(self, approval_id: str, version: int, **params) -> Dict:
+        """Approve a post.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        Reviewer only (owner or Admin). `version` is required: the `item.version` you
+        reviewed. Date used: the one in the body; else now (immediate posts or
+        `publish_now`); else the next free queue slot (posts sent with add_to_queue);
+        else the post's own date if it is more than 60 s away. Monthly credits are
+        reserved now; if creating the job fails the item reopens and the credits come
+        back (500 approval_failed).
+
+        ``POST /api/uploadposts/approvals/{approval_id}/approve``
+
+        Args:
+            approval_id: Approval id.
+            version
+            comment (str, optional)
+            scheduled_date (str, optional)
+            timezone (str, optional)
+            publish_now (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("approvePostApproval", params, approval_id=approval_id, version=version)
+
+    def reject_post_approval(self, approval_id: str, comment: str, **params) -> Dict:
+        """Reject a post.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        Reviewer only. `comment` is required (max 2000 characters) and is shown to the
+        author.
+
+        ``POST /api/uploadposts/approvals/{approval_id}/reject``
+
+        Args:
+            approval_id: Approval id.
+            comment
+            **params: Any other API field, by its API name.
+        """
+        return self._op("rejectPostApproval", params, approval_id=approval_id, comment=comment)
+
+    def list_client_post_approvals(self, token: str, **params) -> Dict:
+        """End client: list posts to approve.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        Called with the **profile JWT** of the white-label connect page (`Authorization:
+        Bearer <access_url token>`), generated with `client_approval: true` (`POST
+        /uploadposts/users/generate-jwt`). Only the `pending_approval` posts of that
+        profile; the end client cannot change the date. The account owner turns it off
+        by generating the JWT again with `client_approval: false`. Items come without
+        author or internal ids.
+
+        ``GET /api/uploadposts/approvals/client``
+        Authenticated with the profile JWT (``token``), not the API key.
+
+        Args:
+            token: Profile JWT (from ``generate_jwt``), sent as ``Authorization: Bearer``.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listClientPostApprovals", params, token=token)
+
+    def approve_client_post_approval(self, token: str, approval_id: str, version: int, **params) -> Dict:
+        """End client: approve a post.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        Called with the **profile JWT** of the white-label connect page (`Authorization:
+        Bearer <access_url token>`), generated with `client_approval: true` (`POST
+        /uploadposts/users/generate-jwt`). Only the `pending_approval` posts of that
+        profile; the end client cannot change the date. The account owner turns it off
+        by generating the JWT again with `client_approval: false`. `version` is
+        required, as for reviewers. Recorded as decided_by `client:<profile>`,
+        decided_by_role `client`.
+
+        ``POST /api/uploadposts/approvals/client/{approval_id}/approve``
+        Authenticated with the profile JWT (``token``), not the API key.
+
+        Args:
+            token: Profile JWT (from ``generate_jwt``), sent as ``Authorization: Bearer``.
+            approval_id: Approval id.
+            version
+            comment (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("approveClientPostApproval", params, token=token, approval_id=approval_id, version=version)
+
+    def reject_client_post_approval(self, token: str, approval_id: str, comment: str, **params) -> Dict:
+        """End client: reject a post.
+
+        Not generally available yet. While post approvals are switched off every route
+        of this group answers `503` with `error_code: post_approvals_disabled`.
+
+        Called with the **profile JWT** of the white-label connect page (`Authorization:
+        Bearer <access_url token>`), generated with `client_approval: true` (`POST
+        /uploadposts/users/generate-jwt`). Only the `pending_approval` posts of that
+        profile; the end client cannot change the date. The account owner turns it off
+        by generating the JWT again with `client_approval: false`. `comment` is
+        required.
+
+        ``POST /api/uploadposts/approvals/client/{approval_id}/reject``
+        Authenticated with the profile JWT (``token``), not the API key.
+
+        Args:
+            token: Profile JWT (from ``generate_jwt``), sent as ``Authorization: Bearer``.
+            approval_id: Approval id.
+            comment
+            **params: Any other API field, by its API name.
+        """
+        return self._op("rejectClientPostApproval", params, token=token, approval_id=approval_id, comment=comment)
+
+    def get_team_roles(self, **params) -> Dict:
+        """Team roles and your role.
+
+        The role matrix and the caller's role. `enabled: false` while team roles are not
+        available: then every member is treated as Admin with every profile. Roles and
+        profile lists are changed by the account owner from the dashboard.
+
+        ``GET /api/uploadposts/teams/roles``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("getTeamRoles", params)
+
+    def list_team_audit(self, **params) -> Dict:
+        """Team activity log.
+
+        What team members did on the account (posts created, published, edited or
+        cancelled, approvals and decisions, access changes), newest first. Owner and
+        Admin members only. Rows are kept `retention_days` days.
+
+        ``GET /api/uploadposts/teams/audit``
+
+        Args:
+            actor (str, optional): Only this member email.
+            action (str, optional): Only this action.
+            profile_username (str, optional): Only this profile.
+            target_id (str, optional): Only this approval or job id.
+            since (str, optional): ISO 8601, inclusive.
+            until (str, optional): ISO 8601, exclusive.
+            limit (int, optional): Page size.
+            cursor (str, optional): next_cursor of the previous page.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTeamAudit", params)
+
+    # ---- Feedback ----
+    def send_feedback(self, message: str, **params) -> Dict:
+        """Send feedback to the Upload-Post team.
+
+        For AI agents and developers. Never include credentials or personal data (they
+        are redacted anyway). A repeated report returns duplicate: true.
+
+        ``POST /api/uploadposts/feedback``
+
+        Args:
+            message
+            category (str, optional)
+            endpoint (str, optional)
+            request_id (str, optional)
+            agent (str, optional): Name of the agent or tool.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("sendFeedback", params, message=message)
+
+    # ---- Google Business ----
+    def update_google_business_account(self, user: str, account_name: str, **params) -> Dict:
+        """Rename a Google Business account.
+
+        Not generally available yet. Off by default: answers `403` with
+        `ownership_changes_disabled` until the feature is available.
+
+        Renames a business account (only the name). With `validate_only: true` Google
+        checks the request without changing anything (no `confirm` needed); that mode
+        works today. A real rename is not generally available yet: 403
+        `ownership_changes_disabled`. `account` must be the account connected to the
+        profile or the owner of one of its saved locations (404 `account_not_found`
+        otherwise).
+
+        ``PATCH /api/uploadposts/google-business/accounts``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            account (str, optional): `accounts/{id}` or a bare id.
+            account_name: New name.
+            validate_only (bool, optional): Google validates only; nothing changes.
+            confirm (bool, optional): Required (`true`) unless `validate_only`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateGoogleBusinessAccount", params, user=user, account_name=account_name)
+
+    def create_google_business_admin(self, user: str, role: str, confirm: bool, **params) -> Dict:
+        """Invite an admin.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
+        Google emails the invitation; the person gets access once they accept. Not
+        generally available yet: answers 403 `ownership_changes_disabled` (do it in
+        Google Business Profile). When enabled, only the owner of the Upload-Post
+        account can do it (a team member gets 403 `owner_only`). Needs `"confirm":
+        true`. Every change is audited. On 502 `google_result_unknown`, check with the
+        matching GET before resending.
+
+        ``POST /api/uploadposts/google-business/admins``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            scope (str, optional): `account` (default) or `location`.
+            account (str, optional): Target account (`scope=account`).
+            location_id (str, optional): Target location (`scope=location`).
+            admin (str, optional): Email of the person to invite (one of `admin` /
+                `admin_account`).
+            admin_account (str, optional): `accounts/{id}` of a location group to
+                invite to a location (`scope=location` only).
+            role
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createGoogleBusinessAdmin", params, user=user, role=role, confirm=confirm)
+
+    def update_google_business_admin(self, user: str, admin_name: str, role: str, confirm: bool, **params) -> Dict:
+        """Change an admin's role.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
+        Changes the role of an admin (`admin_name` from GET /admins). If the role is
+        already that one, the answer has `unchanged: true` and nothing is sent. Refused
+        with 409 `last_owner` if it would demote the last owner and 409
+        `connected_identity` if it would demote the Google account connected to
+        Upload-Post. Not generally available yet: answers 403
+        `ownership_changes_disabled` (do it in Google Business Profile). When enabled,
+        only the owner of the Upload-Post account can do it (a team member gets 403
+        `owner_only`). Needs `"confirm": true`. Every change is audited. On 502
+        `google_result_unknown`, check with the matching GET before resending.
+
+        ``PATCH /api/uploadposts/google-business/admins``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            admin_name: `accounts/{a}/admins/{id}` or `locations/{l}/admins/{id}`
+                (alias `name`).
+            role
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateGoogleBusinessAdmin", params, user=user, admin_name=admin_name, role=role, confirm=confirm)
+
+    def delete_google_business_admin(self, user: str, admin_name: str, confirm: bool, **params) -> Dict:
+        """Remove an admin.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
+        Removes an admin at once (they would have to be invited again). Refused with 409
+        `last_owner` / `connected_identity` like the role change. JSON body. Not
+        generally available yet: answers 403 `ownership_changes_disabled` (do it in
+        Google Business Profile). When enabled, only the owner of the Upload-Post
+        account can do it (a team member gets 403 `owner_only`). Needs `"confirm":
+        true`. Every change is audited. On 502 `google_result_unknown`, check with the
+        matching GET before resending.
+
+        ``DELETE /api/uploadposts/google-business/admins``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            admin_name: Admin resource name from GET /admins (alias `name`).
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteGoogleBusinessAdmin", params, user=user, admin_name=admin_name, confirm=confirm)
+
+    def accept_google_business_invitation(self, user: str, invitation: str, confirm: bool, **params) -> Dict:
+        """Accept an invitation.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
+        Accepts a pending invitation (404 `invitation_not_found` otherwise). Not
+        generally available yet: answers 403 `ownership_changes_disabled` (do it in
+        Google Business Profile). When enabled, only the owner of the Upload-Post
+        account can do it (a team member gets 403 `owner_only`). Needs `"confirm":
+        true`. Every change is audited. On 502 `google_result_unknown`, check with the
+        matching GET before resending.
+
+        ``POST /api/uploadposts/google-business/invitations/accept``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            invitation: `accounts/{a}/invitations/{id}` (alias `invitation_name`).
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("acceptGoogleBusinessInvitation", params, user=user, invitation=invitation, confirm=confirm)
+
+    def decline_google_business_invitation(self, user: str, invitation: str, confirm: bool, **params) -> Dict:
+        """Decline an invitation.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
+        Declines a pending invitation (404 `invitation_not_found` otherwise). Not
+        generally available yet: answers 403 `ownership_changes_disabled` (do it in
+        Google Business Profile). When enabled, only the owner of the Upload-Post
+        account can do it (a team member gets 403 `owner_only`). Needs `"confirm":
+        true`. Every change is audited. On 502 `google_result_unknown`, check with the
+        matching GET before resending.
+
+        ``POST /api/uploadposts/google-business/invitations/decline``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            invitation: `accounts/{a}/invitations/{id}` (alias `invitation_name`).
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("declineGoogleBusinessInvitation", params, user=user, invitation=invitation, confirm=confirm)
+
+    def transfer_google_business_location(self, user: str, location_id: str, destination_account: str, confirm: bool, **params) -> Dict:
+        """Transfer a location to another account.
+
+        Not generally available yet. The API answers HTTP 503 until it is switched on.
+
+        Moves a location to another Google account. Google only allows it when the
+        connected user owns the location and manages the destination account. Not
+        generally available yet: answers 403 `ownership_changes_disabled` (do it in
+        Google Business Profile). When enabled, only the owner of the Upload-Post
+        account can do it (a team member gets 403 `owner_only`). Needs `"confirm":
+        true`. Every change is audited. On 502 `google_result_unknown`, check with the
+        matching GET before resending.
+
+        ``POST /api/uploadposts/google-business/locations/transfer``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            location_id: Location: `locations/{id}`, a bare id or
+                `accounts/{a}/locations/{id}`.
+            destination_account: `accounts/{id}` that receives the location.
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("transferGoogleBusinessLocation", params, user=user, location_id=location_id, destination_account=destination_account, confirm=confirm)
+
+    def create_google_business_location(self, user: str, language_code: str, **params) -> Dict:
+        """Create a location.
+
+        Not generally available yet. Answers 503 `gbp_feature_disabled` before anything
+        else is checked. Send `location` (a Google Location object) or the friendly
+        fields of location info, plus `language_code`. `title`, `primary_category` and
+        `language_code` are required. Needs `confirm: true` (not with `dry_run`).
+        `request_id` comes back in every answer: on 502 `google_result_unknown` repeat
+        with the same `request_id` and Google never creates it twice. Search first with
+        google-locations/search. Daily creation limits: 429 `daily_limit_reached` /
+        `google_daily_quota_exhausted`.
+
+        ``POST /api/uploadposts/google-business/locations/create``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            account (str, optional): Google account, `accounts/{id}` or a bare id.
+                Default: the account saved when Google Business was connected.
+            location (Dict[str, Any], optional): Google Location object (instead of
+                the friendly fields).
+            language_code: BCP 47; cannot be changed later.
+            title (str, optional)
+            primary_category (str, optional)
+            request_id (str, optional): Up to 50 letters, digits, `-` or `_`.
+                Generated if missing.
+            dry_run (bool, optional): Validate and return what would be sent,
+                without applying it.
+            confirm (bool, optional): Required (`true`) for a real creation.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createGoogleBusinessLocation", params, user=user, language_code=language_code)
+
+    def delete_google_business_location(self, user: str, location_id: str, confirm: bool, **params) -> Dict:
+        """Delete a location.
+
+        Not generally available yet. Answers 503 `gbp_feature_disabled` before anything
+        else is checked. Irreversible. Needs `confirm: true`. If Google does not allow
+        deleting it through the API: 409 `location_cannot_be_deleted` (delete it from
+        business.google.com).
+
+        ``DELETE /api/uploadposts/google-business/locations/delete``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            location_id: Location: `locations/{id}`, a bare id or
+                `accounts/{a}/locations/{id}`.
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteGoogleBusinessLocation", params, user=user, location_id=location_id, confirm=confirm)
+
+    def get_google_business_notification_settings(self, user: str, **params) -> Dict:
+        """Get real-time notification settings.
+
+        Not generally available yet. Answers 503 `gbp_notifications_unavailable` and no
+        Google Business event is sent to webhooks. Google keeps one notification setting
+        per Google account; when another tool owns it, `other_tool_configured` is
+        `true`.
+
+        ``GET /api/uploadposts/google-business/notifications``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            account (str, optional): Google account, `accounts/{id}` or a bare id.
+                Default: the account saved when Google Business was connected.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getGoogleBusinessNotificationSettings", params, user=user)
+
+    def update_google_business_notification_settings(self, user: str, confirm: bool, **params) -> Dict:
+        """Turn real-time notifications on or off.
+
+        Not generally available yet. Answers 503 `gbp_notifications_unavailable` and no
+        Google Business event is sent to webhooks. Turns notifications on or off for the
+        Google account; webhooks must also list the events (`review_received`,
+        `review_updated`, `customer_media_received`, `listing_google_update`,
+        `listing_duplicate`, `listing_control_changed`) in `webhook_events`. Needs
+        `confirm: true`. If Google does not confirm the change (`outcome_unknown:
+        true`), read the setting before retrying.
+
+        ``PUT /api/uploadposts/google-business/notifications``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            account (str, optional): Google account, `accounts/{id}` or a bare id.
+                Default: the account saved when Google Business was connected.
+            enabled (bool, optional): `true` (default) or `false`.
+            types (List[str], optional): Types to receive (alias
+                `notification_types`). Default: all six.
+            confirm: Must be `true`: this replaces any other tool's setting for this
+                Google account.
+            force (bool, optional): `true` to replace a setting that belongs to
+                another tool.
+            confirm_other_tool (bool, optional): With `enabled: false` and `force:
+                true` on another tool's setting: switch that tool's notifications off
+                too.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateGoogleBusinessNotificationSettings", params, user=user, confirm=confirm)
+
+    def start_google_business_verification(self, user: str, method: str, confirm: bool, **params) -> Dict:
+        """Start a verification.
+
+        Not generally available yet. Answers 503 `gbp_feature_disabled`. Google contacts
+        the business (postcard, SMS, call or email), so `confirm: true` is required. 3
+        verifications a day per location (429 `daily_limit_reached`, `scope: location`).
+        `AUTO` verifications are `COMPLETED` at once; the others wait for the code. On
+        502 `google_result_unknown`, check the list before trying again.
+
+        ``POST /api/uploadposts/google-business/verification/start``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            location_id (str, optional): Location: `locations/{id}`, a bare id or
+                `accounts/{a}/locations/{id}`.
+            method
+            phone_number (str, optional): `PHONE_CALL` / `SMS`: one of the numbers
+                in the options.
+            email_address (str, optional): `EMAIL`: one of the addresses in the
+                options.
+            mailer_contact (str, optional): `ADDRESS`: name the postcard is
+                addressed to.
+            trusted_partner_token (str, optional): Required for `TRUSTED_PARTNER`.
+            token (str, optional): Vetted partners only. Not with the four fields
+                above.
+            language_code (str, optional): BCP-47, default `en`. The methods depend
+                on the language and the country.
+            context (Dict[str, Any], optional): Only for service-area businesses
+                without a storefront: `{"address": {PostalAddress with regionCode}}`.
+            confirm: Must be `true`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("startGoogleBusinessVerification", params, user=user, method=method, confirm=confirm)
+
+    def complete_google_business_verification(self, user: str, pin: str, **params) -> Dict:
+        """Enter the verification code.
+
+        Not generally available yet. Answers 503 `gbp_feature_disabled`. Sends the code
+        Google sent. 10 attempts a day per account and location (429
+        `daily_limit_reached`); only codes Google actually checked count. `state:
+        COMPLETED` when Google accepts it.
+
+        ``POST /api/uploadposts/google-business/verification/complete``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            location_id (str, optional): Location: `locations/{id}`, a bare id or
+                `accounts/{a}/locations/{id}`.
+            verification_name (str, optional): `locations/{l}/verifications/{v}`
+                (one of `verification_name` / `verification_id`).
+            verification_id (str, optional): Last part of the name, with
+                `location_id`.
+            pin: The code Google sent.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("completeGoogleBusinessVerification", params, user=user, pin=pin)
+
+    def generate_google_business_verification_token(self, user: str, **params) -> Dict:
+        """Get an instant verification token.
+
+        Not generally available yet. Answers 503 `gbp_feature_disabled`. Asks Google for
+        an instant verification token. When Google reserves it to its vetted partners,
+        403 `partner_only`: use verification/start instead.
+
+        ``POST /api/uploadposts/google-business/verification/token``
+
+        Args:
+            user: Profile username with Google Business connected (alias `profile`).
+            location_id (str, optional): Location: `locations/{id}`, a bare id or
+                `accounts/{a}/locations/{id}`.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("generateGoogleBusinessVerificationToken", params, user=user)
+
+    # ---- ChatGPT Ads ----
+    def connect_chatgpt_ads_account(self, api_key: str, **params) -> Dict:
+        """Connect a ChatGPT Ads account.
+
+        Stores an OpenAI Ads API key after validating it live against OpenAI. Each key
+        is scoped to one ad account. The key is encrypted at rest and never returned.
+        Posting the same account again replaces the stored key (key rotation). The first
+        account connected becomes the default. Spend runs on your own OpenAI billing.
+
+        ``POST /api/uploadposts/ads/chatgpt/connect``
+
+        Args:
+            api_key: Your OpenAI Ads API key (ads.openai.com -> Settings -> API
+                keys).
+            profile_username (str, optional): Link the ad account to this profile.
+            name (str, optional): Friendly label. Default: the ad account name
+                reported by OpenAI.
+            default (bool, optional): Make this the account used when a request does
+                not choose one.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectChatgptAdsAccount", params, api_key=api_key)
+
+    def list_chatgpt_ads_accounts(self, **params) -> Dict:
+        """List connected ChatGPT Ads accounts.
+
+        Connected ad accounts (never the credentials), default first, each with the
+        `profiles` it is linked to.
+
+        ``GET /api/uploadposts/ads/chatgpt/accounts``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("listChatgptAdsAccounts", params)
+
+    def disconnect_chatgpt_ads_account(self, ad_account_id: str, **params) -> Dict:
+        """Disconnect a ChatGPT Ads account.
+
+        Without `profile_username`: forgets the stored key and unlinks every profile (if
+        it was the default, another connected account becomes the default). With
+        `profile_username`: only unlinks that profile and keeps the key for the others.
+        Campaigns keep running in Ads Manager either way.
+
+        ``DELETE /api/uploadposts/ads/chatgpt/accounts/{ad_account_id}``
+
+        Args:
+            ad_account_id: Connected ad account (`adacct_...`).
+            profile_username (str, optional): Only unlink this profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("disconnectChatgptAdsAccount", params, ad_account_id=ad_account_id)
+
+    def get_chatgpt_ads_account(self, **params) -> Dict:
+        """Get live ad account metadata.
+
+        The selected ad account's metadata, read live from OpenAI. A 401 can also mean
+        OpenAI rejected the stored key (revoked): reconnect the account with POST
+        /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/account``
+
+        Args:
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsAccount", params)
+
+    def list_chatgpt_ads_campaigns(self, **params) -> Dict:
+        """List campaigns.
+
+        Campaigns of the ad account. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/campaigns``
+
+        Args:
+            limit (int, optional): 1-500 (default 20).
+            after (str, optional): Cursor: `last_id` of the previous page.
+            before (str, optional): Cursor: `first_id` of the next page.
+            order (str, optional): Sort order.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listChatgptAdsCampaigns", params)
+
+    def create_chatgpt_ads_campaign(self, name: str, **params) -> Dict:
+        """Create a campaign.
+
+        Creates a campaign (budget, schedule, location and audience targeting). One of
+        `budget` / `budget_micros` is required. Created `paused` unless `status: active`
+        is sent. A 401 can also mean OpenAI rejected the stored key (revoked): reconnect
+        the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/campaigns``
+
+        Args:
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            name: 3-1000 characters.
+            budget (float, optional): Lifetime spend limit in the ad account
+                currency. Minimum 1.
+            budget_micros (int, optional): Same in micros (`25000000` = 25.00).
+                Alternative to `budget`.
+            status (str, optional): Default `paused`: nothing starts spending by
+                accident.
+            description (str, optional)
+            start_time (Any, optional): Unix timestamp or ISO-8601 datetime. Empty
+                or null clears it.
+            end_time (Any, optional): Unix timestamp or ISO-8601 datetime. Empty or
+                null clears it.
+            bidding_type (str, optional): Default `impressions`. Cannot be changed
+                later.
+            conversion_event_setting_ids (List[str], optional): Exactly one active
+                standard event setting; required for `conversions`.
+            mode (str, optional): Passed to OpenAI as is.
+            product_feed_id (str, optional): Product feed (product-feed campaigns).
+            locations (List[str], optional): OpenAI location ids (country, region or
+                DMA). Shorthand for `targeting.locations.include`.
+            custom_audience_ids (List[str], optional): Shorthand for
+                `targeting.custom_audiences.ids`.
+            excluded_custom_audience_ids (List[str], optional): Shorthand for
+                `targeting.excluded_custom_audiences.ids`.
+            targeting (Dict[str, Any], optional): Full OpenAI targeting object.
+                Overrides the shorthands.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createChatgptAdsCampaign", params, name=name)
+
+    def get_chatgpt_ads_campaign(self, campaign_id: str, **params) -> Dict:
+        """Get a campaign.
+
+        One campaign. A 401 can also mean OpenAI rejected the stored key (revoked):
+        reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}``
+
+        Args:
+            campaign_id: Campaign id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsCampaign", params, campaign_id=campaign_id)
+
+    def update_chatgpt_ads_campaign(self, campaign_id: str, **params) -> Dict:
+        """Update a campaign.
+
+        Updates a campaign. Every field is optional; at least one is required (400 `No
+        updatable fields supplied`). Archiving is irreversible. A 401 can also mean
+        OpenAI rejected the stored key (revoked): reconnect the account with POST
+        /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}``
+
+        Args:
+            campaign_id: Campaign id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            name (str, optional): 3-1000 characters.
+            budget (float, optional): Lifetime spend limit in the ad account
+                currency. Minimum 1.
+            budget_micros (int, optional): Same in micros (`25000000` = 25.00).
+                Alternative to `budget`.
+            status (str, optional): `archived` is irreversible.
+            description (str, optional)
+            start_time (Any, optional): Unix timestamp or ISO-8601 datetime. Empty
+                or null clears it.
+            end_time (Any, optional): Unix timestamp or ISO-8601 datetime. Empty or
+                null clears it.
+            locations (List[str], optional): OpenAI location ids (country, region or
+                DMA). Shorthand for `targeting.locations.include`.
+            custom_audience_ids (List[str], optional): Shorthand for
+                `targeting.custom_audiences.ids`.
+            excluded_custom_audience_ids (List[str], optional): Shorthand for
+                `targeting.excluded_custom_audiences.ids`.
+            targeting (Dict[str, Any], optional): Full OpenAI targeting object.
+                Overrides the shorthands.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateChatgptAdsCampaign", params, campaign_id=campaign_id)
+
+    def activate_chatgpt_ads_campaign(self, campaign_id: str, **params) -> Dict:
+        """Activate a campaign.
+
+        Sets the campaign `active`. An ad only serves when its campaign, ad group and ad
+        are all active and the ad passed OpenAI's review. No body: choose the ad account
+        with the query parameter or the header. A 401 can also mean OpenAI rejected the
+        stored key (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/activate``
+
+        Args:
+            campaign_id: Campaign id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("activateChatgptAdsCampaign", params, campaign_id=campaign_id)
+
+    def pause_chatgpt_ads_campaign(self, campaign_id: str, **params) -> Dict:
+        """Pause a campaign.
+
+        Sets the campaign `paused`. No body: choose the ad account with the query
+        parameter or the header. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/pause``
+
+        Args:
+            campaign_id: Campaign id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("pauseChatgptAdsCampaign", params, campaign_id=campaign_id)
+
+    def archive_chatgpt_ads_campaign(self, campaign_id: str, **params) -> Dict:
+        """Archive a campaign.
+
+        Archives the campaign. Irreversible. No body: choose the ad account with the
+        query parameter or the header. A 401 can also mean OpenAI rejected the stored
+        key (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/archive``
+
+        Args:
+            campaign_id: Campaign id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("archiveChatgptAdsCampaign", params, campaign_id=campaign_id)
+
+    def get_chatgpt_ads_campaign_insights(self, campaign_id: str, **params) -> Dict:
+        """Get campaign insights.
+
+        Performance of one campaign; rows per `aggregation_level` inside it. Repeatable
+        parameters accept `key` or `key[]` and are forwarded to OpenAI. Page forward
+        with `after=<last_id>`. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/campaigns/{campaign_id}/insights``
+
+        Args:
+            campaign_id: Campaign id.
+            since (str, optional): `YYYY-MM-DD`, start of a date range in the ad
+                account timezone.
+            until (str, optional): `YYYY-MM-DD`, end of the date range.
+            time_granularity (str, optional): Default `daily`.
+            aggregation_level (str, optional): Row entity inside the endpoint's
+                scope.
+            fields (List[str], optional): Repeatable (`fields` or `fields[]`).
+                Metrics and metadata: `impressions`, `clicks`, `spend`, `ctr`, `cpc`,
+                `cpm`, `campaign.name`...
+            segments (List[str], optional): Repeatable. One of `product`, `country`,
+                `device`.
+            filters (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            sort (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            time_ranges (List[str], optional): Repeatable JSON-encoded range
+                objects, for windows `since`/`until` cannot express (they win over
+                `since`/`until`).
+            limit (int, optional): 1-2000 (default 20).
+            after (str, optional): Cursor: `last_id` of the previous page.
+            before (str, optional): Cursor: `first_id` of the next page.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsCampaignInsights", params, campaign_id=campaign_id)
+
+    def list_chatgpt_ads_ad_groups(self, campaign_id: str, **params) -> Dict:
+        """List ad groups.
+
+        Ad groups of a campaign. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/adgroups``
+
+        Args:
+            campaign_id: Parent campaign.
+            limit (int, optional): 1-500 (default 20).
+            after (str, optional): Cursor: `last_id` of the previous page.
+            before (str, optional): Cursor: `first_id` of the next page.
+            order (str, optional): Sort order.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listChatgptAdsAdGroups", params, campaign_id=campaign_id)
+
+    def create_chatgpt_ads_ad_group(self, campaign_id: str, name: str, **params) -> Dict:
+        """Create an ad group.
+
+        Creates an ad group (the bid) under a campaign. One of `max_bid` /
+        `max_bid_micros` is required unless `bidding_config` is sent. Created `paused`
+        unless `status: active` is sent. A 401 can also mean OpenAI rejected the stored
+        key (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/adgroups``
+
+        Args:
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            campaign_id: Parent campaign.
+            name: 3-1000 characters.
+            max_bid (float, optional): Max bid per billing event in account currency
+                (`0.06` = a $60 CPM on impression billing).
+            max_bid_micros (int, optional): Same in micros. Alternative to
+                `max_bid`.
+            billing_event_type (str, optional): Default `impression`; `click` for
+                click and conversion campaigns.
+            bidding_config (Dict[str, Any], optional): Full OpenAI bidding config.
+                Overrides `max_bid` / `billing_event_type`.
+            status (str, optional): Default `paused`: nothing starts spending by
+                accident.
+            description (str, optional)
+            context_hints (List[str], optional): When your product or service is
+                useful, in your own words.
+            product_set (Dict[str, Any], optional): Product filters for product-feed
+                campaigns.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createChatgptAdsAdGroup", params, campaign_id=campaign_id, name=name)
+
+    def get_chatgpt_ads_ad_group(self, ad_group_id: str, **params) -> Dict:
+        """Get an ad group.
+
+        One ad group. A 401 can also mean OpenAI rejected the stored key (revoked):
+        reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}``
+
+        Args:
+            ad_group_id: Ad group id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsAdGroup", params, ad_group_id=ad_group_id)
+
+    def update_chatgpt_ads_ad_group(self, ad_group_id: str, **params) -> Dict:
+        """Update an ad group.
+
+        Updates an ad group. Every field is optional; at least one is required (400 `No
+        updatable fields supplied`). Archiving is irreversible. A 401 can also mean
+        OpenAI rejected the stored key (revoked): reconnect the account with POST
+        /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}``
+
+        Args:
+            ad_group_id: Ad group id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            name (str, optional): 3-1000 characters.
+            max_bid (float, optional): Max bid per billing event in account currency
+                (`0.06` = a $60 CPM on impression billing).
+            max_bid_micros (int, optional): Same in micros. Alternative to
+                `max_bid`.
+            billing_event_type (str, optional): Default `impression`; `click` for
+                click and conversion campaigns.
+            bidding_config (Dict[str, Any], optional): Full OpenAI bidding config.
+                Overrides `max_bid` / `billing_event_type`.
+            status (str, optional): `archived` is irreversible.
+            description (str, optional)
+            context_hints (List[str], optional): When your product or service is
+                useful, in your own words.
+            product_set (Dict[str, Any], optional): Product filters for product-feed
+                campaigns.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateChatgptAdsAdGroup", params, ad_group_id=ad_group_id)
+
+    def activate_chatgpt_ads_ad_group(self, ad_group_id: str, **params) -> Dict:
+        """Activate an ad group.
+
+        Sets the ad group `active`. An ad only serves when its campaign, ad group and ad
+        are all active and the ad passed OpenAI's review. No body: choose the ad account
+        with the query parameter or the header. A 401 can also mean OpenAI rejected the
+        stored key (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/activate``
+
+        Args:
+            ad_group_id: Ad group id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("activateChatgptAdsAdGroup", params, ad_group_id=ad_group_id)
+
+    def pause_chatgpt_ads_ad_group(self, ad_group_id: str, **params) -> Dict:
+        """Pause an ad group.
+
+        Sets the ad group `paused`. No body: choose the ad account with the query
+        parameter or the header. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/pause``
+
+        Args:
+            ad_group_id: Ad group id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("pauseChatgptAdsAdGroup", params, ad_group_id=ad_group_id)
+
+    def archive_chatgpt_ads_ad_group(self, ad_group_id: str, **params) -> Dict:
+        """Archive an ad group.
+
+        Archives the ad group. Irreversible. No body: choose the ad account with the
+        query parameter or the header. A 401 can also mean OpenAI rejected the stored
+        key (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/archive``
+
+        Args:
+            ad_group_id: Ad group id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("archiveChatgptAdsAdGroup", params, ad_group_id=ad_group_id)
+
+    def get_chatgpt_ads_ad_group_insights(self, ad_group_id: str, **params) -> Dict:
+        """Get ad group insights.
+
+        Performance of one ad group; rows per `aggregation_level` inside it. Repeatable
+        parameters accept `key` or `key[]` and are forwarded to OpenAI. Page forward
+        with `after=<last_id>`. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/adgroups/{ad_group_id}/insights``
+
+        Args:
+            ad_group_id: Ad group id.
+            since (str, optional): `YYYY-MM-DD`, start of a date range in the ad
+                account timezone.
+            until (str, optional): `YYYY-MM-DD`, end of the date range.
+            time_granularity (str, optional): Default `daily`.
+            aggregation_level (str, optional): Row entity inside the endpoint's
+                scope.
+            fields (List[str], optional): Repeatable (`fields` or `fields[]`).
+                Metrics and metadata: `impressions`, `clicks`, `spend`, `ctr`, `cpc`,
+                `cpm`, `campaign.name`...
+            segments (List[str], optional): Repeatable. One of `product`, `country`,
+                `device`.
+            filters (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            sort (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            time_ranges (List[str], optional): Repeatable JSON-encoded range
+                objects, for windows `since`/`until` cannot express (they win over
+                `since`/`until`).
+            limit (int, optional): 1-2000 (default 20).
+            after (str, optional): Cursor: `last_id` of the previous page.
+            before (str, optional): Cursor: `first_id` of the next page.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsAdGroupInsights", params, ad_group_id=ad_group_id)
+
+    def list_chatgpt_ads_ads(self, ad_group_id: str, **params) -> Dict:
+        """List ads.
+
+        Ads of an ad group. `review_status` is `in_review`, `approved` or `rejected`. A
+        401 can also mean OpenAI rejected the stored key (revoked): reconnect the
+        account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/ads``
+
+        Args:
+            ad_group_id: Parent ad group.
+            limit (int, optional): 1-500 (default 20).
+            after (str, optional): Cursor: `last_id` of the previous page.
+            before (str, optional): Cursor: `first_id` of the next page.
+            order (str, optional): Sort order.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listChatgptAdsAds", params, ad_group_id=ad_group_id)
+
+    def create_chatgpt_ads_ad(self, ad_group_id: str, name: str, **params) -> Dict:
+        """Create an ad.
+
+        Creates an ad (the creative) under an ad group: send `title`, `body`,
+        `target_url` and `file_id` at the top level, or a full `creative` object (needed
+        for `product_ad_template`). It starts serving after OpenAI's review
+        (`review_status: approved`). Created `paused` unless `status: active` is sent. A
+        401 can also mean OpenAI rejected the stored key (revoked): reconnect the
+        account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/ads``
+
+        Args:
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            ad_group_id: Parent ad group.
+            name: Internal name, 3-1000 characters. Not shown to users.
+            title (str, optional): Headline, 3-50 characters.
+            body (str, optional): Copy, up to 100 characters.
+            target_url (str, optional): http(s) destination URL.
+            file_id (str, optional): Creative id from POST /creatives.
+            price (str, optional)
+            type (str, optional): Creative type (flat form).
+            status (str, optional): Default `paused`: nothing starts spending by
+                accident.
+            creative (Dict[str, Any], optional): Creative. `chat_card` (default)
+                needs `title`, `body`, `target_url` and `file_id`; `product_ad_template`
+                takes image and destination from the feed item.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createChatgptAdsAd", params, ad_group_id=ad_group_id, name=name)
+
+    def get_chatgpt_ads_ad(self, ad_id: str, **params) -> Dict:
+        """Get an ad.
+
+        One ad. A 401 can also mean OpenAI rejected the stored key (revoked): reconnect
+        the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/ads/{ad_id}``
+
+        Args:
+            ad_id: Ad id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsAd", params, ad_id=ad_id)
+
+    def update_chatgpt_ads_ad(self, ad_id: str, **params) -> Dict:
+        """Update an ad.
+
+        Updates an ad. Only `name`, `status` and `creative` are read; an edited ad goes
+        back into review. Every field is optional; at least one is required (400 `No
+        updatable fields supplied`). Archiving is irreversible. A 401 can also mean
+        OpenAI rejected the stored key (revoked): reconnect the account with POST
+        /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/ads/{ad_id}``
+
+        Args:
+            ad_id: Ad id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            name (str, optional): 3-1000 characters.
+            status (str, optional): `archived` is irreversible.
+            creative (Dict[str, Any], optional): Creative. `chat_card` (default)
+                needs `title`, `body`, `target_url` and `file_id`; `product_ad_template`
+                takes image and destination from the feed item.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateChatgptAdsAd", params, ad_id=ad_id)
+
+    def activate_chatgpt_ads_ad(self, ad_id: str, **params) -> Dict:
+        """Activate an ad.
+
+        Sets the ad `active`. An ad only serves when its campaign, ad group and ad are
+        all active and the ad passed OpenAI's review. No body: choose the ad account
+        with the query parameter or the header. A 401 can also mean OpenAI rejected the
+        stored key (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/activate``
+
+        Args:
+            ad_id: Ad id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("activateChatgptAdsAd", params, ad_id=ad_id)
+
+    def pause_chatgpt_ads_ad(self, ad_id: str, **params) -> Dict:
+        """Pause an ad.
+
+        Sets the ad `paused`. No body: choose the ad account with the query parameter or
+        the header. A 401 can also mean OpenAI rejected the stored key (revoked):
+        reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/pause``
+
+        Args:
+            ad_id: Ad id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("pauseChatgptAdsAd", params, ad_id=ad_id)
+
+    def archive_chatgpt_ads_ad(self, ad_id: str, **params) -> Dict:
+        """Archive an ad.
+
+        Archives the ad. Irreversible. No body: choose the ad account with the query
+        parameter or the header. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/archive``
+
+        Args:
+            ad_id: Ad id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("archiveChatgptAdsAd", params, ad_id=ad_id)
+
+    def get_chatgpt_ads_ad_insights(self, ad_id: str, **params) -> Dict:
+        """Get ad insights.
+
+        Performance of one ad; rows per `aggregation_level` inside it. Repeatable
+        parameters accept `key` or `key[]` and are forwarded to OpenAI. Page forward
+        with `after=<last_id>`. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/ads/{ad_id}/insights``
+
+        Args:
+            ad_id: Ad id.
+            since (str, optional): `YYYY-MM-DD`, start of a date range in the ad
+                account timezone.
+            until (str, optional): `YYYY-MM-DD`, end of the date range.
+            time_granularity (str, optional): Default `daily`.
+            aggregation_level (str, optional): Row entity inside the endpoint's
+                scope.
+            fields (List[str], optional): Repeatable (`fields` or `fields[]`).
+                Metrics and metadata: `impressions`, `clicks`, `spend`, `ctr`, `cpc`,
+                `cpm`, `campaign.name`...
+            segments (List[str], optional): Repeatable. One of `product`, `country`,
+                `device`.
+            filters (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            sort (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            time_ranges (List[str], optional): Repeatable JSON-encoded range
+                objects, for windows `since`/`until` cannot express (they win over
+                `since`/`until`).
+            limit (int, optional): 1-2000 (default 20).
+            after (str, optional): Cursor: `last_id` of the previous page.
+            before (str, optional): Cursor: `first_id` of the next page.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsAdInsights", params, ad_id=ad_id)
+
+    def preview_chatgpt_ads_ad(self, ad_id: str, **params) -> Dict:
+        """Preview an ad.
+
+        A temporary iframe preview of the ad (expires in 24 h). No body. A 401 can also
+        mean OpenAI rejected the stored key (revoked): reconnect the account with POST
+        /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/ads/{ad_id}/preview``
+
+        Args:
+            ad_id: Ad id.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("previewChatgptAdsAd", params, ad_id=ad_id)
+
+    def upload_chatgpt_ads_creative(self, **params) -> Dict:
+        """Upload a creative image.
+
+        Uploads the image an ad uses; reuse the returned `file_id`. JSON with
+        `image_url` (OpenAI fetches it) or multipart with a binary `file` (up to 10 MB).
+        A 401 can also mean OpenAI rejected the stored key (revoked): reconnect the
+        account with POST /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/creatives``
+
+        Args:
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            image_url (str, optional): http(s) image URL.
+            file (Any, optional): Image, up to 10 MB.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("uploadChatgptAdsCreative", params)
+
+    def get_chatgpt_ads_account_insights(self, **params) -> Dict:
+        """Get ad account insights.
+
+        Performance of the whole ad account; rows per `aggregation_level`. Repeatable
+        parameters accept `key` or `key[]` and are forwarded to OpenAI. Page forward
+        with `after=<last_id>`. A 401 can also mean OpenAI rejected the stored key
+        (revoked): reconnect the account with POST /connect.
+
+        ``GET /api/uploadposts/ads/chatgpt/insights``
+
+        Args:
+            since (str, optional): `YYYY-MM-DD`, start of a date range in the ad
+                account timezone.
+            until (str, optional): `YYYY-MM-DD`, end of the date range.
+            time_granularity (str, optional): Default `daily`.
+            aggregation_level (str, optional): Row entity inside the endpoint's
+                scope.
+            fields (List[str], optional): Repeatable (`fields` or `fields[]`).
+                Metrics and metadata: `impressions`, `clicks`, `spend`, `ctr`, `cpc`,
+                `cpm`, `campaign.name`...
+            segments (List[str], optional): Repeatable. One of `product`, `country`,
+                `device`.
+            filters (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            sort (List[str], optional): Repeatable JSON-encoded objects, passed
+                through to OpenAI.
+            time_ranges (List[str], optional): Repeatable JSON-encoded range
+                objects, for windows `since`/`until` cannot express (they win over
+                `since`/`until`).
+            limit (int, optional): 1-2000 (default 20).
+            after (str, optional): Cursor: `last_id` of the previous page.
+            before (str, optional): Cursor: `first_id` of the next page.
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getChatgptAdsAccountInsights", params)
+
+    def promote_chatgpt_ads(self, title: str, body: str, target_url: str, **params) -> Dict:
+        """Launch an ad in one call.
+
+        Creates the campaign, ad group and ad, and uploads the creative from `image_url`
+        (or reuses `file_id`), in one request. Every payload is validated before the
+        first write; everything is created paused and only activated (`status: active`)
+        once all three exist. If a later step fails, the error carries `details.created`
+        with the ids already created so you can finish or archive them. A 401 can also
+        mean OpenAI rejected the stored key (revoked): reconnect the account with POST
+        /connect.
+
+        ``POST /api/uploadposts/ads/chatgpt/promote``
+
+        Args:
+            ad_account_id (str, optional): ChatGPT Ads account to use
+                (`adacct_...`). Without it: `X-Ads-Account-Id` header, then
+                `ad_account_id` in the JSON body, then the only or the default connected
+                account (several and no default = 400).
+            profile_username (str, optional): Use the ad account linked to this
+                profile, and only that one (404 if the profile has none linked; never
+                falls back to the default account).
+            title: Ad headline, 3-50 characters.
+            body: Ad copy, up to 100 characters.
+            target_url: http(s) destination URL.
+            image_url (str, optional): Creative image URL (one of `image_url` /
+                `file_id`).
+            file_id (str, optional): Already uploaded creative id.
+            budget (float, optional): Lifetime spend limit in the ad account
+                currency. Minimum 1.
+            budget_micros (int, optional): Same in micros (`25000000` = 25.00).
+                Alternative to `budget`.
+            max_bid (float, optional): Max bid per billing event in account currency
+                (`0.06` = a $60 CPM on impression billing).
+            max_bid_micros (int, optional): Same in micros. Alternative to
+                `max_bid`.
+            name (str, optional): Base name of the three objects. Default: `title`.
+            status (str, optional): Default `paused`: nothing starts spending by
+                accident.
+            bidding_type (str, optional): Default `impressions`.
+            billing_event_type (str, optional): Default: `impression` for impression
+                campaigns, `click` otherwise.
+            start_time (Any, optional): Unix timestamp or ISO-8601 datetime. Empty
+                or null clears it.
+            end_time (Any, optional): Unix timestamp or ISO-8601 datetime. Empty or
+                null clears it.
+            description (str, optional): Campaign description.
+            conversion_event_setting_ids (List[str], optional): For `conversions`
+                bidding.
+            locations (List[str], optional): OpenAI location ids (country, region or
+                DMA). Shorthand for `targeting.locations.include`.
+            custom_audience_ids (List[str], optional): Shorthand for
+                `targeting.custom_audiences.ids`.
+            excluded_custom_audience_ids (List[str], optional): Shorthand for
+                `targeting.excluded_custom_audiences.ids`.
+            targeting (Dict[str, Any], optional): Full OpenAI targeting object.
+                Overrides the shorthands.
+            context_hints (List[str], optional): When the ad is useful, e.g.
+                `["productivity"]`.
+            price (str, optional): Creative price.
+            ad_group_name (str, optional)
+            ad_name (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("promoteChatgptAds", params, title=title, body=body, target_url=target_url)
+
+    # </openapi:methods>
