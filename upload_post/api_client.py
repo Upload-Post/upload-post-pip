@@ -2244,7 +2244,8 @@ class UploadPostClient:
         language: Optional[str] = None,
         ui_labels: Optional[Dict[str, str]] = None,
         client_approval: Optional[bool] = None,
-        connect_theme: Optional[str] = None
+        connect_theme: Optional[str] = None,
+        preserve_settings: Optional[bool] = None
     ) -> Dict:
         """
         Generate a JWT for platform integration.
@@ -2276,6 +2277,11 @@ class UploadPostClient:
                 to turn it off.
             connect_theme: Force the connection page theme: 'light', 'dark', or
                 'auto' to follow the visitor's preference again.
+            preserve_settings: True mints the link without changing the
+                profile's saved settings (by default every setting not sent
+                here is cleared). ``platforms`` then applies to this link
+                only. Cannot be combined with the other settings, which are
+                stored on the profile (400 ``preserve_settings_conflict``).
 
         Returns:
             JWT and connection URL.
@@ -2305,6 +2311,8 @@ class UploadPostClient:
             body["client_approval"] = client_approval
         if connect_theme is not None:
             body["connect_theme"] = connect_theme
+        if preserve_settings is not None:
+            body["preserve_settings"] = preserve_settings
         return self._request("/uploadposts/users/generate-jwt", "POST", json_data=body)
 
     def validate_jwt(self, jwt: str) -> Dict:

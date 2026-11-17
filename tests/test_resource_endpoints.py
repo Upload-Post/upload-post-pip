@@ -273,6 +273,11 @@ class TestGenerateJwt(ClientTestCase):
         _, call = self.sent("POST")
         self.assertIs(call["json"]["client_approval"], False)
 
+    def test_preserve_settings_is_sent_with_the_platforms_of_the_link(self):
+        self.client.generate_jwt("p", preserve_settings=True, platforms=["pinterest"])
+        _, call = self.sent("POST")
+        self.assertEqual(call["json"], {"username": "p", "platforms": ["pinterest"], "preserve_settings": True})
+
     def test_validate_jwt_is_a_get_with_bearer(self):
         self.client.validate_jwt("tok")
         path, call = self.sent("GET")
