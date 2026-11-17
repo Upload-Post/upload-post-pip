@@ -5416,7 +5416,7 @@ class UploadPostClient:
         "updateBlueskyFeed": ("PATCH", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "did", "display_name", "description", "avatar", "accepts_interactions", "content_mode"], "f": ["avatar"], "na": True}),
         "deleteBlueskyFeed": ("DELETE", "/uploadposts/bluesky/feeds/{rkey}", {"b": ["user", "confirm"], "na": True}),
         "reportOnBluesky": ("POST", "/uploadposts/bluesky/report", {"b": ["user", "post_id", "actor", "reason_type", "reason", "confirm"], "na": True}),
-        "listPostApprovals": ("GET", "/uploadposts/approvals", {"q": ["status", "profile_username", "author", "limit", "before"], "na": True}),
+        "listPostApprovals": ("GET", "/uploadposts/approvals", {"q": ["status", "profile_username", "author", "limit", "before", "count_only"], "na": True}),
         "getPostApproval": ("GET", "/uploadposts/approvals/{approval_id}", {"na": True}),
         "editPostApproval": ("PATCH", "/uploadposts/approvals/{approval_id}", {"b": ["title", "caption", "description", "platform_content", "fields", "scheduled_date", "timezone", "cover_image_base64", "remove_cover"], "na": True}),
         "withdrawPostApproval": ("DELETE", "/uploadposts/approvals/{approval_id}", {"na": True}),
@@ -7037,7 +7037,9 @@ class UploadPostClient:
 
         Sends one signed sample now, with the keys of the real event and `test: true`.
         Logged as a test delivery: never retried and never counted towards disabling the
-        subscription. `ok` tells whether the destination answered 2xx.
+        subscription. `ok` tells whether the destination answered 2xx. For the post
+        approval events the sample has the shape of the real event ({event, user_email,
+        profile_username, approval: {...}, created_at}).
 
         ``POST /api/uploadposts/webhooks/subscriptions/{subscription_id}/test``
 
@@ -7765,6 +7767,9 @@ class UploadPostClient:
             limit (int, optional): Page size.
             before (str, optional): created_at of the last item of the previous page
                 (next_before).
+            count_only (bool, optional): true (or 1): answer only how many items
+                there are per status, with the same filters (status, profile_username,
+                author; limit and before are ignored). Nothing is listed or signed.
             **params: Any other API field, by its API name.
         """
         return self._op("listPostApprovals", params)
