@@ -140,6 +140,17 @@ class UploadPostClient:
             raise self._api_error(e) from e
 
     @staticmethod
+    def _path_param(name: str, value: Any) -> str:
+        """A required value that goes in the URL path, percent-encoded.
+
+        An empty one would send ``/None`` (or drop the segment), so it fails
+        before the request.
+        """
+        if value is None or str(value).strip() == "":
+            raise UploadPostError(f"{name} is required")
+        return quote(str(value), safe="")
+
+    @staticmethod
     def _api_error(e: "requests.exceptions.RequestException") -> "UploadPostError":
         """The UploadPostError for a failed request, with what the API answered."""
         error_msg = str(e)
@@ -1781,7 +1792,10 @@ class UploadPostClient:
 
         Args:
             profile_username: Profile username.
-            platforms: Filter by platforms (instagram, linkedin, facebook, x, youtube, tiktok, threads, pinterest, reddit).
+            platforms: Required: the platforms to read (instagram, linkedin, facebook, x,
+                youtube, tiktok, threads, pinterest, reddit), a list or a comma-separated
+                string. Without it (or without a profile) ``UploadPostError`` is raised
+                before any request: the API answers 400.
             page_id: Facebook Page ID (required for Facebook analytics).
             page_urn: LinkedIn organization/company page URN or numeric ID. LinkedIn
                 analytics are only available for pages you administer; personal profiles
@@ -1796,14 +1810,20 @@ class UploadPostClient:
             and 'engaged_audience_demographics' for the accounts that engaged with
             its content.
         """
-        params = {}
-        if platforms:
-            params["platforms"] = ",".join(platforms)
+        profile = self._path_param("profile_username", profile_username)
+        if isinstance(platforms, str):
+            joined = platforms.strip()
+        else:
+            joined = ",".join(str(p) for p in (platforms or []) if p is not None and str(p).strip())
+        if not joined:
+            # The API answers 400 without it.
+            raise UploadPostError('platforms is required (e.g. platforms=["instagram"])')
+        params = {"platforms": joined}
         if page_id:
             params["page_id"] = page_id
         if page_urn:
             params["page_urn"] = page_urn
-        return self._request(f"/analytics/{profile_username}", "GET", params=params if params else None)
+        return self._request(f"/analytics/{profile}", "GET", params=params)
 
     def get_total_impressions(
         self,
@@ -1847,7 +1867,7 @@ class UploadPostClient:
             params["breakdown"] = "true"
         if metrics:
             params["metrics"] = ",".join(metrics)
-        return self._request(f"/uploadposts/total-impressions/{profile_username}", "GET", params=params if params else None)
+        return self._request(f"/uploadposts/total-impressions/{self._path_param('profile_username', profile_username)}", "GET", params=params if params else None)
 
     def get_post_analytics(self, request_id: str, platform: Optional[str] = None) -> Dict:
         """
@@ -1880,7 +1900,7 @@ class UploadPostClient:
             Post analytics with per-platform metrics, profile snapshots, and post-level metrics.
         """
         params = {"platform": platform} if platform else None
-        return self._request(f"/uploadposts/post-analytics/{request_id}", "GET", params=params)
+        return self._request(f"/uploadposts/post-analytics/{self._path_param('request_id', request_id)}", "GET", params=params)
 
     def get_post_analytics_by_platform_id(self, platform_post_id: str, platform: str, user: str) -> Dict:
         """
@@ -2105,7 +2125,7 @@ class UploadPostClient:
         Returns:
             Cancellation result.
         """
-        return self._request(f"/uploadposts/schedule/{job_id}", "DELETE")
+        return self._request(f"/uploadposts/schedule/{self._path_param('job_id', job_id)}", "DELETE")
 
     def edit_scheduled(
         self,
@@ -2157,6 +2177,7 @@ class UploadPostClient:
             Edit result (``success``, ``job_id``, and the new ``scheduled_date``,
             ``title``, ``caption``, ``platform_content`` when they changed).
         """
+        job = self._path_param("job_id", job_id)
         body: Dict[str, Any] = {}
         if scheduled_date:
             body["scheduled_date"] = scheduled_date
@@ -2183,7 +2204,7 @@ class UploadPostClient:
                 body["cover_filename"] = cover_filename
             if cover_content_type:
                 body["cover_content_type"] = cover_content_type
-        return self._request(f"/uploadposts/schedule/{job_id}", "PATCH", json_data=body)
+        return self._request(f"/uploadposts/schedule/{job}", "PATCH", json_data=body)
 
     # ==================== User Management ====================
 
@@ -2532,7 +2553,7 @@ class UploadPostClient:
             ``{"success": True, "delivery": {...}}``.
         """
         return self._request(
-            f"/uploadposts/webhooks/deliveries/{quote(str(delivery_id), safe='')}", "GET"
+            f"/uploadposts/webhooks/deliveries/{self._path_param('delivery_id', delivery_id)}", "GET"
         )
 
     def redeliver_webhook(self, delivery_id: str) -> Dict:
@@ -2557,7 +2578,7 @@ class UploadPostClient:
             (``redelivery_of`` = the original id).
         """
         return self._request(
-            f"/uploadposts/webhooks/deliveries/{quote(str(delivery_id), safe='')}/redeliver",
+            f"/uploadposts/webhooks/deliveries/{self._path_param('delivery_id', delivery_id)}/redeliver",
             "POST",
         )
 
