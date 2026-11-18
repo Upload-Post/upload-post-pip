@@ -28,6 +28,30 @@ response = client.upload_video(
 print(response)
 ```
 
+### Timeouts and retries
+
+Every request has a timeout: 60 seconds by default, and 10 minutes for uploads
+and other requests that send or download a file (a synchronous upload waits on
+the server before it answers, and a big video takes minutes to send). A
+request that runs out raises `UploadPostError` with `status_code` `None`.
+Change them in seconds (`None` or `0` = no limit):
+
+```python
+client = UploadPostClient("YOUR_API_KEY", timeout=30, upload_timeout=1800)
+```
+
+A timed-out upload may still have reached the API. Give every upload an
+`idempotency_key` (sent as the `Idempotency-Key` header) and reuse it when you
+retry: the API returns the first upload instead of publishing it twice.
+
+```python
+import uuid
+
+key = str(uuid.uuid4())  # once, outside the retry loop
+client.upload_video("video.mp4", title="Hi", user="my-profile",
+                    platforms=["tiktok"], idempotency_key=key)
+```
+
 ## Features
 
 - ✅ **Video Upload** - TikTok, Instagram, YouTube, LinkedIn, Facebook, Pinterest, Threads, Bluesky, Discord, Telegram, X, Mastodon, WordPress
