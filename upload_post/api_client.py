@@ -67,7 +67,13 @@ class UploadPostClient:
     
     BASE_URL = "https://api.upload-post.com/api"
     
-    def __init__(self, api_key: str, act_as_user: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: str,
+        act_as_user: Optional[str] = None,
+        timeout: Optional[float] = 60,
+        upload_timeout: Optional[float] = 600,
+    ):
         """
         Initialize the Upload-Post client.
 
@@ -80,9 +86,18 @@ class UploadPostClient:
                 (``status_code`` 403, ``error_code`` ``"TEAM_SEAT_SUSPENDED"``);
                 access comes back by itself when the owner upgrades or frees a
                 seat.
+            timeout: Seconds a request may take before it fails with
+                ``UploadPostError`` (``status_code`` ``None``). Default 60;
+                ``None`` or ``0`` = no limit.
+            upload_timeout: The same for uploads and other requests that send
+                a form or a file, or download one. Default 600 (10 minutes): a
+                synchronous upload waits on the server before it answers and a
+                big video takes minutes to send. ``None`` or ``0`` = no limit.
         """
         self.api_key = api_key
         self.act_as_user = act_as_user
+        self.timeout = timeout or None
+        self.upload_timeout = upload_timeout or None
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Apikey {self.api_key}",
@@ -101,33 +116,38 @@ class UploadPostClient:
         json_data: Optional[Dict] = None,
         params: Optional[Dict] = None,
         raw: bool = False,
+        headers: Optional[Dict] = None,
     ) -> Dict:
         """Make an API request. ``raw=True`` returns the body as text (file downloads)."""
         url = f"{self.BASE_URL}{endpoint}"
-        
+        # Without a timeout requests waits for ever on a connection that stalls.
+        extra: Dict[str, Any] = {"timeout": self._timeout_for(data is not None or files is not None or raw)}
+        if headers:
+            extra["headers"] = headers
+
         try:
             if method == "GET":
-                response = self.session.get(url, params=params)
+                response = self.session.get(url, params=params, **extra)
             elif method == "POST":
                 if json_data:
-                    response = self.session.post(url, json=json_data)
+                    response = self.session.post(url, json=json_data, **extra)
                 else:
-                    response = self.session.post(url, data=data, files=files)
+                    response = self.session.post(url, data=data, files=files, **extra)
             elif method == "DELETE":
                 if json_data:
-                    response = self.session.delete(url, json=json_data)
+                    response = self.session.delete(url, json=json_data, **extra)
                 else:
-                    response = self.session.delete(url)
+                    response = self.session.delete(url, **extra)
             elif method == "PATCH":
                 if json_data is None and (data is not None or files is not None):
-                    response = self.session.patch(url, data=data, files=files)
+                    response = self.session.patch(url, data=data, files=files, **extra)
                 else:
-                    response = self.session.patch(url, json=json_data)
+                    response = self.session.patch(url, json=json_data, **extra)
             elif method == "PUT":
                 if json_data is None and (data is not None or files is not None):
-                    response = self.session.put(url, data=data, files=files)
+                    response = self.session.put(url, data=data, files=files, **extra)
                 else:
-                    response = self.session.put(url, json=json_data)
+                    response = self.session.put(url, json=json_data, **extra)
             else:
                 raise UploadPostError(f"Unsupported HTTP method: {method}")
             
@@ -138,6 +158,18 @@ class UploadPostClient:
             
         except requests.exceptions.RequestException as e:
             raise self._api_error(e) from e
+
+    def _timeout_for(self, transfer: bool) -> Optional[float]:
+        """The timeout of a request: the long one when it sends a form or a file, or downloads one."""
+        return self.upload_timeout if transfer else self.timeout
+
+    @staticmethod
+    def _idempotency_headers(kwargs: Dict) -> Optional[Dict]:
+        """``Idempotency-Key`` for an upload: the API collapses two uploads with
+        the same key within 24 hours into one post, so a retry with the same key
+        can not publish twice."""
+        key = kwargs.get("idempotency_key") or kwargs.get("request_id")
+        return {"Idempotency-Key": str(key)} if key else None
 
     @staticmethod
     def _path_param(name: str, value: Any) -> str:
@@ -1161,6 +1193,10 @@ class UploadPostClient:
             async_upload: Process asynchronously (default: True)
                           title/description from the media and fills any platform field
                           the language (omit to auto-detect from the media).
+            idempotency_key: Sent as the ``Idempotency-Key`` header. The API
+                collapses two uploads with the same key within 24 hours into
+                one post, so reuse the key when you retry an upload (after a
+                timeout, for example). Alias: ``request_id``.
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
@@ -1320,7 +1356,8 @@ class UploadPostClient:
             # Images for the first comment (Reddit), as on photos and text posts.
             self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
-            return self._request("/upload", "POST", data=data, files=files if files else None)
+            return self._request("/upload", "POST", data=data, files=files if files else None,
+                                 headers=self._idempotency_headers(kwargs))
             
         finally:
             if video_file:
@@ -1356,6 +1393,10 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            idempotency_key: Sent as the ``Idempotency-Key`` header. The API
+                collapses two uploads with the same key within 24 hours into
+                one post, so reuse the key when you retry an upload (after a
+                timeout, for example). Alias: ``request_id``.
             
             TikTok:
                 privacy_level: PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS,
@@ -1479,7 +1520,8 @@ class UploadPostClient:
 
             self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
-            return self._request("/upload_photos", "POST", data=data, files=files if files else None)
+            return self._request("/upload_photos", "POST", data=data, files=files if files else None,
+                                 headers=self._idempotency_headers(kwargs))
 
         finally:
             for f in opened_files:
@@ -1509,6 +1551,10 @@ class UploadPostClient:
             timezone: Timezone for scheduled date
             add_to_queue: Add to posting queue
             async_upload: Process asynchronously
+            idempotency_key: Sent as the ``Idempotency-Key`` header. The API
+                collapses two uploads with the same key within 24 hours into
+                one post, so reuse the key when you retry an upload (after a
+                timeout, for example). Alias: ``request_id``.
             link_url: Generic URL for link preview card (works for LinkedIn,
                 Bluesky, Facebook). Platform-specific params take priority.
 
@@ -1589,7 +1635,8 @@ class UploadPostClient:
         self._add_first_comment_media(files, opened_files, kwargs.get("first_comment_media"))
 
         try:
-            return self._request("/upload_text", "POST", data=data, files=files if files else None)
+            return self._request("/upload_text", "POST", data=data, files=files if files else None,
+                                 headers=self._idempotency_headers(kwargs))
         finally:
             for f in opened_files:
                 f.close()
@@ -1622,6 +1669,10 @@ class UploadPostClient:
             timezone: Timezone for scheduled date.
             add_to_queue: Add to posting queue.
             async_upload: Process asynchronously.
+            idempotency_key: Sent as the ``Idempotency-Key`` header. The API
+                collapses two uploads with the same key within 24 hours into
+                one post, so reuse the key when you retry an upload (after a
+                timeout, for example). Alias: ``request_id``.
             **kwargs: Extra LinkedIn form fields (linkedin_disable_reshare,
                 linkedin_visibility, targeting, …). ``platforms=["telegram"]``
                 (or ``["linkedin", "telegram"]``) sends the file to Telegram as
@@ -1682,7 +1733,8 @@ class UploadPostClient:
                 self._add_telegram_params(data, files=files, opened=opened_files, **kwargs)
                 self._put(data, "telegram_first_comment", kwargs.get("telegram_first_comment"))
             
-            return self._request("/upload_document", "POST", data=data, files=files if files else None)
+            return self._request("/upload_document", "POST", data=data, files=files if files else None,
+                                 headers=self._idempotency_headers(kwargs))
             
         finally:
             if doc_file:
@@ -2355,6 +2407,7 @@ class UploadPostClient:
             response = self.session.get(
                 f"{self.BASE_URL}/uploadposts/users/validate-jwt",
                 headers={"Authorization": f"Bearer {jwt}"},
+                timeout=self.timeout,
             )
             response.raise_for_status()
             return response.json()
@@ -5310,7 +5363,7 @@ class UploadPostClient:
             if method == "GET" or key in meta.get("q", ()) or (method == "DELETE" and not meta.get("b")):
                 query[key] = self._query_value(body.pop(key))
 
-        kwargs: Dict[str, Any] = {"params": query or None}
+        kwargs: Dict[str, Any] = {"params": query or None, "timeout": self.timeout}
         if headers:
             kwargs["headers"] = headers
         opened: List = []
@@ -5342,8 +5395,11 @@ class UploadPostClient:
                 if files or meta.get("mp"):
                     kwargs["data"] = [(k, self._form_value(v)) for k, v in body.items()]
                     kwargs["files"] = files or None
+                    kwargs["timeout"] = self.upload_timeout
                 elif body or method != "DELETE":
                     kwargs["json"] = body
+            if meta.get("raw"):
+                kwargs["timeout"] = self.upload_timeout
             response = self.session.request(method, f"{self.BASE_URL}{endpoint}", **kwargs)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
