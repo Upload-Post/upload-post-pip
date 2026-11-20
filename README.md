@@ -65,7 +65,7 @@ client.upload_video("video.mp4", title="Hi", user="my-profile",
 - ✅ **Audience** - Who follows a profile, per platform
 - ✅ **Suggestions** - Hashtags and searches to post about, per platform
 - ✅ **Comments** - Read, reply, moderate; replies under a comment on TikTok, Threads, YouTube, Instagram, Facebook and LinkedIn
-- ✅ **Direct Messages** - Instagram, Messenger, WhatsApp and Bluesky
+- ✅ **Direct Messages** - Instagram, WhatsApp (messaging only: WhatsApp does not publish posts), Bluesky and Telegram bot DMs; Messenger is a limited rollout
 - ✅ **AutoDM rules** - Account-wide Instagram comment/story/keyword DMs
 - ✅ **Webhook deliveries** - 7-day delivery log and redelivery
 - ✅ **Full Type Hints**
@@ -468,8 +468,9 @@ client.comment_action(
 
 ### Direct Messages
 
-One pair of methods for every messaging platform: `instagram`, `facebook`
-(Messenger), `whatsapp` and `bluesky`. `send_dm` also sends from your own
+One pair of methods for every messaging platform: `instagram`, `whatsapp`,
+`bluesky` and `facebook` (Messenger, a limited rollout: other accounts get 403
+`messenger_not_enabled`). `send_dm` also sends from your own
 Telegram bot (`platform="telegram"`) to people who started it, and
 `get_dm_conversations(platform="telegram", ...)` reads them once the bot's
 updates are turned on.
@@ -507,7 +508,7 @@ client.get_dm_conversations("my-profile", "bluesky", status="request", read_stat
 
 Any other `/dms/send` field (WhatsApp `template`, `location`, `contacts`,
 `list`, `cta_url`; Messenger `tag`, `template`...) goes through as a keyword
-argument. **Bluesky DMs need an app password created with "Allow access to your
+argument, dicts and lists as JSON. **Bluesky DMs need an app password created with "Allow access to your
 direct messages"** (Bluesky > Settings > Privacy and security > App passwords),
 then reconnect Bluesky with it; otherwise the API answers 403
 `bluesky_dm_scope_missing`. Other Bluesky codes:
@@ -522,6 +523,73 @@ then reconnect Bluesky with it; otherwise the API answers 403
 | `bluesky_rate_limited` | 429 | Wait `retry_after` seconds |
 | `bluesky_chat_unavailable` / `bluesky_edge_rate_limited` | 502 / 503 | Nothing was sent; retry later |
 | `bluesky_send_unconfirmed` | 504 | **It may have been sent.** Do not retry automatically: read the conversation first |
+
+#### WhatsApp DMs
+
+WhatsApp is a messaging channel, not a place to publish: the upload methods
+never send to it. Connect the profile's WhatsApp Business number (the connect
+page, or `generate_jwt(..., platforms=["whatsapp"])`) and write from it with
+`send_dm(user, "whatsapp", ...)`. `recipient_id` is the phone number in
+international format. Meta bills the conversations to your WhatsApp Business
+Account.
+
+Free text, media and interactive messages only go inside the **24-hour
+customer-service window** that opens each time the person writes to you.
+Outside it Meta refuses (`meta_error_code` 131047): send an approved template.
+
+```python
+# Inside the 24 h window: text with reply buttons
+client.send_dm("my-profile", "whatsapp", recipient_id="+34600000000",
+               message="Your order is ready. Pick it up today?",
+               buttons=[{"id": "yes", "title": "Yes"}, {"id": "later", "title": "Tomorrow"}])
+
+# Outside the window: an approved template
+client.send_dm("my-profile", "whatsapp", recipient_id="+34600000000",
+               template={"name": "order_ready", "language": "en_US",
+                         "components": [{"type": "body",
+                                         "parameters": [{"type": "text", "text": "#1042"}]}]})
+
+# Media: upload a local file (or put an https "url" straight in the attachment)
+media = client.upload_dm_media("my-profile", "invoice.pdf", platform="whatsapp")
+client.send_dm("my-profile", "whatsapp", recipient_id="+34600000000",
+               attachments={"type": media["type"], "media_id": media["media_id"],
+                            "filename": "invoice.pdf"})
+
+# Mark an inbound message as read and show "typing..." (no DM allowance used)
+client.send_dm("my-profile", "whatsapp", recipient_id="+34600000000",
+               sender_action="mark_read", message_id="wamid.HBg...", typing=True)
+```
+
+Other WhatsApp fields of `send_dm`: `attachments` (up to 10, `{"type": "image" |
+"video" | "audio" | "document" | "sticker", "url" | "media_id", "caption"?,
+"filename"?}`), `reply_to` (wamid), `location`, `contacts`, `list`, `cta_url`,
+`header`, `footer` and `reaction` (`{"message_id", "emoji"}`). Inbound media
+arrive with a `media_id`: download them with
+`download_dm_media("whatsapp", user, media_id)`.
+
+```python
+# Templates (Meta reviews new ones: PENDING, then APPROVED or REJECTED)
+client.list_dm_templates("my-profile", status="APPROVED")
+client.create_dm_template("my-profile", "order_ready", category="UTILITY",
+                          language="en_US", body="Your order {{1}} is ready.",
+                          examples=["#1042"])
+client.delete_dm_template("my-profile", "order_ready")
+
+# Business profile of the number (file = new profile photo, JPEG/PNG)
+client.get_whatsapp_business_profile("my-profile")
+client.update_whatsapp_business_profile("my-profile", about="Open 9-18",
+                                        websites=["https://example.com"], file="logo.png")
+
+# QR codes / wa.me links that open a chat with a prefilled message
+qr = client.create_whatsapp_qr_code("my-profile", "Hi! I want to order")["qr_code"]
+client.list_whatsapp_qr_codes("my-profile")
+client.delete_whatsapp_qr_code("my-profile", qr["code"])
+```
+
+Errors come as `UploadPostError.error_code`: 400 `whatsapp_invalid_request`,
+401 `whatsapp_reauth_required` (reconnect the number). Meta's own code is in
+`error.response["meta_error_code"]`: 131047 outside the window (send a
+template), 131026 undeliverable, 131030 recipient not allowed on a test number.
 
 New DMs (Instagram, Messenger, WhatsApp and Bluesky) can also reach you as the
 opt-in `dm_received` webhook. Bluesky has no push, so Upload-Post checks every

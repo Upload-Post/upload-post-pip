@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Union, Optional, Any
 from urllib.parse import quote
 import json
+import mimetypes
 import os
 import re
 import requests
@@ -134,6 +135,8 @@ class UploadPostClient:
                 else:
                     response = self.session.post(url, data=data, files=files, **extra)
             elif method == "DELETE":
+                if params:
+                    extra["params"] = params
                 if json_data:
                     response = self.session.delete(url, json=json_data, **extra)
                 else:
@@ -2329,7 +2332,9 @@ class UploadPostClient:
             redirect_url: URL to redirect after linking.
             logo_image: Logo image URL for the linking page.
             redirect_button_text: Text for redirect button.
-            platforms: Platforms to show for connection.
+            platforms: Platforms to show for connection, e.g. ``tiktok``,
+                ``instagram``, ``youtube``, ``whatsapp`` (a WhatsApp Business
+                number, for DMs).
             show_calendar: Whether to show the calendar view.
             readonly_calendar: Show only a read-only calendar (no editing, no account connection).
             connect_title: Custom title for the connection page.
@@ -4803,11 +4808,47 @@ class UploadPostClient:
         """
         Send a direct message, or a DM action (mark read, react...).
 
-        One method for every messaging platform: ``instagram``, ``facebook``
-        (Messenger), ``whatsapp`` and ``bluesky``. Instagram and Messenger only
-        let you write inside the 24-hour window the person opened by writing to
-        you. Messages count against the plan's daily DM allowance; sender
-        actions do not.
+        One method for every messaging platform: ``instagram``, ``whatsapp``,
+        ``bluesky`` and ``facebook`` (Messenger, a limited rollout: accounts
+        without it get 403 ``messenger_not_enabled``). Instagram, Messenger and
+        WhatsApp only let you write freely inside the 24-hour window the person
+        opened by writing to you. Messages count against the plan's daily DM
+        allowance; sender actions and reactions do not.
+
+        WhatsApp (open to every account; it sends DMs only, it never publishes
+        posts) writes from the WhatsApp Business number connected to the
+        profile; ``recipient_id`` is the phone number in international format.
+
+        - Free text (``message``, up to 4096 characters), media and
+          interactive messages only inside the 24-hour customer-service
+          window. Outside it Meta refuses (``meta_error_code`` 131047 in
+          ``error.response``): send an approved ``template``
+          (``{"name", "language": "en_US", "components": [...]}``, see
+          ``list_dm_templates``).
+        - ``attachments``: one dict or up to 10, ``{"type": "image" | "video" |
+          "audio" | "document" | "sticker", "url": "https://..." or
+          "media_id": "..." (from ``upload_dm_media``), "caption"?,
+          "filename"?}``. A single image/video/document takes ``message`` as
+          its caption.
+        - ``reply_to``: wamid of the message you answer.
+        - ``location={"latitude", "longitude", "name"?, "address"?}``;
+          ``contacts=[...]`` (1-10, ``{"name": {"formatted_name"}, "phones":
+          [{"phone"}]}``).
+        - Interactive (``message`` is the body, max 1024, no attachments):
+          ``buttons`` (up to 3 reply buttons, ``{"title" (<= 20), "id"?}`` or
+          strings), ``list={"button", "sections": [{"title"?, "rows": [{"id"?,
+          "title", "description"?}]}]}`` (10 rows max),
+          ``cta_url={"display_text", "url"}``, ``header`` / ``footer`` (text,
+          <= 60).
+        - ``reaction``: emoji (with ``message_id``) or ``{"message_id",
+          "emoji"}``; an empty emoji removes it.
+        - ``sender_action``: ``mark_read`` or ``typing_on`` on the inbound
+          ``message_id``; ``typing=True`` with ``mark_read`` also shows typing.
+        - Errors: 400 ``whatsapp_invalid_request``, 401
+          ``whatsapp_reauth_required`` (reconnect the number); Meta's code in
+          ``error.response["meta_error_code"]``: 131047 (outside the window),
+          131026 (undeliverable), 131030 (recipient not allowed on a test
+          number).
 
         Telegram (``platform="telegram"``): sends from your own connected bot
         to a person who started it (``recipient_id`` = their user id), with
@@ -4845,28 +4886,35 @@ class UploadPostClient:
 
         Args:
             user: Profile username.
-            platform: ``instagram``, ``facebook``, ``whatsapp`` or ``bluesky``.
+            platform: ``instagram``, ``whatsapp``, ``bluesky``, ``telegram`` or
+                ``facebook`` (Messenger, limited rollout).
             recipient_id: Who to write to (Instagram/Messenger scoped id,
                 WhatsApp phone number, Bluesky handle or DID).
             message: The text. Optional with a sender action, a shared post or
                 another rich body.
             conversation_id: Bluesky: send to this conversation.
-            attachments: Attachment(s); on Bluesky one shared post.
-            reply_to: Id of the message to reply to.
+            attachments: Attachment(s); WhatsApp: ``{"type", "url" |
+                "media_id", "caption"?, "filename"?}`` (up to 10); on Bluesky
+                one shared post.
+            reply_to: Id of the message to reply to (WhatsApp: wamid).
             sender_action: Platform action instead of a message (Instagram:
                 ``mark_seen``, ``typing_on``, ``typing_off``, ``react``,
                 ``unreact``; WhatsApp: ``mark_read``, ``typing_on``; Bluesky:
                 see above).
-            message_id: Message the action applies to.
-            reaction: Emoji for a reaction (WhatsApp: a dict with
-                ``message_id`` and ``emoji``).
+            message_id: Message the action applies to (WhatsApp: the inbound
+                wamid).
+            reaction: Emoji for a reaction (WhatsApp: the emoji with
+                ``message_id``, or a dict with ``message_id`` and ``emoji``).
             buttons: Up to 3 ``{"title", "url"}`` link buttons (Instagram,
-                Messenger).
+                Messenger); WhatsApp: up to 3 reply buttons ``{"title", "id"?}``
+                or strings.
             quick_replies: Quick replies (Instagram, Messenger).
-            **fields: Any other body field of ``/dms/send``, sent as is
-                (``template``, ``tag``, ``generic_template``, ``location``,
+            **fields: Any other body field of ``/dms/send``, sent as is,
+                dicts and lists as JSON (WhatsApp ``template``, ``location``,
                 ``contacts``, ``list``, ``cta_url``, ``header``, ``footer``,
-                ``page_id``...). ``None`` values are dropped.
+                ``typing``, ``attachment``; Messenger ``tag``, ``template``,
+                ``page_id``; Instagram ``generic_template``...). ``None``
+                values are dropped.
 
         Returns:
             On Bluesky ``{"success": True, "platform": "bluesky",
@@ -4917,9 +4965,15 @@ class UploadPostClient:
         the rest come with only their latest message and
         ``messages_truncated: True`` (read them with ``conversation_id``).
 
+        WhatsApp: the stored inbox of the connected number
+        (``participant_id`` = a phone number); inbound media carry a
+        ``media_id`` to fetch with ``download_dm_media("whatsapp", user,
+        media_id)``.
+
         Args:
             user: Profile username.
-            platform: ``instagram``, ``facebook``, ``whatsapp`` or ``bluesky``.
+            platform: ``instagram``, ``whatsapp``, ``bluesky``, ``telegram`` or
+                ``facebook`` (Messenger, limited rollout).
             limit: Conversations per page (1-50; Bluesky caps at 25).
             cursor: ``pagination.next_cursor`` from the previous page.
             since: Only conversations active since this Unix timestamp or ISO
@@ -4952,6 +5006,302 @@ class UploadPostClient:
             if value is not None:
                 query[key] = value
         return self._request("/uploadposts/dms/conversations", "GET", params=query)
+
+    # ==================== WhatsApp: media, templates, profile, QR ====================
+
+    @staticmethod
+    def _dm_fields(fields: Dict[str, Any]) -> Dict[str, Any]:
+        """Every keyword that is not None, by its API name (nothing is dropped)."""
+        return {k: v for k, v in fields.items() if v is not None}
+
+    @staticmethod
+    def _dm_file_part(file: Any, filename: Optional[str], content_type: Optional[str],
+                      opened: List) -> tuple:
+        """``(filename, content, mime)`` for the multipart ``file`` field.
+
+        The MIME type is what WhatsApp goes by (``image/jpeg`` is an image,
+        ``application/octet-stream`` a document), so it is taken from
+        ``content_type`` or guessed from the file name.
+        """
+        if isinstance(file, (bytes, bytearray)):
+            name, content = filename or "file", bytes(file)
+        elif hasattr(file, "read"):
+            name = filename or os.path.basename(str(getattr(file, "name", "") or "")) or "file"
+            content = file
+        elif isinstance(file, (str, Path)) and str(file):
+            if str(file).lower().startswith(("http://", "https://")):
+                raise UploadPostError("file must be a local path, bytes or an open file "
+                                      "(a URL can go straight in send_dm attachments)")
+            path = Path(file)
+            if not path.is_file():
+                raise UploadPostError(f"file not found: {file}")
+            content = path.open("rb")
+            opened.append(content)
+            name = filename or path.name
+        else:
+            raise UploadPostError("file is required (a local path, bytes or an open file)")
+        mime = content_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return (name, content, mime)
+
+    def _dm_multipart(self, endpoint: str, fields: Dict[str, Any], file: Any,
+                      filename: Optional[str], content_type: Optional[str]) -> Dict:
+        opened: List = []
+        try:
+            part = self._dm_file_part(file, filename, content_type, opened)
+            data = [(k, self._form_value(v)) for k, v in fields.items()]
+            return self._request(endpoint, "POST", data=data, files=[("file", part)])
+        finally:
+            for fh in opened:
+                fh.close()
+
+    def upload_dm_media(
+        self,
+        user: str,
+        file: Any,
+        platform: Optional[str] = None,
+        type: Optional[str] = None,
+        page_id: Optional[str] = None,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
+        **fields: Any,
+    ) -> Dict:
+        """
+        Upload a file to send it in a WhatsApp DM (``POST /dms/media``, multipart).
+
+        Send the answer's ``type`` and ``media_id`` in ``send_dm``
+        ``attachments``: ``{"type": "image", "media_id": "..."}``. A file that
+        is already at a public https URL does not need this: put its ``url``
+        in the attachment.
+
+        WhatsApp limits: image 5 MB (JPEG/PNG), video 16 MB (MP4/3GPP), audio
+        16 MB, document 100 MB, sticker 500 KB (WebP). Without ``type`` it is
+        worked out from the MIME type (anything else goes as a document).
+
+        Args:
+            user: Profile username.
+            file: Local path, bytes or an open binary file.
+            platform: ``whatsapp`` (default) or ``facebook`` (Messenger, a
+                limited rollout: 403 ``messenger_not_enabled`` otherwise).
+            type: Force ``image``, ``video``, ``audio``, ``document`` or
+                ``sticker``.
+            page_id: Messenger: Facebook Page id.
+            filename: Name of the file part (bytes: give it an extension).
+            content_type: MIME type of the file part (default: guessed from
+                the name).
+            **fields: Any other form field, sent as is.
+
+        Returns:
+            ``{"success", "platform", "type", "media_id", "mime_type",
+            "filename", "size"}``.
+        """
+        body = self._dm_fields(dict(fields, platform=platform, user=user, type=type, page_id=page_id))
+        return self._dm_multipart("/uploadposts/dms/media", body, file, filename, content_type)
+
+    def list_dm_templates(
+        self,
+        user: str,
+        platform: Optional[str] = None,
+        limit: Optional[int] = None,
+        status: Optional[str] = None,
+        name: Optional[str] = None,
+        **params: Any,
+    ) -> Dict:
+        """
+        List the WhatsApp message templates of the connected number.
+
+        Only ``APPROVED`` templates can be sent; a template is the only way to
+        write to someone outside the 24-hour customer-service window.
+
+        Args:
+            user: Profile username.
+            platform: ``whatsapp`` (default) or ``facebook`` (Messenger,
+                limited rollout).
+            limit: 1-200 (default 100).
+            status: ``APPROVED``, ``PENDING``, ``REJECTED``...
+            name: Only the template with this name.
+            **params: Any other query parameter, sent as is.
+
+        Returns:
+            ``{"success": True, "templates": [{"id", "name", "status",
+            "category", "language", "components", "quality_score",
+            "rejected_reason"}]}``.
+        """
+        query = self._dm_fields(dict(params, platform=platform, user=user, limit=limit,
+                                     status=status, name=name))
+        return self._request("/uploadposts/dms/templates", "GET",
+                             params={k: self._query_value(v) for k, v in query.items()})
+
+    def create_dm_template(
+        self,
+        user: str,
+        name: str,
+        platform: Optional[str] = None,
+        category: Optional[str] = None,
+        language: Optional[str] = None,
+        components: Optional[List[Dict]] = None,
+        body: Optional[str] = None,
+        examples: Optional[List[str]] = None,
+        header: Optional[str] = None,
+        footer: Optional[str] = None,
+        buttons: Optional[List[Dict]] = None,
+        **fields: Any,
+    ) -> Dict:
+        """
+        Create a WhatsApp message template and send it to Meta for review.
+
+        It comes back ``PENDING`` and turns ``APPROVED`` or ``REJECTED``. Give
+        Meta's ``components``, or the shorthand ``body`` (text with ``{{1}}``
+        variables), ``examples`` (sample values for them), ``header`` (text),
+        ``footer`` and ``buttons`` (``[{"text", "url"? | "phone_number"?}]``,
+        neither = quick reply).
+
+        Args:
+            user: Profile username.
+            name: Lowercase letters, digits and ``_``.
+            platform: ``whatsapp`` (default) or ``facebook`` (Messenger,
+                limited rollout).
+            category: ``MARKETING``, ``UTILITY`` (default) or ``AUTHENTICATION``.
+            language: Default ``en_US``.
+            components: Meta template components.
+            body, examples, header, footer, buttons: Shorthand (see above).
+            **fields: Any other body field, sent as is.
+
+        Returns:
+            ``{"success": True, "template": {"id", "status", "category"}}``.
+        """
+        data = self._dm_fields(dict(fields, platform=platform, user=user, name=name,
+                                    category=category, language=language,
+                                    components=components, body=body, examples=examples,
+                                    header=header, footer=footer, buttons=buttons))
+        return self._request("/uploadposts/dms/templates", "POST", json_data=data)
+
+    def delete_dm_template(self, user: str, name: str, platform: Optional[str] = None,
+                           **params: Any) -> Dict:
+        """
+        Delete a WhatsApp message template by name.
+
+        Args:
+            user: Profile username.
+            name: Template name.
+            platform: ``whatsapp`` (default) or ``facebook`` (Messenger,
+                limited rollout).
+            **params: Any other query parameter, sent as is.
+
+        Returns:
+            ``{"success": True}``.
+        """
+        query = self._dm_fields(dict(params, platform=platform, user=user, name=name))
+        return self._request("/uploadposts/dms/templates", "DELETE",
+                             params={k: self._query_value(v) for k, v in query.items()})
+
+    def get_whatsapp_business_profile(self, user: str, **params: Any) -> Dict:
+        """
+        The WhatsApp Business profile of the connected number.
+
+        Returns:
+            ``{"success": True, "profile": {"about", "address", "description",
+            "email", "profile_picture_url", "websites", "vertical"},
+            "phone_number", "verified_name"}``.
+        """
+        query = self._dm_fields(dict(params, user=user))
+        return self._request("/uploadposts/dms/whatsapp/profile", "GET",
+                             params={k: self._query_value(v) for k, v in query.items()})
+
+    def update_whatsapp_business_profile(
+        self,
+        user: str,
+        about: Optional[str] = None,
+        address: Optional[str] = None,
+        description: Optional[str] = None,
+        email: Optional[str] = None,
+        websites: Optional[List[str]] = None,
+        vertical: Optional[str] = None,
+        file: Any = None,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
+        **fields: Any,
+    ) -> Dict:
+        """
+        Update the WhatsApp Business profile of the connected number.
+
+        Only the fields sent change. With ``file`` (new profile photo, JPEG or
+        PNG up to 5 MB) the request goes as multipart and ``websites`` as a
+        comma-separated list.
+
+        Args:
+            user: Profile username.
+            about: Up to 139 characters.
+            address: Up to 256.
+            description: Up to 512.
+            email: Up to 128.
+            websites: Up to 2 http(s) URLs.
+            vertical: ``UNDEFINED``, ``OTHER``, ``AUTO``, ``BEAUTY``,
+                ``APPAREL``, ``EDU``, ``ENTERTAIN``, ``EVENT_PLAN``,
+                ``FINANCE``, ``GROCERY``, ``GOVT``, ``HOTEL``, ``HEALTH``,
+                ``NONPROFIT``, ``PROF_SERVICES``, ``RETAIL``, ``TRAVEL``,
+                ``RESTAURANT`` or ``NOT_A_BIZ``.
+            file: Profile photo: local path, bytes or an open binary file.
+            filename: Name of the photo part (bytes: with extension).
+            content_type: MIME type of the photo (default: guessed from the
+                name).
+            **fields: Any other field, sent as is.
+
+        Returns:
+            ``{"success": True, "profile": {...}}``.
+        """
+        data = self._dm_fields(dict(fields, user=user, about=about, address=address,
+                                    description=description, email=email,
+                                    websites=websites, vertical=vertical))
+        endpoint = "/uploadposts/dms/whatsapp/profile"
+        if file is None:
+            return self._request(endpoint, "POST", json_data=data)
+        if isinstance(data.get("websites"), (list, tuple)):
+            data["websites"] = ",".join(str(w) for w in data["websites"])
+        return self._dm_multipart(endpoint, data, file, filename, content_type)
+
+    def list_whatsapp_qr_codes(self, user: str, **params: Any) -> Dict:
+        """
+        The QR codes / wa.me short links of the connected WhatsApp number.
+
+        Each opens a chat with the number and a prefilled message.
+
+        Returns:
+            ``{"success": True, "qr_codes": [{"code", "prefilled_message",
+            "deep_link_url", "qr_image_url"}]}``.
+        """
+        query = self._dm_fields(dict(params, user=user))
+        return self._request("/uploadposts/dms/whatsapp/qr", "GET",
+                             params={k: self._query_value(v) for k, v in query.items()})
+
+    def create_whatsapp_qr_code(self, user: str, prefilled_message: str,
+                                code: Optional[str] = None, **fields: Any) -> Dict:
+        """
+        Create a WhatsApp QR code / short link, or change the prefilled
+        message of an existing one (``code``).
+
+        Args:
+            user: Profile username.
+            prefilled_message: Up to 140 characters.
+            code: Existing code to edit.
+            **fields: Any other body field, sent as is.
+
+        Returns:
+            ``{"success": True, "qr_code": {"code", "prefilled_message",
+            "deep_link_url", "qr_image_url"}}``.
+        """
+        data = self._dm_fields(dict(fields, user=user, prefilled_message=prefilled_message, code=code))
+        return self._request("/uploadposts/dms/whatsapp/qr", "POST", json_data=data)
+
+    def delete_whatsapp_qr_code(self, user: str, code: str, **params: Any) -> Dict:
+        """
+        Delete a WhatsApp QR code / short link.
+
+        Returns:
+            ``{"success": True}``.
+        """
+        query = self._dm_fields(dict(params, user=user, code=code))
+        return self._request("/uploadposts/dms/whatsapp/qr", "DELETE",
+                             params={k: self._query_value(v) for k, v in query.items()})
 
     # ==================== AutoDM: per-post monitors ====================
 

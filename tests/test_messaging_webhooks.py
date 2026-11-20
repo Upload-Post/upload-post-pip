@@ -7,6 +7,8 @@ what the client would have sent (or how it reads what came back).
 Run with: python -m unittest discover -s tests
 """
 
+import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -170,6 +172,126 @@ class TestDirectMessages(ClientTestCase):
         self.assertGet("/uploadposts/dms/conversations", {
             "platform": "facebook", "user": "my-profile", "facebook_page_id": "123",
         })
+
+
+class TestWhatsappDms(ClientTestCase):
+    def setUp(self):
+        super().setUp()
+        self.delete = patch.object(self.client.session, "delete",
+                                   return_value=_response()).start()
+
+    def test_send_dm_sends_every_whatsapp_field_as_json(self):
+        template = {"name": "order_update", "language": "en_US",
+                    "components": [{"type": "body", "parameters": [{"type": "text", "text": "42"}]}]}
+        fields = {
+            "attachments": [{"type": "image", "media_id": "m1", "caption": "c"},
+                            {"type": "document", "url": "https://e.com/a.pdf", "filename": "a.pdf"}],
+            "template": template, "reply_to": "wamid.A",
+            "location": {"latitude": 40.4, "longitude": -3.7, "name": "Shop"},
+            "contacts": [{"name": {"formatted_name": "Ana"}, "phones": [{"phone": "+34600000001"}]}],
+            "buttons": [{"title": "Yes", "id": "y"}, "No"],
+            "list": {"button": "Options", "sections": [{"rows": [{"id": "r1", "title": "One"}]}]},
+            "cta_url": {"display_text": "Open", "url": "https://e.com"},
+            "header": "Hi", "footer": "Bye",
+            "reaction": {"message_id": "wamid.B", "emoji": "👍"},
+            "sender_action": "mark_read", "message_id": "wamid.C", "typing": True,
+            "attachment": {"type": "sticker", "media_id": "s1"},
+        }
+        self.client.send_dm("my-profile", "whatsapp", recipient_id="+34600000000",
+                            message="Pick one", **fields)
+        self.assertPostJson("/uploadposts/dms/send", dict(
+            fields, platform="whatsapp", user="my-profile",
+            recipient_id="+34600000000", message="Pick one"))
+
+    def test_upload_dm_media_sends_a_local_file_with_its_type(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "photo.jpg")
+            with open(path, "wb") as fh:
+                fh.write(b"JPEGDATA")
+            self.client.upload_dm_media("my-profile", path, platform="whatsapp",
+                                        type="image", extra_field="kept")
+        url, kwargs = self.post.call_args[0][0], self.post.call_args[1]
+        self.assertEqual(url, f"{BASE}/uploadposts/dms/media")
+        self.assertEqual(dict(kwargs["data"]), {
+            "platform": "whatsapp", "user": "my-profile", "type": "image", "extra_field": "kept"})
+        name, part = kwargs["files"][0]
+        self.assertEqual(name, "file")
+        self.assertEqual((part[0], part[2]), ("photo.jpg", "image/jpeg"))
+        self.assertTrue(part[1].closed)
+        self.assertEqual(kwargs["timeout"], self.client.upload_timeout)
+
+    def test_upload_dm_media_bytes_take_filename_or_content_type(self):
+        self.client.upload_dm_media("my-profile", b"PNG", filename="a.png",
+                                    platform="facebook", page_id="123")
+        kwargs = self.post.call_args[1]
+        self.assertEqual(dict(kwargs["data"]), {"platform": "facebook", "user": "my-profile",
+                                                "page_id": "123"})
+        self.assertEqual(kwargs["files"], [("file", ("a.png", b"PNG", "image/png"))])
+
+        self.client.upload_dm_media("my-profile", b"X", content_type="video/mp4")
+        self.assertEqual(self.post.call_args[1]["files"], [("file", ("file", b"X", "video/mp4"))])
+
+    def test_upload_dm_media_refuses_urls_and_missing_files(self):
+        for bad in ("https://e.com/a.jpg", "/nope/missing.jpg", None):
+            with self.assertRaises(UploadPostError):
+                self.client.upload_dm_media("my-profile", bad)
+        self.post.assert_not_called()
+
+    def test_templates_query_for_get_and_delete_json_for_create(self):
+        self.client.list_dm_templates("my-profile", platform="whatsapp",
+                                      status="APPROVED", limit=50)
+        self.assertGet("/uploadposts/dms/templates", {
+            "platform": "whatsapp", "user": "my-profile", "status": "APPROVED", "limit": 50})
+
+        buttons = [{"text": "Track", "url": "https://e.com/t"},
+                   {"text": "Call", "phone_number": "+34600000000"}]
+        self.client.create_dm_template("my-profile", "order_update", platform="whatsapp",
+                                       category="UTILITY", language="es",
+                                       body="Order {{1}} is ready", examples=["42"],
+                                       footer="Thanks", buttons=buttons)
+        self.assertPostJson("/uploadposts/dms/templates", {
+            "platform": "whatsapp", "user": "my-profile", "name": "order_update",
+            "category": "UTILITY", "language": "es", "body": "Order {{1}} is ready",
+            "examples": ["42"], "footer": "Thanks", "buttons": buttons})
+
+        self.client.delete_dm_template("my-profile", "order_update", platform="whatsapp")
+        url, kwargs = self.delete.call_args[0][0], self.delete.call_args[1]
+        self.assertEqual(url, f"{BASE}/uploadposts/dms/templates")
+        self.assertEqual(kwargs["params"], {
+            "platform": "whatsapp", "user": "my-profile", "name": "order_update"})
+        self.assertNotIn("json", kwargs)
+
+    def test_business_profile_get_json_update_and_photo_multipart(self):
+        self.client.get_whatsapp_business_profile("my-profile")
+        self.assertGet("/uploadposts/dms/whatsapp/profile", {"user": "my-profile"})
+
+        self.client.update_whatsapp_business_profile(
+            "my-profile", about="Open 9-5", websites=["https://a.com", "https://b.com"],
+            vertical="RETAIL")
+        self.assertPostJson("/uploadposts/dms/whatsapp/profile", {
+            "user": "my-profile", "about": "Open 9-5",
+            "websites": ["https://a.com", "https://b.com"], "vertical": "RETAIL"})
+
+        self.client.update_whatsapp_business_profile(
+            "my-profile", websites=["https://a.com", "https://b.com"],
+            file=b"IMG", filename="logo.png")
+        kwargs = self.post.call_args[1]
+        self.assertEqual(dict(kwargs["data"]), {
+            "user": "my-profile", "websites": "https://a.com,https://b.com"})
+        self.assertEqual(kwargs["files"], [("file", ("logo.png", b"IMG", "image/png"))])
+
+    def test_qr_codes_list_create_delete(self):
+        self.client.list_whatsapp_qr_codes("my-profile")
+        self.assertGet("/uploadposts/dms/whatsapp/qr", {"user": "my-profile"})
+
+        self.client.create_whatsapp_qr_code("my-profile", "Hi!", code="ABC")
+        self.assertPostJson("/uploadposts/dms/whatsapp/qr", {
+            "user": "my-profile", "prefilled_message": "Hi!", "code": "ABC"})
+
+        self.client.delete_whatsapp_qr_code("my-profile", "ABC")
+        url, kwargs = self.delete.call_args[0][0], self.delete.call_args[1]
+        self.assertEqual(url, f"{BASE}/uploadposts/dms/whatsapp/qr")
+        self.assertEqual(kwargs["params"], {"user": "my-profile", "code": "ABC"})
 
 
 class TestAutodmRules(ClientTestCase):

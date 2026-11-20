@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.21.0
+
+WhatsApp DMs, fully covered. WhatsApp is open to every account; it is a
+messaging channel only (it never publishes posts). Only additions.
+
+### Added
+
+- `upload_dm_media(user, file, platform=None, type=None, page_id=None,
+  filename=None, content_type=None, **fields)`: multipart upload to
+  `POST /dms/media` (the MIME type is guessed from the file name); send the
+  answer's `type` and `media_id` in `send_dm` attachments.
+- Templates: `list_dm_templates`, `create_dm_template`, `delete_dm_template`
+  (`/dms/templates`).
+- WhatsApp Business profile: `get_whatsapp_business_profile`,
+  `update_whatsapp_business_profile` (optional photo `file`, sent as multipart).
+- WhatsApp QR codes / short links: `list_whatsapp_qr_codes`,
+  `create_whatsapp_qr_code`, `delete_whatsapp_qr_code`.
+
+### Changed
+
+- `send_dm` docstring documents every WhatsApp field and the 24-hour window
+  rule; Messenger is documented as a limited rollout (403
+  `messenger_not_enabled`).
+- `DELETE` requests can carry a query string (used by the template and QR
+  deletes).
+
 ## 2.18.0
 
 The client now covers every operation of the Upload-Post OpenAPI spec (467).
