@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.21.1
+
+### Changed
+
+- DM docs list the networks that work today: Instagram, WhatsApp, Bluesky and
+  Telegram.
+
 ## 2.21.0
 
 WhatsApp DMs, fully covered. WhatsApp is open to every account; it is a

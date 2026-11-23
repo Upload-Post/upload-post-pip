@@ -65,7 +65,7 @@ client.upload_video("video.mp4", title="Hi", user="my-profile",
 - ✅ **Audience** - Who follows a profile, per platform
 - ✅ **Suggestions** - Hashtags and searches to post about, per platform
 - ✅ **Comments** - Read, reply, moderate; replies under a comment on TikTok, Threads, YouTube, Instagram, Facebook and LinkedIn
-- ✅ **Direct Messages** - Instagram, WhatsApp (messaging only: WhatsApp does not publish posts), Bluesky and Telegram bot DMs; Messenger is a limited rollout
+- ✅ **Direct Messages** - Instagram, WhatsApp (messaging only: WhatsApp does not publish posts), Bluesky and Telegram bot DMs
 - ✅ **AutoDM rules** - Account-wide Instagram comment/story/keyword DMs
 - ✅ **Webhook deliveries** - 7-day delivery log and redelivery
 - ✅ **Full Type Hints**
@@ -468,9 +468,8 @@ client.comment_action(
 
 ### Direct Messages
 
-One pair of methods for every messaging platform: `instagram`, `whatsapp`,
-`bluesky` and `facebook` (Messenger, a limited rollout: other accounts get 403
-`messenger_not_enabled`). `send_dm` also sends from your own
+One pair of methods for every messaging platform: `instagram`, `whatsapp`
+and `bluesky`. `send_dm` also sends from your own
 Telegram bot (`platform="telegram"`) to people who started it, and
 `get_dm_conversations(platform="telegram", ...)` reads them once the bot's
 updates are turned on.
@@ -507,7 +506,7 @@ client.get_dm_conversations("my-profile", "bluesky", status="request", read_stat
 ```
 
 Any other `/dms/send` field (WhatsApp `template`, `location`, `contacts`,
-`list`, `cta_url`; Messenger `tag`, `template`...) goes through as a keyword
+`list`, `cta_url`...) goes through as a keyword
 argument, dicts and lists as JSON. **Bluesky DMs need an app password created with "Allow access to your
 direct messages"** (Bluesky > Settings > Privacy and security > App passwords),
 then reconnect Bluesky with it; otherwise the API answers 403
@@ -591,7 +590,7 @@ Errors come as `UploadPostError.error_code`: 400 `whatsapp_invalid_request`,
 `error.response["meta_error_code"]`: 131047 outside the window (send a
 template), 131026 undeliverable, 131030 recipient not allowed on a test number.
 
-New DMs (Instagram, Messenger, WhatsApp and Bluesky) can also reach you as the
+New DMs (Instagram, WhatsApp and Bluesky) can also reach you as the
 opt-in `dm_received` webhook. Bluesky has no push, so Upload-Post checks every
 5 minutes.
 

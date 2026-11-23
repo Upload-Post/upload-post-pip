@@ -2473,7 +2473,7 @@ class UploadPostClient:
                 names or a ``{name: bool}`` dict: upload_completed,
                 social_account_connected, social_account_disconnected,
                 social_account_reauth_required, and the opt-in dm_received
-                (Instagram, Facebook Messenger, WhatsApp, Bluesky) and
+                (Instagram, WhatsApp, Bluesky) and
                 comment_received. The opt-in events are only sent when listed.
             webhook_url: Webhook URL for notifications.
             channels: Which channels are on, e.g. ``{"webhook": True}``
@@ -4808,10 +4808,8 @@ class UploadPostClient:
         """
         Send a direct message, or a DM action (mark read, react...).
 
-        One method for every messaging platform: ``instagram``, ``whatsapp``,
-        ``bluesky`` and ``facebook`` (Messenger, a limited rollout: accounts
-        without it get 403 ``messenger_not_enabled``). Instagram, Messenger and
-        WhatsApp only let you write freely inside the 24-hour window the person
+        One method for every messaging platform: ``instagram``, ``whatsapp``
+        and ``bluesky``. Instagram and WhatsApp only let you write freely inside the 24-hour window the person
         opened by writing to you. Messages count against the plan's daily DM
         allowance; sender actions and reactions do not.
 
@@ -4886,9 +4884,8 @@ class UploadPostClient:
 
         Args:
             user: Profile username.
-            platform: ``instagram``, ``whatsapp``, ``bluesky``, ``telegram`` or
-                ``facebook`` (Messenger, limited rollout).
-            recipient_id: Who to write to (Instagram/Messenger scoped id,
+            platform: ``instagram``, ``whatsapp``, ``bluesky`` or ``telegram``.
+            recipient_id: Who to write to (Instagram scoped id,
                 WhatsApp phone number, Bluesky handle or DID).
             message: The text. Optional with a sender action, a shared post or
                 another rich body.
@@ -4905,15 +4902,14 @@ class UploadPostClient:
                 wamid).
             reaction: Emoji for a reaction (WhatsApp: the emoji with
                 ``message_id``, or a dict with ``message_id`` and ``emoji``).
-            buttons: Up to 3 ``{"title", "url"}`` link buttons (Instagram,
-                Messenger); WhatsApp: up to 3 reply buttons ``{"title", "id"?}``
+            buttons: Up to 3 ``{"title", "url"}`` link buttons (Instagram);
+                WhatsApp: up to 3 reply buttons ``{"title", "id"?}``
                 or strings.
-            quick_replies: Quick replies (Instagram, Messenger).
+            quick_replies: Quick replies (Instagram).
             **fields: Any other body field of ``/dms/send``, sent as is,
                 dicts and lists as JSON (WhatsApp ``template``, ``location``,
                 ``contacts``, ``list``, ``cta_url``, ``header``, ``footer``,
-                ``typing``, ``attachment``; Messenger ``tag``, ``template``,
-                ``page_id``; Instagram ``generic_template``...). ``None``
+                ``typing``, ``attachment``; Instagram ``generic_template``...). ``None``
                 values are dropped.
 
         Returns:
@@ -4972,8 +4968,7 @@ class UploadPostClient:
 
         Args:
             user: Profile username.
-            platform: ``instagram``, ``whatsapp``, ``bluesky``, ``telegram`` or
-                ``facebook`` (Messenger, limited rollout).
+            platform: ``instagram``, ``whatsapp``, ``bluesky`` or ``telegram``.
             limit: Conversations per page (1-50; Bluesky caps at 25).
             cursor: ``pagination.next_cursor`` from the previous page.
             since: Only conversations active since this Unix timestamp or ISO
@@ -5080,11 +5075,9 @@ class UploadPostClient:
         Args:
             user: Profile username.
             file: Local path, bytes or an open binary file.
-            platform: ``whatsapp`` (default) or ``facebook`` (Messenger, a
-                limited rollout: 403 ``messenger_not_enabled`` otherwise).
+            platform: ``whatsapp`` (default).
             type: Force ``image``, ``video``, ``audio``, ``document`` or
                 ``sticker``.
-            page_id: Messenger: Facebook Page id.
             filename: Name of the file part (bytes: give it an extension).
             content_type: MIME type of the file part (default: guessed from
                 the name).
@@ -5114,8 +5107,7 @@ class UploadPostClient:
 
         Args:
             user: Profile username.
-            platform: ``whatsapp`` (default) or ``facebook`` (Messenger,
-                limited rollout).
+            platform: ``whatsapp`` (default).
             limit: 1-200 (default 100).
             status: ``APPROVED``, ``PENDING``, ``REJECTED``...
             name: Only the template with this name.
@@ -5158,8 +5150,7 @@ class UploadPostClient:
         Args:
             user: Profile username.
             name: Lowercase letters, digits and ``_``.
-            platform: ``whatsapp`` (default) or ``facebook`` (Messenger,
-                limited rollout).
+            platform: ``whatsapp`` (default).
             category: ``MARKETING``, ``UTILITY`` (default) or ``AUTHENTICATION``.
             language: Default ``en_US``.
             components: Meta template components.
@@ -5183,8 +5174,7 @@ class UploadPostClient:
         Args:
             user: Profile username.
             name: Template name.
-            platform: ``whatsapp`` (default) or ``facebook`` (Messenger,
-                limited rollout).
+            platform: ``whatsapp`` (default).
             **params: Any other query parameter, sent as is.
 
         Returns:
