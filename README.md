@@ -148,6 +148,28 @@ response = client.upload_document(
 client.upload_document("archive.zip", title="Files", user="my-profile", platforms=["telegram"])
 ```
 
+### Upload fields added in 2.22.0
+
+- **Threads**: `threads_gif_id` (text posts, a GIPHY id), `threads_spoiler_media`
+  (images, videos, carousels), `threads_text_spoilers` (`[{"offset", "length"}]`, up to
+  10) and `threads_ghost_post` (a temporary text post; `list_threads_ghost_posts` shows
+  when it expires).
+- **Facebook** (text posts): `facebook_backdated_time` (a past Unix time or ISO 8601
+  date) and `facebook_backdated_time_granularity` (`year`, `month`, `day`, `hour`, `minute`).
+- **Instagram**: a single video sent with `upload_photos` is published as a Reel and
+  takes `cover_url` (a URL), `thumb_offset`, `share_to_feed` and `audio_name`;
+  `user_tags` also works on a video Story.
+
+```python
+client.upload_text(
+    title="Guess what is coming",
+    user="my-profile",
+    platforms=["threads"],
+    threads_ghost_post=True,
+    threads_text_spoilers=[{"offset": 6, "length": 4}],
+)
+```
+
 ### Check Upload Status
 
 For async uploads, check the status using the request_id:
@@ -1346,10 +1368,18 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `create_pinterest_board_section` | `POST /api/uploadposts/pinterest/boards/{board_id}/sections` | Create a section in a Pinterest board. |
 | `get_facebook_page_info` | `GET /api/uploadposts/facebook/page-info` | Read a Facebook Page's public info. |
 | `update_facebook_page_info` | `PATCH /api/uploadposts/facebook/page-info` | Update a Facebook Page's public info. |
+| `get_facebook_insights` | `GET /api/uploadposts/facebook/insights` | Read Facebook Page, post or video Insights on demand. |
+| `list_facebook_video_captions` | `GET /api/uploadposts/facebook/videos/{video_id}/captions` | List the captions of a Facebook Page video. |
+| `update_facebook_video_captions` | `POST /api/uploadposts/facebook/videos/{video_id}/captions` | Upload, set default or delete captions of a Facebook Page video. |
+| `list_facebook_page_ratings` | `GET /api/uploadposts/facebook/ratings` | List a Facebook Page's reviews and recommendations. |
+| `list_facebook_page_tagged_posts` | `GET /api/uploadposts/facebook/tagged` | List posts that tag a Facebook Page. |
 | `list_reddit_subreddits` | `GET /api/uploadposts/reddit/subreddits` | Subreddits the Reddit account belongs to. |
 | `get_reddit_post_types` | `GET /api/uploadposts/reddit/post-types` | Post types a subreddit allows. |
 | `list_reddit_flairs` | `GET /api/uploadposts/reddit/flairs` | Post flairs of a subreddit. |
 | `get_reddit_detailed_posts` | `GET /api/uploadposts/reddit/detailed-posts/` | Get Reddit detailed posts. |
+| `list_threads_ghost_posts` | `GET /api/uploadposts/threads/ghost-posts` | List the account's Threads ghost posts. |
+| `list_instagram_stories` | `GET /api/uploadposts/instagram/stories` | Instagram stories live now. |
+| `list_instagram_tagged_media` | `GET /api/uploadposts/instagram/tagged` | Instagram posts where the account is tagged. |
 
 ### User Management
 
@@ -1376,7 +1406,6 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `set_linkedin_page` | `POST /api/uploadposts/users/linkedin-page` | Select the LinkedIn Page used when publishing. |
 | `clear_linkedin_page` | `DELETE /api/uploadposts/users/linkedin-page` | Clear the selected LinkedIn Page. |
 | `connect_bluesky_credentials` | `POST /api/uploadposts/users/bluesky/credentials` | Connect Bluesky with an app password. |
-| `set_youtube_oauth_client` | `POST /api/uploadposts/users/youtube/credentials` | Use your own Google OAuth client for a profile's YouTube. |
 
 ### Authentication
 
@@ -1423,6 +1452,17 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `preview_bluesky_join_links` | `GET /api/uploadposts/dms/bluesky/join-links` | Preview Bluesky join links. *Not generally available.* |
 | `join_bluesky_group` | `POST /api/uploadposts/dms/bluesky/join-links` | Ask to join a Bluesky group. *Not generally available.* |
 | `download_dm_media` | `GET /api/uploadposts/dms/media` | Download a DM attachment. |
+| `edit_whatsapp_template` | `PATCH /api/uploadposts/dms/templates` | Edit a WhatsApp template. |
+| `list_whatsapp_blocked_users` | `GET /api/uploadposts/dms/whatsapp/blocked` | List blocked WhatsApp users. |
+| `block_whatsapp_users` | `POST /api/uploadposts/dms/whatsapp/blocked` | Block WhatsApp users. |
+| `unblock_whatsapp_users` | `DELETE /api/uploadposts/dms/whatsapp/blocked` | Unblock WhatsApp users. |
+| `get_whatsapp_automation` | `GET /api/uploadposts/dms/whatsapp/automation` | WhatsApp commands and ice breakers. |
+| `set_whatsapp_automation` | `POST /api/uploadposts/dms/whatsapp/automation` | Set WhatsApp commands and ice breakers. |
+| `get_whatsapp_number` | `GET /api/uploadposts/dms/whatsapp/number` | WhatsApp number status. |
+| `update_whatsapp_number` | `POST /api/uploadposts/dms/whatsapp/number` | Change WhatsApp display name or PIN. |
+| `get_whatsapp_analytics` | `GET /api/uploadposts/dms/whatsapp/analytics` | WhatsApp analytics. |
+| `enable_whatsapp_template_insights` | `POST /api/uploadposts/dms/whatsapp/analytics` | Enable WhatsApp template analytics. |
+| `list_whatsapp_template_library` | `GET /api/uploadposts/dms/whatsapp/templates/library` | WhatsApp template library. |
 
 ### Bluesky
 
@@ -1527,6 +1567,15 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `upload_chatgpt_ads_creative` | `POST /api/uploadposts/ads/chatgpt/creatives` | Upload a creative image. |
 | `get_chatgpt_ads_account_insights` | `GET /api/uploadposts/ads/chatgpt/insights` | Get ad account insights. |
 | `promote_chatgpt_ads` | `POST /api/uploadposts/ads/chatgpt/promote` | Launch an ad in one call. |
+
+### Pinterest
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `read_pinterest_api` | `GET /api/uploadposts/pinterest/api/{endpoint}` | Read Pinterest API v5 (boards, board sections, Pins). |
+| `post_pinterest_api` | `POST /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 POST (create a board or a board section). |
+| `patch_pinterest_api` | `PATCH /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 PATCH (update a board or a board section). |
+| `delete_pinterest_api` | `DELETE /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 DELETE (delete a board or a board section). |
 <!-- /openapi:methods -->
 
 ## What a TikTok connection can do (`capabilities`)
@@ -1926,7 +1975,11 @@ is switched on for your account.
 either has a hand-written method (listed in `codegen/sdk-map.json` under
 `existing`), is left out on purpose (`excluded`, with the reason), or gets a
 generated method from `codegen/generate.py` (standard library only; the same
-file lives in the npm SDK):
+file lives in the npm SDK). The client offers only what is switched on in
+production: operations that are off there go in `excluded`, the ones production
+switched on although the spec still marks them go in `available`, and
+`hidden_fields` / `descriptions` keep fields and texts of features that are off
+out of the generated methods (`tests/test_production_switches.py` checks it):
 
 ```bash
 cp <spec> codegen/openapi.json        # the API's openapi/openapi.json

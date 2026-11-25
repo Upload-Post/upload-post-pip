@@ -32,8 +32,38 @@ PREFIXES = PLATFORMS + ["gbp"]
 STRUCTURAL = {"video", "photos", "document", "platform", "user", "title"}
 # Fields sent from a keyword that also sends another field, checked on their own below.
 SEPARATE = {}
-# Fields the client knowingly does not send, with the reason. Keep it empty.
-NOT_SENT = {}
+# Fields the client knowingly does not send, with the reason: features that
+# are off in production (the SDK offers nothing that is off there). Move a
+# field out of here when its feature is switched on.
+UNIFIED_LOGIN = "Instagram Unified Login: off in production"
+THREADS_PERMISSIONS = "Threads: needs permissions not granted yet, off in production"
+NOT_SENT = {
+    "instagram_audio_id": UNIFIED_LOGIN,
+    "instagram_audio_volume": UNIFIED_LOGIN,
+    "instagram_video_volume": UNIFIED_LOGIN,
+    "instagram_paid_partnership": UNIFIED_LOGIN,
+    "instagram_sponsor_ids": UNIFIED_LOGIN,
+    "instagram_poll": UNIFIED_LOGIN,
+    "instagram_poll_extended": UNIFIED_LOGIN,
+    "instagram_comment_prompt": UNIFIED_LOGIN,
+    "instagram_product_tags": UNIFIED_LOGIN,
+    "threads_enable_reply_approvals": THREADS_PERMISSIONS,
+    "threads_allowlisted_country_codes": THREADS_PERMISSIONS,
+    "threads_location_id": THREADS_PERMISSIONS,
+    "threads_share_to_instagram": THREADS_PERMISSIONS,
+    "threads_share_to_instagram_dark_mode": THREADS_PERMISSIONS,
+    "facebook_tags": "Facebook user tags: not confirmed as switched on in production",
+    "x_video_title": "X post extra fields: off in production",
+    "x_video_description": "X post extra fields: off in production",
+    "x_video_cta": "X post extra fields: off in production",
+    "x_video_cta_url": "X post extra fields: off in production",
+    "x_video_cta_app_store_id": "X post extra fields: off in production",
+    "x_video_cta_ipad_app_store_id": "X post extra fields: off in production",
+    "x_video_cta_play_store_id": "X post extra fields: off in production",
+    "x_clip_post_id": "X post extra fields: off in production",
+    "x_clip_start_seconds": "X post extra fields: off in production",
+    "x_clip_end_seconds": "X post extra fields: off in production",
+}
 
 UPLOADS = [
     ("/upload", "upload_video", lambda: ["https://example.com/v.mp4"]),

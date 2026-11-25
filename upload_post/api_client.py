@@ -574,6 +574,18 @@ class UploadPostClient:
                 data.append(("audio_name", kwargs["audio_name"]))
             if kwargs.get("thumb_offset"):
                 data.append(("thumb_offset", kwargs["thumb_offset"]))
+        else:
+            # A single video posted through /upload_photos is published as a
+            # Reel and takes the Reel's cover (a URL), thumbnail offset, feed
+            # sharing and audio name.
+            cover_val = kwargs.get("cover_url")
+            if cover_val and str(cover_val).lower().startswith(("http://", "https://")):
+                data.append(("cover_url", str(cover_val)))
+            self._put_many(data, kwargs, (
+                ("thumb_offset", "str"),
+                ("share_to_feed", "bool"),
+                ("audio_name", "str"),
+            ))
 
         self._put_many(data, kwargs, (
             ("instagram_alt_text", "list"),
@@ -733,6 +745,10 @@ class UploadPostClient:
                 ("facebook_call_to_action", "json"),
                 ("facebook_child_attachments", "json"),
                 ("facebook_multi_share_end_card", "bool"),
+                # Backdate the Page post: a past Unix time or ISO 8601 date,
+                # with an optional granularity (year|month|day|hour|minute).
+                ("facebook_backdated_time", "str"),
+                ("facebook_backdated_time_granularity", "str"),
             ))
         if is_video:
             self._put_many(data, kwargs, (
@@ -873,6 +889,14 @@ class UploadPostClient:
                 ("threads_poll_options", "list"),
                 ("threads_auto_publish_text", "bool"),
             ))
+        # GIF (GIPHY id) and ghost posts are for text posts; spoiler media for
+        # image, video and carousel posts; text spoilers for any post.
+        self._put_many(data, kwargs, (
+            ("threads_gif_id", "str"),
+            ("threads_spoiler_media", "bool"),
+            ("threads_text_spoilers", "json"),
+            ("threads_ghost_post", "bool"),
+        ))
 
     def _add_reddit_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add Reddit-specific parameters."""
@@ -1307,6 +1331,9 @@ class UploadPostClient:
             Threads:
                 threads_long_text_as_post: Post long text as single post
                 threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
+                threads_spoiler_media: Blur the images or videos of the post as a spoiler
+                threads_text_spoilers: [{"offset", "length"}] ranges of the first post's text
+                    hidden as spoilers (max 10)
 
             Google Business:
                 gbp_location_id: Location, e.g. "accounts/123/locations/456". Required
@@ -1430,8 +1457,13 @@ class UploadPostClient:
             Instagram:
                 media_type: IMAGE or STORIES
                 collaborators: Comma-separated collaborator usernames
-                user_tags: Comma-separated user tags
+                user_tags: Comma-separated user tags (also on a video Story)
                 location_id: Location ID
+                A single video in photos (published as a Reel):
+                cover_url: URL of a custom cover
+                thumb_offset: Thumbnail offset (ms)
+                share_to_feed: Also share the Reel to the feed
+                audio_name: Name of the audio track embedded in the video
             
             LinkedIn:
                 visibility: PUBLIC (only PUBLIC supported for photos)
@@ -1463,6 +1495,9 @@ class UploadPostClient:
                     equal media count. 0 means no media for that post. Auto-chunks
                     into groups of 10 if >10 items and no layout specified.
                 threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
+                threads_spoiler_media: Blur the images or videos of the post as a spoiler
+                threads_text_spoilers: [{"offset", "length"}] ranges of the first post's text
+                    hidden as spoilers (max 10)
 
             Reddit:
                 subreddit: Subreddit name (without r/)
@@ -1568,6 +1603,9 @@ class UploadPostClient:
             Facebook:
                 facebook_page_id: Facebook Page ID
                 facebook_link_url: URL to attach as link preview on Facebook
+                facebook_backdated_time: Backdate the Page post (a past Unix time or
+                    ISO 8601 date)
+                facebook_backdated_time_granularity: year, month, day, hour or minute
 
             Bluesky:
                 bluesky_link_url: URL to attach as external embed link preview
@@ -1585,6 +1623,12 @@ class UploadPostClient:
             Threads:
                 threads_long_text_as_post: Post long text as single post
                 threads_topic_tag: Topic tag for the post (1-50 chars, no periods or ampersands)
+                threads_gif_id: Attach a GIF: the id of a GIPHY GIF
+                threads_text_spoilers: [{"offset", "length"}] ranges of the first post's text
+                    hidden as spoilers (max 10)
+                threads_ghost_post: Ghost post, a temporary text post of up to 500
+                    characters (list_threads_ghost_posts shows when it expires; only
+                    text spoilers can go with it)
 
             Reddit:
                 subreddit: Subreddit name (without r/)
@@ -2072,7 +2116,8 @@ class UploadPostClient:
         type: str,
         q: Optional[str] = None,
         country_code: Optional[str] = None,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        personalized: Optional[bool] = None,
     ) -> Dict:
         """
         Get what to write about: the hashtags or the searches a platform
@@ -2091,10 +2136,14 @@ class UploadPostClient:
         Args:
             user: Profile username.
             platform: Platform to ask (tiktok).
-            type: Which suggestions you want: "hashtags" or "keywords".
+            type: Which suggestions you want: "hashtags", "keywords" or
+                "trending" (the 20 searches trending on TikTok right now, no
+                ``q``; needs ``trend_search``).
             q: Keyword to get suggestions around.
             country_code: ISO country code to bias the suggestions.
             language: Language code to bias the suggestions.
+            personalized: ``trending``/``keywords``: searches personalized for
+                this TikTok account.
 
         Returns:
             {"success": True, "platform": ..., "type": ..., "hashtags": [...]}
@@ -2107,6 +2156,8 @@ class UploadPostClient:
             params["country_code"] = country_code
         if language:
             params["language"] = language
+        if personalized is not None:
+            params["personalized"] = str(personalized).lower()
         return self._request("/uploadposts/suggestions", "GET", params=params)
 
     def get_platform_metrics(self) -> Dict:
@@ -2712,6 +2763,18 @@ class UploadPostClient:
         finally:
             for fh in opened:
                 fh.close()
+
+    def set_youtube_oauth_client(self, profile_username: str, client_id: str, client_secret: str, **params) -> Dict:
+        """Use your own Google OAuth client for a profile's YouTube.
+
+        Deprecated: legacy, the API no longer documents this endpoint (profiles
+        already set up keep working). Kept so code that calls it does not break.
+
+        ``POST /api/uploadposts/users/youtube/credentials``
+        """
+        return self._call("POST", "/uploadposts/users/youtube/credentials",
+                          dict(params, profile_username=profile_username, client_id=client_id,
+                               client_secret=client_secret))
 
     # ---- Posts: edit, repost, actions ----
     def edit_post(self, user: str, platform: str, post_id: str, **params) -> Dict:
@@ -4666,7 +4729,8 @@ class UploadPostClient:
         message: str,
         post_id: Optional[str] = None,
         post_url: Optional[str] = None,
-        comment_id: Optional[str] = None
+        comment_id: Optional[str] = None,
+        image_url: Optional[str] = None,
     ) -> Dict:
         """
         Create a comment on a post, or reply to an existing comment.
@@ -4684,6 +4748,8 @@ class UploadPostClient:
             post_id: Post/media ID to comment on.
             post_url: Full post URL to comment on.
             comment_id: Existing comment ID to reply to.
+            image_url: TikTok: public URL of an image to post as (or with) the
+                comment.
 
         One of post_id, post_url or comment_id is required.
 
@@ -4701,6 +4767,8 @@ class UploadPostClient:
             json_data["post_url"] = post_url
         if comment_id is not None:
             json_data["comment_id"] = comment_id
+        if image_url:
+            json_data["image_url"] = image_url
         return self._request("/uploadposts/comments/create", "POST", json_data=json_data)
 
     def delete_comment(
@@ -4838,6 +4906,17 @@ class UploadPostClient:
           "title", "description"?}]}]}`` (10 rows max),
           ``cta_url={"display_text", "url"}``, ``header`` / ``footer`` (text,
           <= 60).
+        - More interactive messages (``message`` is the body): ``flow`` (a
+          WhatsApp Flow, ``{"flow_id" | "flow_name", "cta" (<= 30),
+          "flow_token"?, "mode"?: "published" | "draft", "flow_action"?:
+          "navigate" | "data_exchange", "screen"?, "data"?}``),
+          ``location_request=True`` (ask the person to share their location;
+          the reply comes as a location message), ``carousel`` (media cards
+          ``{"media_url" (https), "media_type": "image" | "video", "body"?
+          (<= 160), "cta_url": {"display_text", "url"} | "buttons"}``, all
+          cards with the same kind and number of buttons) and ``call_button``
+          (``{"display_text" (<= 20), "ttl_minutes"? (1-43200), "payload"?
+          (<= 512)}``, needs the Calling API on the number).
         - ``reaction``: emoji (with ``message_id``) or ``{"message_id",
           "emoji"}``; an empty emoji removes it.
         - ``sender_action``: ``mark_read`` or ``typing_on`` on the inbound
@@ -5814,10 +5893,18 @@ class UploadPostClient:
         "createPinterestBoardSection": ("POST", "/uploadposts/pinterest/boards/{board_id}/sections", {"q": ["profile", "user"], "b": ["user", "name", "profile"]}),
         "getFacebookPageInfo": ("GET", "/uploadposts/facebook/page-info", {"q": ["user", "page_id"]}),
         "updateFacebookPageInfo": ("PATCH", "/uploadposts/facebook/page-info", {"b": ["user", "page_id", "validate_only", "about", "description", "website", "phone", "emails", "hours", "picture_url", "cover_url"]}),
+        "getFacebookInsights": ("GET", "/uploadposts/facebook/insights", {"q": ["user", "page_id", "metric", "object_id", "period", "since", "until", "breakdown"]}),
+        "listFacebookVideoCaptions": ("GET", "/uploadposts/facebook/videos/{video_id}/captions", {"q": ["user", "page_id"]}),
+        "updateFacebookVideoCaptions": ("POST", "/uploadposts/facebook/videos/{video_id}/captions", {"b": ["user", "page_id", "captions_file", "locale", "default_locale", "delete_locales", "confirm"], "f": ["captions_file"], "mp": True}),
+        "listFacebookPageRatings": ("GET", "/uploadposts/facebook/ratings", {"q": ["user", "page_id", "limit", "after"]}),
+        "listFacebookPageTaggedPosts": ("GET", "/uploadposts/facebook/tagged", {"q": ["user", "page_id", "limit", "after"]}),
         "listRedditSubreddits": ("GET", "/uploadposts/reddit/subreddits", {"q": ["profile"]}),
         "getRedditPostTypes": ("GET", "/uploadposts/reddit/post-types", {"q": ["profile", "subreddit"]}),
         "listRedditFlairs": ("GET", "/uploadposts/reddit/flairs", {"q": ["profile", "subreddit"]}),
         "getRedditDetailedPosts": ("GET", "/uploadposts/reddit/detailed-posts/", {"q": ["profile_username"]}),
+        "listThreadsGhostPosts": ("GET", "/uploadposts/threads/ghost-posts", {"q": ["user", "limit", "after", "before", "since", "until"]}),
+        "listInstagramStories": ("GET", "/uploadposts/instagram/stories", {"q": ["profile"]}),
+        "listInstagramTaggedMedia": ("GET", "/uploadposts/instagram/tagged", {"q": ["profile", "limit", "after"]}),
         "getUserProfile": ("GET", "/uploadposts/users/{username}", {}),
         "renameUserProfile": ("PATCH", "/uploadposts/users/{username}", {"b": ["display_name"]}),
         "disconnectSocialAccount": ("DELETE", "/uploadposts/users/social", {"b": ["profile_username", "social_platform"]}),
@@ -5839,7 +5926,6 @@ class UploadPostClient:
         "setLinkedInPage": ("POST", "/uploadposts/users/linkedin-page", {"b": ["profile_username", "linkedin_page_id"]}),
         "clearLinkedInPage": ("DELETE", "/uploadposts/users/linkedin-page", {"b": ["profile_username"]}),
         "connectBlueskyCredentials": ("POST", "/uploadposts/users/bluesky/credentials", {"b": ["profile_username", "handle", "password"]}),
-        "setYoutubeOAuthClient": ("POST", "/uploadposts/users/youtube/credentials", {"b": ["profile_username", "client_id", "client_secret"]}),
         "getCurrentUser": ("GET", "/uploadposts/me", {}),
         "startOAuthConnection": ("POST", "/uploadposts/oauth/{platform}/start", {"b": ["profile", "redirect_url"]}),
         "createFfmpegJob": ("POST", "/uploadposts/ffmpeg/jobs/upload", {"b": ["files", "full_command", "output_extension", "publish", "file", "file1", "file2"], "f": ["file", "file1", "file2"]}),
@@ -5866,6 +5952,17 @@ class UploadPostClient:
         "previewBlueskyJoinLinks": ("GET", "/uploadposts/dms/bluesky/join-links", {"q": ["user", "codes"], "na": True}),
         "joinBlueskyGroup": ("POST", "/uploadposts/dms/bluesky/join-links", {"b": ["user", "code"], "na": True}),
         "downloadDmMedia": ("GET", "/uploadposts/dms/media", {"q": ["platform", "user", "media_id"], "raw": 'binary'}),
+        "editWhatsappTemplate": ("PATCH", "/uploadposts/dms/templates", {"b": ["user", "platform", "template_id", "category", "components", "message_send_ttl_seconds", "current_category"]}),
+        "listWhatsappBlockedUsers": ("GET", "/uploadposts/dms/whatsapp/blocked", {"q": ["user", "limit", "after", "before"]}),
+        "blockWhatsappUsers": ("POST", "/uploadposts/dms/whatsapp/blocked", {"b": ["user", "users"]}),
+        "unblockWhatsappUsers": ("DELETE", "/uploadposts/dms/whatsapp/blocked", {"b": ["user", "users"]}),
+        "getWhatsappAutomation": ("GET", "/uploadposts/dms/whatsapp/automation", {"q": ["user"]}),
+        "setWhatsappAutomation": ("POST", "/uploadposts/dms/whatsapp/automation", {"b": ["user", "commands", "prompts"]}),
+        "getWhatsappNumber": ("GET", "/uploadposts/dms/whatsapp/number", {"q": ["user"]}),
+        "updateWhatsappNumber": ("POST", "/uploadposts/dms/whatsapp/number", {"b": ["user", "action", "display_name", "pin", "confirm"]}),
+        "getWhatsappAnalytics": ("GET", "/uploadposts/dms/whatsapp/analytics", {"q": ["user", "type", "start", "end", "granularity", "country_codes", "dimensions", "metric_types", "template_ids", "this_number_only"]}),
+        "enableWhatsappTemplateInsights": ("POST", "/uploadposts/dms/whatsapp/analytics", {"b": ["user", "action", "confirm"]}),
+        "listWhatsappTemplateLibrary": ("GET", "/uploadposts/dms/whatsapp/templates/library", {"q": ["user", "search", "topic", "usecase", "industry", "language", "after"]}),
         "blueskyGraphAction": ("POST", "/uploadposts/bluesky/graph", {"b": ["user", "action", "actor", "list", "post_id", "only_reposts", "only_quoteposts"], "na": True}),
         "listBlueskyLists": ("GET", "/uploadposts/bluesky/lists", {"q": ["user", "purposes", "cursor"], "na": True}),
         "createBlueskyList": ("POST", "/uploadposts/bluesky/lists", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"], "na": True}),
@@ -5945,6 +6042,10 @@ class UploadPostClient:
         "uploadChatgptAdsCreative": ("POST", "/uploadposts/ads/chatgpt/creatives", {"q": ["ad_account_id", "profile_username"], "b": ["image_url", "ad_account_id", "profile_username", "file"], "f": ["file"]}),
         "getChatgptAdsAccountInsights": ("GET", "/uploadposts/ads/chatgpt/insights", {"q": ["since", "until", "time_granularity", "aggregation_level", "fields", "segments", "filters", "sort", "time_ranges", "limit", "after", "before", "ad_account_id", "profile_username"]}),
         "promoteChatgptAds": ("POST", "/uploadposts/ads/chatgpt/promote", {"q": ["ad_account_id", "profile_username"], "b": ["title", "body", "target_url", "image_url", "file_id", "budget", "budget_micros", "max_bid", "max_bid_micros", "name", "status", "bidding_type", "billing_event_type", "start_time", "end_time", "description", "conversion_event_setting_ids", "locations", "custom_audience_ids", "excluded_custom_audience_ids", "targeting", "context_hints", "price", "ad_group_name", "ad_name", "ad_account_id", "profile_username"]}),
+        "readPinterestApi": ("GET", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "refresh"]}),
+        "postPinterestApi": ("POST", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
+        "patchPinterestApi": ("PATCH", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
+        "deletePinterestApi": ("DELETE", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
     }
 
     # ---- Telegram ----
@@ -6502,7 +6603,9 @@ class UploadPostClient:
             user (str, optional): Alias of profile.
             name
             description (str, optional)
-            privacy (str, optional): SECRET is rejected (400).
+            privacy (str, optional): SECRET is rejected (400) unless Upload-Post
+                asks Pinterest for `boards:write_secret`; then a connection that did not
+                grant it answers 403 `pinterest_reconnect_required`.
             **params: Any other API field, by its API name.
         """
         return self._op("createPinterestBoard", params, name=name)
@@ -6883,6 +6986,121 @@ class UploadPostClient:
         """
         return self._op("updateFacebookPageInfo", params, user=user)
 
+    def get_facebook_insights(self, user: str, metric: str, **params) -> Dict:
+        """Read Facebook Page, post or video Insights on demand.
+
+        GET /{object-id}/insights with the Page token (`read_insights`,
+        `pages_read_engagement`). Without `object_id` it reads the Page; with a Page
+        post id (`PAGEID_POSTID`) or a video id of the Page it reads that object. Only
+        metrics Meta's Insights reference lists as live are accepted (e.g.
+        `page_daily_follows_unique`, `page_daily_unfollows_unique`,
+        `page_actions_post_reactions_*`, `post_reactions_by_type_total`,
+        `post_clicks_by_type`, `post_video_retention_graph`, `post_video_view_time`,
+        `monetization_approximate_earnings`); anything else is 400 `invalid_metric` with
+        `allowed_metrics`. Graph's `data` is returned as is. Cached briefly per account.
+
+        ``GET /api/uploadposts/facebook/insights``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            page_id (str, optional): Facebook Page id (needed when the account
+                manages several Pages and none is pinned to the profile).
+            metric: Comma-separated metric names.
+            object_id (str, optional): Page post id (PAGEID_POSTID) or video id;
+                default the Page. A video id is read through its post, with the
+                `post_video_*` metrics.
+            period (str, optional): day, week, days_28, month, lifetime or
+                total_over_range.
+            since (str, optional): Unix timestamp or YYYY-MM-DD.
+            until (str, optional): Unix timestamp or YYYY-MM-DD.
+            breakdown (str, optional): `earning_source` or `monetization_tool`
+                (monetization metrics); `is_from_ads` or `is_from_followers`
+                (`page_media_view`, `post_media_view`).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getFacebookInsights", params, user=user, metric=metric)
+
+    def list_facebook_video_captions(self, video_id: str, user: str, **params) -> Dict:
+        """List the captions of a Facebook Page video.
+
+        GET /{video-id}/captions with the Page token.
+
+        ``GET /api/uploadposts/facebook/videos/{video_id}/captions``
+
+        Args:
+            video_id: Numeric id of a video of the profile's Facebook Page.
+            user: Profile username as configured in Upload-Post.
+            page_id (str, optional): Facebook Page id (needed when the account
+                manages several Pages and none is pinned to the profile).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listFacebookVideoCaptions", params, video_id=video_id, user=user)
+
+    def update_facebook_video_captions(self, video_id: str, user: str, **params) -> Dict:
+        """Upload, set default or delete captions of a Facebook Page video.
+
+        POST /{video-id}/captions with the Page token. Upload an SRT (`captions_file`,
+        UTF-8, max 200 KB) for one `locale` (sent to Meta as `captions.<locale>.srt`),
+        set `default_locale` (a locale or `none`) and/or delete locales
+        (`delete_locales` + `confirm=true`). The video must belong to the profile's Page
+        (403 `facebook_video_not_owned`). Meta refuses a locale the video already has
+        (delete it first).
+
+        ``POST /api/uploadposts/facebook/videos/{video_id}/captions``
+
+        Args:
+            video_id: Numeric id of a video of the profile's Facebook Page.
+            user: Profile username.
+            page_id (str, optional): Facebook Page id (optional).
+            captions_file (Any, optional): SRT file.
+            locale (str, optional): Locale of captions_file (required with it).
+            default_locale (str, optional)
+            delete_locales (str, optional): Comma-separated or JSON array.
+            confirm (bool, optional): Required with delete_locales.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateFacebookVideoCaptions", params, video_id=video_id, user=user)
+
+    def list_facebook_page_ratings(self, user: str, **params) -> Dict:
+        """List a Facebook Page's reviews and recommendations.
+
+        GET /{page-id}/ratings with the Page token (`pages_read_user_content`):
+        created_time, recommendation_type, review_text, rating, has_rating, has_review,
+        reviewer. The first page adds `summary` (overall_star_rating, rating_count).
+        Read-only: the API cannot create, edit or delete reviews. Meta documents that
+        recommendations may be unavailable from Graph v22.0: then 410
+        `facebook_endpoint_deprecated`.
+
+        ``GET /api/uploadposts/facebook/ratings``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            page_id (str, optional): Facebook Page id (needed when the account
+                manages several Pages and none is pinned to the profile).
+            limit (int, optional): Page size, 1-100 (default 25).
+            after (str, optional): next_cursor of the previous page.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listFacebookPageRatings", params, user=user)
+
+    def list_facebook_page_tagged_posts(self, user: str, **params) -> Dict:
+        """List posts that tag a Facebook Page.
+
+        GET /{page-id}/tagged with the Page token (`pages_read_user_content`): id,
+        message, created_time, permalink_url, full_picture, from, tagged_time.
+
+        ``GET /api/uploadposts/facebook/tagged``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            page_id (str, optional): Facebook Page id (needed when the account
+                manages several Pages and none is pinned to the profile).
+            limit (int, optional): Page size, 1-100 (default 25).
+            after (str, optional): next_cursor of the previous page.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listFacebookPageTaggedPosts", params, user=user)
+
     def list_reddit_subreddits(self, profile: str, **params) -> Dict:
         """Subreddits the Reddit account belongs to.
 
@@ -6937,6 +7155,58 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("getRedditDetailedPosts", params, profile_username=profile_username)
+
+    def list_threads_ghost_posts(self, user: str, **params) -> Dict:
+        """List the account's Threads ghost posts.
+
+        GET /{threads-user-id}/ghost_posts (`threads_basic`): ghost_post_status (ACTIVE
+        / ARCHIVED) and ghost_post_expiration_timestamp. Create one with
+        `threads_ghost_post=true` on /upload_text (text only; archived after 24 h).
+
+        ``GET /api/uploadposts/threads/ghost-posts``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            limit (int, optional): Page size, 1-100 (default 25).
+            after (str, optional): next_cursor of the previous page.
+            before (str, optional): previous_cursor of the previous page (not
+                together with after).
+            since (str, optional): Start: Unix timestamp or YYYY-MM-DD (on or after
+                1688540400).
+            until (str, optional): End: Unix timestamp or YYYY-MM-DD, after since
+                and not in the future.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listThreadsGhostPosts", params, user=user)
+
+    def list_instagram_stories(self, profile: str, **params) -> Dict:
+        """Instagram stories live now.
+
+        The account's stories of the last 24 hours (not live videos or reshared
+        stories). Cached 2 minutes.
+
+        ``GET /api/uploadposts/instagram/stories``
+
+        Args:
+            profile: Profile username (alias user).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listInstagramStories", params, profile=profile)
+
+    def list_instagram_tagged_media(self, profile: str, **params) -> Dict:
+        """Instagram posts where the account is tagged.
+
+        Public media in which other accounts tagged this one. Cached 5 minutes.
+
+        ``GET /api/uploadposts/instagram/tagged``
+
+        Args:
+            profile: Profile username (alias user).
+            limit (int, optional): Page size (1-50).
+            after (str, optional): `next_cursor` of the previous page.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listInstagramTaggedMedia", params, profile=profile)
 
     # ---- User Management ----
     def get_user_profile(self, username: str, **params) -> Dict:
@@ -7301,23 +7571,6 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("connectBlueskyCredentials", params, profile_username=profile_username, handle=handle, password=password)
-
-    def set_youtube_oauth_client(self, profile_username: str, client_id: str, client_secret: str, **params) -> Dict:
-        """Use your own Google OAuth client for a profile's YouTube.
-
-        Stores (encrypted) the client_id and client_secret of your own Google Cloud
-        OAuth client; that profile then authorizes YouTube against it (its own API
-        quota).
-
-        ``POST /api/uploadposts/users/youtube/credentials``
-
-        Args:
-            profile_username
-            client_id
-            client_secret
-            **params: Any other API field, by its API name.
-        """
-        return self._op("setYoutubeOAuthClient", params, profile_username=profile_username, client_id=client_id, client_secret=client_secret)
 
     # ---- Authentication ----
     def get_current_user(self, **params) -> Dict:
@@ -7815,6 +8068,202 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("downloadDmMedia", params, platform=platform, user=user, media_id=media_id)
+
+    def edit_whatsapp_template(self, user: str, template_id: str, **params) -> Dict:
+        """Edit a WhatsApp template.
+
+        Changes category, components (they replace all of them) or
+        message_send_ttl_seconds (UTILITY 30-43200, AUTHENTICATION 30-900, -1 = 30 days)
+        of an APPROVED, REJECTED or PAUSED template. Meta allows 10 edits per 30 days
+        and 1 per 24 hours for approved ones.
+
+        ``PATCH /api/uploadposts/dms/templates``
+
+        Args:
+            user: Profile username.
+            platform (str, optional)
+            template_id
+            category (str, optional)
+            components (List[Dict[str, Any]], optional)
+            message_send_ttl_seconds (int, optional)
+            current_category (str, optional): Category of the template when only the
+                TTL changes.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("editWhatsappTemplate", params, user=user, template_id=template_id)
+
+    def list_whatsapp_blocked_users(self, user: str, **params) -> Dict:
+        """List blocked WhatsApp users.
+
+        Users blocked on the number (wa_id or user_id), paged with after/before.
+
+        ``GET /api/uploadposts/dms/whatsapp/blocked``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            limit (int, optional): Page size.
+            after (str, optional): Cursor.
+            before (str, optional): Cursor.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listWhatsappBlockedUsers", params, user=user)
+
+    def block_whatsapp_users(self, user: str, users: List[str], **params) -> Dict:
+        """Block WhatsApp users.
+
+        Blocks up to 1,000 users that messaged the number in the last 24 hours. A
+        blocked user cannot write to the number and the number cannot write to them.
+        Per-user failures come in failed[].
+
+        ``POST /api/uploadposts/dms/whatsapp/blocked``
+
+        Args:
+            user: Profile username.
+            users: Phone numbers in international format or WhatsApp user ids
+                (BSUID).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("blockWhatsappUsers", params, user=user, users=users)
+
+    def unblock_whatsapp_users(self, user: str, users: List[str], **params) -> Dict:
+        """Unblock WhatsApp users.
+
+        Unblocks up to 1,000 users.
+
+        ``DELETE /api/uploadposts/dms/whatsapp/blocked``
+
+        Args:
+            user: Profile username.
+            users: Phone numbers in international format or WhatsApp user ids
+                (BSUID).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("unblockWhatsappUsers", params, user=user, users=users)
+
+    def get_whatsapp_automation(self, user: str, **params) -> Dict:
+        """WhatsApp commands and ice breakers.
+
+        The /commands and ice breakers (prompts) shown to users when they open the chat.
+
+        ``GET /api/uploadposts/dms/whatsapp/automation``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getWhatsappAutomation", params, user=user)
+
+    def set_whatsapp_automation(self, user: str, **params) -> Dict:
+        """Set WhatsApp commands and ice breakers.
+
+        Replaces the commands (up to 30, name up to 32 characters, hint up to 256)
+        and/or ice breakers (up to 4). An empty list clears them. A command arrives as a
+        normal text message.
+
+        ``POST /api/uploadposts/dms/whatsapp/automation``
+
+        Args:
+            user: Profile username.
+            commands (List[Dict[str, Any]], optional)
+            prompts (List[str], optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("setWhatsappAutomation", params, user=user)
+
+    def get_whatsapp_number(self, user: str, **params) -> Dict:
+        """WhatsApp number status.
+
+        Quality rating, throughput, display name and its review status (name_status,
+        new_display_name, new_name_status), messaging limit, verification status.
+
+        ``GET /api/uploadposts/dms/whatsapp/number``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getWhatsappNumber", params, user=user)
+
+    def update_whatsapp_number(self, user: str, action: str, **params) -> Dict:
+        """Change WhatsApp display name or PIN.
+
+        action=request_display_name (display_name; Meta reviews it), apply_display_name
+        (once approved: registers the number again with its PIN) or change_pin (pin, 6
+        digits, confirm=true; two-step verification cannot be turned off by API).
+
+        ``POST /api/uploadposts/dms/whatsapp/number``
+
+        Args:
+            user: Profile username.
+            action
+            display_name (str, optional)
+            pin (str, optional)
+            confirm (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateWhatsappNumber", params, user=user, action=action)
+
+    def get_whatsapp_analytics(self, user: str, start: int, end: int, **params) -> Dict:
+        """WhatsApp analytics.
+
+        type=messaging (sent/delivered per period, granularity HALF_HOUR|DAY|MONTH),
+        pricing (volume and cost per category, granularity HALF_HOUR|DAILY|MONTHLY,
+        dimensions, metric_types COST|VOLUME) or templates (template_ids up to 10,
+        daily, last 90 days; needs template insights enabled). Read live from Meta for
+        the profile's WhatsApp Business Account.
+
+        ``GET /api/uploadposts/dms/whatsapp/analytics``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            type (str, optional): messaging, pricing or templates.
+            start: Unix seconds.
+            end: Unix seconds.
+            granularity (str, optional): See description.
+            country_codes (str, optional): Comma-separated ISO codes.
+            dimensions (str, optional): Pricing dimensions, comma-separated.
+            metric_types (str, optional): Comma-separated.
+            template_ids (str, optional): type=templates: comma-separated ids.
+            this_number_only (str, optional): true: only the profile's number.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getWhatsappAnalytics", params, user=user, start=start, end=end)
+
+    def enable_whatsapp_template_insights(self, user: str, action: str, confirm: bool, **params) -> Dict:
+        """Enable WhatsApp template analytics.
+
+        action=enable_template_insights with confirm=true. Meta does not let it be
+        turned off again.
+
+        ``POST /api/uploadposts/dms/whatsapp/analytics``
+
+        Args:
+            user: Profile username.
+            action
+            confirm
+            **params: Any other API field, by its API name.
+        """
+        return self._op("enableWhatsappTemplateInsights", params, user=user, action=action, confirm=confirm)
+
+    def list_whatsapp_template_library(self, user: str, **params) -> Dict:
+        """WhatsApp template library.
+
+        Meta's pre-written utility templates. Create one with POST
+        /uploadposts/dms/templates and library_template_name.
+
+        ``GET /api/uploadposts/dms/whatsapp/templates/library``
+
+        Args:
+            user: Profile username as configured in Upload-Post.
+            search (str, optional): Text search.
+            topic (str, optional): Topic.
+            usecase (str, optional): Use case.
+            industry (str, optional): Industry.
+            language (str, optional): Locale, e.g. en_US.
+            after (str, optional): Cursor.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listWhatsappTemplateLibrary", params, user=user)
 
     # ---- Bluesky ----
     def bluesky_graph_action(self, user: str, action: str, **params) -> Dict:
@@ -9753,5 +10202,90 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("promoteChatgptAds", params, title=title, body=body, target_url=target_url)
+
+    # ---- Pinterest ----
+    def read_pinterest_api(self, endpoint: str, user: str, **params) -> Dict:
+        """Read Pinterest API v5 (boards, board sections, Pins).
+
+        Calls Pinterest API v5 with the connection of profile `user`: `{endpoint}` is
+        the path of Pinterest's own reference (developers.pinterest.com/docs/api/v5)
+        without the leading slash, with the same query parameters and JSON body. Boards,
+        board sections and Pins: the operations below. Every parameter and body field is
+        checked against Pinterest's description before calling Pinterest
+        (`invalid_parameter` / `invalid_body`). `data` is Pinterest's answer as is.
+
+        ``GET /api/uploadposts/pinterest/api/{endpoint}``
+
+        Args:
+            endpoint: Pinterest API v5 path without the leading slash, e.g.
+                `boards`, `boards/123/pins`, `boards/123/sections`, `pins/456`.
+            user: Profile username whose Pinterest connection is used.
+            refresh (bool, optional): Skip the cache.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("readPinterestApi", params, endpoint=endpoint, user=user)
+
+    def post_pinterest_api(self, endpoint: str, user: str, **params) -> Dict:
+        """Pinterest API v5 POST (create a board or a board section).
+
+        Calls Pinterest API v5 with the connection of profile `user`: `{endpoint}` is
+        the path of Pinterest's own reference (developers.pinterest.com/docs/api/v5)
+        without the leading slash, with the same query parameters and JSON body. Boards,
+        board sections and Pins: the operations below. Every parameter and body field is
+        checked against Pinterest's description before calling Pinterest
+        (`invalid_parameter` / `invalid_body`). `data` is Pinterest's answer as is.
+
+        ``POST /api/uploadposts/pinterest/api/{endpoint}``
+
+        Args:
+            endpoint: Pinterest API v5 path without the leading slash, e.g.
+                `boards`, `boards/123/pins`, `boards/123/sections`, `pins/456`.
+            user: Profile username whose Pinterest connection is used.
+            confirm (bool, optional): Required (`true`) for deletes.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("postPinterestApi", params, endpoint=endpoint, user=user)
+
+    def patch_pinterest_api(self, endpoint: str, user: str, **params) -> Dict:
+        """Pinterest API v5 PATCH (update a board or a board section).
+
+        Calls Pinterest API v5 with the connection of profile `user`: `{endpoint}` is
+        the path of Pinterest's own reference (developers.pinterest.com/docs/api/v5)
+        without the leading slash, with the same query parameters and JSON body. Boards,
+        board sections and Pins: the operations below. Every parameter and body field is
+        checked against Pinterest's description before calling Pinterest
+        (`invalid_parameter` / `invalid_body`). `data` is Pinterest's answer as is.
+
+        ``PATCH /api/uploadposts/pinterest/api/{endpoint}``
+
+        Args:
+            endpoint: Pinterest API v5 path without the leading slash, e.g.
+                `boards`, `boards/123/pins`, `boards/123/sections`, `pins/456`.
+            user: Profile username whose Pinterest connection is used.
+            confirm (bool, optional): Required (`true`) for deletes.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("patchPinterestApi", params, endpoint=endpoint, user=user)
+
+    def delete_pinterest_api(self, endpoint: str, user: str, **params) -> Dict:
+        """Pinterest API v5 DELETE (delete a board or a board section).
+
+        Calls Pinterest API v5 with the connection of profile `user`: `{endpoint}` is
+        the path of Pinterest's own reference (developers.pinterest.com/docs/api/v5)
+        without the leading slash, with the same query parameters and JSON body. Boards,
+        board sections and Pins: the operations below. Every parameter and body field is
+        checked against Pinterest's description before calling Pinterest
+        (`invalid_parameter` / `invalid_body`). `data` is Pinterest's answer as is.
+
+        ``DELETE /api/uploadposts/pinterest/api/{endpoint}``
+
+        Args:
+            endpoint: Pinterest API v5 path without the leading slash, e.g.
+                `boards`, `boards/123/pins`, `boards/123/sections`, `pins/456`.
+            user: Profile username whose Pinterest connection is used.
+            confirm (bool, optional): Required (`true`) for deletes.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deletePinterestApi", params, endpoint=endpoint, user=user)
 
     # </openapi:methods>

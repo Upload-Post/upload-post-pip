@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.22.0
+
+Covers the API features switched on in production on 2026-11-25, and only
+those. Only additions: no existing method changes its name, arguments or result.
+
+### Added
+
+- Facebook Pages: `get_facebook_insights` (Page, post and video),
+  `list_facebook_page_ratings`, `list_facebook_page_tagged_posts`,
+  `list_facebook_video_captions` / `update_facebook_video_captions` (upload, set default or
+  delete); `upload_text` `facebook_backdated_time` and `facebook_backdated_time_granularity`.
+- Pinterest: `read_pinterest_api`, `post_pinterest_api`, `patch_pinterest_api`,
+  `delete_pinterest_api` (Pinterest API v5 boards, board sections and Pins).
+- TikTok: `create_comment` `image_url`; `get_suggestions` `type="trending"` and `personalized`.
+- Threads: `threads_gif_id`, `threads_spoiler_media`, `threads_text_spoilers`,
+  `threads_ghost_post` and `list_threads_ghost_posts`.
+- Instagram: `list_instagram_stories`, `list_instagram_tagged_media`; `upload_photos` with a
+  single video takes `cover_url`, `thumb_offset`, `share_to_feed` and `audio_name`;
+  `user_tags` also on a video Story.
+- WhatsApp: `send_dm` `flow`, `carousel`, `location_request`, `call_button` (documented;
+  sent as given); blocked users, commands and ice breakers, number (display name, PIN,
+  quality, limit), analytics and templates (`edit_whatsapp_template`,
+  `list_whatsapp_template_library`).
+
+### Changed
+
+- `set_youtube_oauth_client` is deprecated: the API no longer documents it, but it still
+  answers.
+
 ## 2.21.1
 
 ### Changed

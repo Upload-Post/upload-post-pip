@@ -83,6 +83,11 @@ def route_regex(route):
     return re.compile("^" + re.sub(r"\\\{\w+\\\}", "[^/]+", route) + "/?$")
 
 
+TMP_FILE = os.path.join(tempfile.mkdtemp(prefix="up-cov-"), "file.jpg")
+with open(TMP_FILE, "wb") as _fh:
+    _fh.write(b"x")
+
+
 def args_for(method, op):
     """Positional arguments get a value; required fields go as keywords too."""
     sig = inspect.signature(method)
@@ -99,6 +104,9 @@ def args_for(method, op):
             kwargs[name] = "https://example.com/a.mp4"
         elif name == "platforms":
             kwargs[name] = ["x"]
+        elif name == "file":
+            # Hand-written methods read a required file from disk (upload_dm_media).
+            kwargs[name] = TMP_FILE
         else:
             kwargs[name] = f"v_{name}"
     for name, value in (("platforms", ["x"]), ("user", "v_user"), ("title", "t")):
@@ -144,6 +152,8 @@ class TestEveryOperationHasAMethod(unittest.TestCase):
                 expected = MAP.get("overrides", {}).get(op_id, {}).get("path") or by_id[op_id]["route"]
                 self.assertEqual(route, expected)
 
+    # sdk-map.json "available": switched on in production although the spec
+    # still marks them (the spec follows the default in the code).
     def test_availability_notes_come_from_x_availability(self):
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
             region = fh.read().split("<!-- openapi:availability -->")[1].split("<!-- /openapi:availability -->")[0]
@@ -152,7 +162,8 @@ class TestEveryOperationHasAMethod(unittest.TestCase):
                 op = item.get(verb)
                 if not op:
                     continue
-                na = op.get("x-availability") == "not_generally_available"
+                na = (op.get("x-availability") == "not_generally_available"
+                      and op["operationId"] not in MAP.get("available", {}))
                 with self.subTest(operation=op["operationId"]):
                     if op["operationId"] in TABLE:
                         self.assertEqual(bool(TABLE[op["operationId"]][2].get("na")), na)

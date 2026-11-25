@@ -17,6 +17,17 @@ Inputs, both in codegen/:
     names:     operationId -> method name, when the default one is not wanted.
     overrides: operationId -> {"auth": "apikey", "path": "..."} where the spec is
                known to be wrong (say why in "why").
+    available: operationId -> why it is documented as available although the
+               spec marks it x-availability: not_generally_available (the spec
+               follows the default in the code; production switches features on
+               with an environment variable).
+    hidden_fields: operationId -> {field: why}: fields of the spec the SDK does
+               not document or send (they belong to a feature that is off in
+               production).
+    descriptions: operationId -> {"summary", "description", "params": {name: text
+               or {"description", "schema"}}}
+               used instead of the spec's texts, when those document what is off
+               in production.
 
 Every other operation gets a method named after its operationId (npm: as is,
 with the SDK's spelling of LinkedIn/AutoDM/OAuth...; pip: in snake_case). The
@@ -136,18 +147,23 @@ def operations():
             if verb not in item:
                 continue
             op = item[verb]
+            texts = MAP.get('descriptions', {}).get(op['operationId'], {})
             params = [resolve(p) for p in item.get('parameters', []) + op.get('parameters', [])]
+            params = [param_override(p, texts) for p in params]
             path_params = re.findall(r'\{(\w+)\}', path)
-            query = [p for p in params if p.get('in') == 'query']
+            hidden = MAP.get('hidden_fields', {}).get(op['operationId'], {})
+            query = [p for p in params if p.get('in') == 'query' and p.get('name') not in hidden]
             content = op.get('requestBody', {}).get('content', {})
             body_props, required_sets, files = {}, [], []
             for ctype in sorted(content, key=lambda c: c != 'application/json'):
                 props, required = merged_props(content[ctype].get('schema', {}))
                 for k, v in props.items():
+                    if k in hidden:
+                        continue
                     body_props.setdefault(k, v)
                     if is_binary(v) and k not in files:
                         files.append(k)
-                required_sets.append(set(required))
+                required_sets.append(set(required) - set(hidden))
             body_required = set.intersection(*required_sets) if required_sets else set()
             security = op.get('security')
             bearer = security == [{'BearerAuth': []}]
@@ -158,8 +174,10 @@ def operations():
                 raw = 'text' if all(t.startswith('text/') for t in ok_types) else 'binary'
             ops.append({
                 'id': op['operationId'], 'verb': verb.upper(), 'path': path, 'tag': op.get('tags', ['Other'])[0],
-                'summary': op.get('summary', ''), 'description': op.get('description', ''),
-                'na': op.get('x-availability') == 'not_generally_available',
+                'summary': texts.get('summary') or op.get('summary', ''),
+                'description': texts.get('description') or op.get('description', ''),
+                'na': (op.get('x-availability') == 'not_generally_available'
+                       and op['operationId'] not in MAP.get('available', {})),
                 'deprecated': bool(op.get('deprecated')), 'bearer': bearer,
                 'path_params': path_params, 'query': query, 'body': body_props,
                 'body_required': [k for k in body_props if k in body_required],
@@ -173,7 +191,10 @@ def operations():
 def generated_ops():
     existing, excluded = MAP.get('existing', {}), MAP.get('excluded', {})
     ids = {o['id'] for o in operations()}
-    stale = sorted((set(existing) | set(excluded) | set(MAP.get('names', {})) | set(MAP.get('overrides', {}))) - ids)
+    named = set(existing) | set(excluded)
+    for key in ('names', 'overrides', 'available', 'hidden_fields', 'descriptions'):
+        named |= set(MAP.get(key, {}))
+    stale = sorted(named - ids)
     if stale:
         sys.exit(f'sdk-map.json names operations that are not in the spec: {", ".join(stale)}')
     out = []
@@ -222,7 +243,17 @@ def field_docs(op):
 def resolve_params(op):
     item = SPEC['paths'].get(op['path']) or {}
     verb = item.get(op['verb'].lower(), {})
-    return [resolve(p) for p in item.get('parameters', []) + verb.get('parameters', [])]
+    texts = MAP.get('descriptions', {}).get(op['id'], {})
+    return [param_override(resolve(p), texts) for p in item.get('parameters', []) + verb.get('parameters', [])]
+
+
+def param_override(param, texts):
+    """param with the description (a string) or the keys (an object, e.g. a
+    narrower schema) that sdk-map.json "descriptions" gives it."""
+    over = texts.get('params', {}).get(param.get('name'))
+    if over is None:
+        return param
+    return dict(param, **({'description': over} if isinstance(over, str) else over))
 
 
 def endpoint(op):
