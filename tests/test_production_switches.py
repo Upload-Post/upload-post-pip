@@ -25,7 +25,7 @@ for name in ("upload_post/api_client.py", "README.md"):
         SHIPPED += fh.read()
 
 OFF_MARKERS = [
-    "/ads/meta", "/ads/tiktok", "reposts_of_me", "instagram_connection", "instagram/audio", "business-discovery",
+    "/ads/meta", "/ads/tiktok", "instagram_mention_received", "message_reactions", "messaging_seen", "messaging_referral", "instagram_connection", "instagram/audio", "business-discovery",
     "collaboration-invites", "threads/locations", "threads/mentions", "threads/search", "threads/profiles",
     "pending-replies", "geo-gating", "linkedin/reactions", "member-analytics", "tiktok/mentions", "ad-authorization",
     "visitor-posts", "whatsapp/flows", "participant_ids", "include_users", "instagram_paid_partnership",
@@ -38,7 +38,8 @@ SWITCHED_ON = [
     "listThreadsGhostPosts", "listInstagramStories", "listInstagramTaggedMedia", "editWhatsappTemplate",
     "listWhatsappBlockedUsers", "blockWhatsappUsers", "unblockWhatsappUsers", "getWhatsappAutomation",
     "setWhatsappAutomation", "getWhatsappNumber", "updateWhatsappNumber", "getWhatsappAnalytics",
-    "enableWhatsappTemplateInsights", "listWhatsappTemplateLibrary", "getXMentions", "readX", "manageXLists",
+    "enableWhatsappTemplateInsights", "listWhatsappTemplateLibrary", "getInstagramMessagingProfile",
+    "setInstagramMessagingProfile", "deleteInstagramMessagingProfile", "getXMentions", "readX", "manageXLists",
 ]
 
 
@@ -155,6 +156,27 @@ class TestSwitchedOn(unittest.TestCase):
         self.assertEqual(args[0], "GET")
         self.assertTrue(args[1].endswith("/uploadposts/x/read/search_recent"))
         self.assertEqual(kwargs["params"]["query"], "upload")
+
+    def test_instagram_top_level_comment(self):
+        self.client.create_comment(user="u", platform="instagram", message="hi", post_id="1789")
+        body = self.post.call_args[1]["json"]
+        self.assertEqual(body["post_id"], "1789")
+        self.assertNotIn("comment_id", body)
+
+    def test_instagram_messaging_profile(self):
+        self.client.set_instagram_messaging_profile(user="u", ice_breakers=[{"question": "Hours?", "payload": "HOURS"}])
+        args, kwargs = self.request.call_args
+        self.assertEqual(args[0], "POST")
+        self.assertTrue(args[1].endswith("/uploadposts/dms/instagram/profile"))
+        self.assertEqual(kwargs["json"]["ice_breakers"], [{"question": "Hours?", "payload": "HOURS"}])
+        self.client.delete_instagram_messaging_profile(user="u", fields=["persistent_menu"], confirm=True)
+        self.assertEqual(self.request.call_args[0][0], "DELETE")
+        self.client.get_instagram_messaging_profile(user="u")
+        self.assertEqual(self.request.call_args[0][0], "GET")
+
+    def test_read_x_reposts_of_me(self):
+        self.client.read_x("reposts_of_me", "u")
+        self.assertTrue(self.request.call_args[0][1].endswith("/uploadposts/x/read/reposts_of_me"))
 
 
 if __name__ == "__main__":

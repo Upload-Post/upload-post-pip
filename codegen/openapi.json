@@ -10889,7 +10889,7 @@
       "get": {
         "operationId": "getPostComments",
         "summary": "List post comments (multi-platform)",
-        "description": "List comments on one of your posts. Supported platforms: Instagram, Facebook, YouTube (account must be connected with the youtube.force-ssl scope), LinkedIn (organization posts) and TikTok. For YouTube, post_id is the video ID; for LinkedIn, post_id is the post URN (e.g. urn:li:ugcPost:123); for TikTok, post_id is the video id. Instagram comments are returned newest-first per Meta Graph API v3.2+. Pass comment_id to get the replies under one comment instead of the post's top-level comments (TikTok, Threads, YouTube, Instagram, Facebook and LinkedIn company Pages). TikTok requires the `comments` capability — TikTok grants comment permission only at the moment the account is connected, so an account connected earlier must be reconnected from Manage Users or the call answers 400 with error_code `tiktok_reconnect_required`. On TikTok, post_url accepts a tiktok.com/@user/video/<id> URL. Successful responses are cached for 60 seconds per account and query string; any comment write made through Upload-Post by the same account clears that cache. On X the mentions page behind the listing is also kept for 120 seconds per X account. Bluesky: without depth, parent_height or comment_id the listing is unchanged (same fields as before). With any of them it returns the thread view in one call (no pagination, limit caps top-level replies): depth nests replies in `replies`, parent_height returns the posts above in `parents`, comment_id (a reply's at:// URI) returns the replies to that reply; post_id/post_url/comment_id then also accept a bsky.app link, each comment adds parent_id, quote_count and hidden (hidden by the author with thread controls) and the response adds hidden_replies. Both need the Bluesky account connected.",
+        "description": "List comments on one of your posts. Supported platforms: Instagram, Facebook, YouTube (account must be connected with the youtube.force-ssl scope), LinkedIn (organization posts) and TikTok. For YouTube, post_id is the video ID; for LinkedIn, post_id is the post URN (e.g. urn:li:ugcPost:123); for TikTok, post_id is the video id. Instagram comments are returned newest-first per Meta Graph API v3.2+. Pass comment_id to get the replies under one comment instead of the post's top-level comments (TikTok, Threads, YouTube, Instagram, Facebook and LinkedIn company Pages). TikTok requires the `comments` capability — TikTok grants comment permission only at the moment the account is connected, so an account connected earlier must be reconnected from Manage Users or the call answers 400 with error_code `tiktok_reconnect_required`. On TikTok, post_url accepts a tiktok.com/@user/video/<id> URL. Successful responses are cached for 60 seconds per account and query string; any comment write made through Upload-Post by the same account clears that cache. On X the mentions page behind the listing is also kept for 120 seconds per X account. Bluesky: without depth, parent_height or comment_id the listing is unchanged (same fields as before). With any of them it returns the thread view in one call (no pagination, limit caps top-level replies): depth nests replies in `replies`, parent_height returns the posts above in `parents`, comment_id (a reply's at:// URI) returns the replies to that reply; post_id/post_url/comment_id then also accept a bsky.app link, each comment adds parent_id, quote_count and hidden (hidden by the author with thread controls) and the response adds hidden_replies. Both need the Bluesky account connected. Instagram `like_count` and `hidden` on each comment and reply: not generally available yet.",
         "tags": [
           "Instagram Interactions"
         ],
@@ -11110,7 +11110,7 @@
       "post": {
         "operationId": "createComment",
         "summary": "Create a comment or reply (Instagram, Facebook, YouTube, LinkedIn, TikTok, X, Threads, Bluesky)",
-        "description": "Post a comment or reply on Instagram, Facebook, YouTube, LinkedIn, TikTok, X, Threads or Bluesky. Provide exactly one of comment_id (reply to that comment), post_id or post_url (top-level comment). Instagram supports replies only, so comment_id is required. For LinkedIn, post_id is the post URN. LinkedIn also accepts an image with the comment (`image` multipart file or `image_url`, JPG/PNG/GIF up to 10 MB): not generally available yet, until then the image is ignored and the comment goes out as text. On TikTok, post_id (the video id) is always required — adding comment_id on top of it turns the call into a reply — and the connection must report the `comments` capability, i.e. a reconnected account, or the call answers 400 with error_code `tiktok_reconnect_required`. On X, links in message are removed unless the X Links add-on is active (a `warnings` array says so; a message made only of links answers 400 `x_links_not_allowed`), and replies, edits and reposts share a daily cap per X account (20 on the Free plan, 200 on paid plans, per UTC day; 429 `x_daily_write_limit` with a Retry-After header). TikTok image comments (not generally available yet; while off, `image_url` and `image` are ignored and `message` stays required): `image_url` (JSON) or a multipart `image` file, JPG/PNG/WebP up to 5 MB, between 360 x 360 and 1080 x 1920 (or 1920 x 1080) pixels; with an image, `message` is optional. An image TikTok cannot take answers 400 `invalid_image` before anything is posted.",
+        "description": "Post a comment or reply on Instagram, Facebook, YouTube, LinkedIn, TikTok, X, Threads or Bluesky. Provide exactly one of comment_id (reply to that comment), post_id or post_url (top-level comment). Instagram supports replies (comment_id); a top-level comment on your own post (post_id = numeric media id, or post_url) is not generally available yet: until then comment_id is required. For LinkedIn, post_id is the post URN. LinkedIn also accepts an image with the comment (`image` multipart file or `image_url`, JPG/PNG/GIF up to 10 MB): not generally available yet, until then the image is ignored and the comment goes out as text. On TikTok, post_id (the video id) is always required — adding comment_id on top of it turns the call into a reply — and the connection must report the `comments` capability, i.e. a reconnected account, or the call answers 400 with error_code `tiktok_reconnect_required`. On X, links in message are removed unless the X Links add-on is active (a `warnings` array says so; a message made only of links answers 400 `x_links_not_allowed`), and replies, edits and reposts share a daily cap per X account (20 on the Free plan, 200 on paid plans, per UTC day; 429 `x_daily_write_limit` with a Retry-After header). TikTok image comments (not generally available yet; while off, `image_url` and `image` are ignored and `message` stays required): `image_url` (JSON) or a multipart `image` file, JPG/PNG/WebP up to 5 MB, between 360 x 360 and 1080 x 1920 (or 1920 x 1080) pixels; with an image, `message` is optional. An image TikTok cannot take answers 400 `invalid_image` before anything is posted.",
         "tags": [
           "Instagram Interactions"
         ],
@@ -86988,6 +86988,465 @@
           }
         }
       }
+    },
+    "/uploadposts/dms/instagram/profile": {
+      "get": {
+        "operationId": "getInstagramMessagingProfile",
+        "summary": "Read the Instagram ice breakers and persistent menu",
+        "description": "**Not generally available yet.** Off by default: answers `503` with `instagram_feature_disabled` until the feature is available.\n\nIce breakers and the persistent menu of the Instagram inbox (Meta's `messenger_profile` on graph.instagram.com, permission instagram_business_manage_messages). Instagram Login connections only. Read straight from Instagram (no cache).",
+        "tags": [
+          "Instagram Interactions"
+        ],
+        "x-availability": "not_generally_available",
+        "parameters": [
+          {
+            "name": "user",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Profile username (alias profile)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated: ice_breakers, persistent_menu (default both)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "profile = what Instagram has set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "ice_breakers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "persistent_menu": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameter (`invalid_parameter`, `confirmation_required`), Instagram must be reconnected (`instagram_reconnect_required`), the account is connected through Facebook/Unified Login, for which Meta documents no Instagram messaging profile (`instagram_connection_unsupported`), or Instagram refused the request (`instagram_api_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "invalid_parameter",
+                  "message": "Invalid parameter (`invalid_parameter`, `confirmation_required`), Instagram must be reconnected (`instagram_reconnect_required`), the account is connected through Facebook/Unified Login, for which Meta documents no Instagram messaging profile (`instagram_connection_unsupported`), or Instagram refused the request (`instagram_api_error`)."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Meta has not granted the permission this needs (`instagram_permission_missing`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_permission_missing",
+                  "message": "Meta has not granted the permission this needs (`instagram_permission_missing`)."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Instagram rate limit (`instagram_rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_rate_limited",
+                  "message": "Instagram rate limit (`instagram_rate_limited`)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Instagram did not answer (`instagram_upstream_error`; on a change, `instagram_write_outcome_unknown`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_upstream_error",
+                  "message": "Instagram did not answer (`instagram_upstream_error`; on a change, `instagram_write_outcome_unknown`)."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not generally available yet. error_code: `instagram_feature_disabled`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_feature_disabled",
+                  "message": "Not generally available yet. error_code: `instagram_feature_disabled`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "setInstagramMessagingProfile",
+        "summary": "Set the Instagram ice breakers and/or persistent menu",
+        "description": "**Not generally available yet.** Off by default: answers `503` with `instagram_feature_disabled` until the feature is available.\n\nIce breakers and the persistent menu of the Instagram inbox (Meta's `messenger_profile` on graph.instagram.com, permission instagram_business_manage_messages). Instagram Login connections only. Each field sent replaces what Instagram had for it; validated before calling Instagram.",
+        "tags": [
+          "Instagram Interactions"
+        ],
+        "x-availability": "not_generally_available",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user"
+                ],
+                "properties": {
+                  "user": {
+                    "type": "string",
+                    "description": "Profile username."
+                  },
+                  "ice_breakers": {
+                    "type": "array",
+                    "description": "Up to 4 questions per locale. Either [{question, payload}] (default locale) or [{locale, call_to_actions: [{question, payload}]}]. Tapping one sends a `dm_received` webhook with the postback payload. An entry without locale is the `default` one; Meta requires a `default` entry.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "locale": {
+                          "type": "string"
+                        },
+                        "call_to_actions": {
+                          "type": "array",
+                          "maxItems": 4,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "question": {
+                                "type": "string"
+                              },
+                              "payload": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "question",
+                              "payload"
+                            ]
+                          }
+                        },
+                        "question": {
+                          "type": "string"
+                        },
+                        "payload": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "persistent_menu": {
+                    "type": "array",
+                    "description": "[{locale (default `default`), call_to_actions: [postback | web_url buttons]}]. Meta recommends at most 5 items; existing conversations see a new menu after the person refreshes the inbox. An entry without locale is the `default` one; one `default` entry is required.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "locale": {
+                          "type": "string"
+                        },
+                        "call_to_actions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "title"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "postback",
+                                  "web_url"
+                                ]
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "payload": {
+                                "type": "string",
+                                "description": "postback only."
+                              },
+                              "url": {
+                                "type": "string",
+                                "description": "web_url only (http/https)."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "updated[] = the fields set."
+          },
+          "400": {
+            "description": "Invalid parameter (`invalid_parameter`, `confirmation_required`), Instagram must be reconnected (`instagram_reconnect_required`), the account is connected through Facebook/Unified Login, for which Meta documents no Instagram messaging profile (`instagram_connection_unsupported`), or Instagram refused the request (`instagram_api_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "invalid_parameter",
+                  "message": "Invalid parameter (`invalid_parameter`, `confirmation_required`), Instagram must be reconnected (`instagram_reconnect_required`), the account is connected through Facebook/Unified Login, for which Meta documents no Instagram messaging profile (`instagram_connection_unsupported`), or Instagram refused the request (`instagram_api_error`)."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Meta has not granted the permission this needs (`instagram_permission_missing`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_permission_missing",
+                  "message": "Meta has not granted the permission this needs (`instagram_permission_missing`)."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Instagram rate limit (`instagram_rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_rate_limited",
+                  "message": "Instagram rate limit (`instagram_rate_limited`)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Instagram did not answer (`instagram_upstream_error`; on a change, `instagram_write_outcome_unknown`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_upstream_error",
+                  "message": "Instagram did not answer (`instagram_upstream_error`; on a change, `instagram_write_outcome_unknown`)."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not generally available yet. error_code: `instagram_feature_disabled`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_feature_disabled",
+                  "message": "Not generally available yet. error_code: `instagram_feature_disabled`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteInstagramMessagingProfile",
+        "summary": "Remove the Instagram ice breakers and/or persistent menu",
+        "description": "**Not generally available yet.** Off by default: answers `503` with `instagram_feature_disabled` until the feature is available.\n\nIce breakers and the persistent menu of the Instagram inbox (Meta's `messenger_profile` on graph.instagram.com, permission instagram_business_manage_messages). Instagram Login connections only. Needs `confirm: true`.",
+        "tags": [
+          "Instagram Interactions"
+        ],
+        "x-availability": "not_generally_available",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user",
+                  "fields",
+                  "confirm"
+                ],
+                "properties": {
+                  "user": {
+                    "type": "string"
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "ice_breakers",
+                        "persistent_menu"
+                      ]
+                    }
+                  },
+                  "confirm": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "deleted[]."
+          },
+          "400": {
+            "description": "Invalid parameter (`invalid_parameter`, `confirmation_required`), Instagram must be reconnected (`instagram_reconnect_required`), the account is connected through Facebook/Unified Login, for which Meta documents no Instagram messaging profile (`instagram_connection_unsupported`), or Instagram refused the request (`instagram_api_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "invalid_parameter",
+                  "message": "Invalid parameter (`invalid_parameter`, `confirmation_required`), Instagram must be reconnected (`instagram_reconnect_required`), the account is connected through Facebook/Unified Login, for which Meta documents no Instagram messaging profile (`instagram_connection_unsupported`), or Instagram refused the request (`instagram_api_error`)."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Meta has not granted the permission this needs (`instagram_permission_missing`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_permission_missing",
+                  "message": "Meta has not granted the permission this needs (`instagram_permission_missing`)."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Instagram rate limit (`instagram_rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_rate_limited",
+                  "message": "Instagram rate limit (`instagram_rate_limited`)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Instagram did not answer (`instagram_upstream_error`; on a change, `instagram_write_outcome_unknown`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_upstream_error",
+                  "message": "Instagram did not answer (`instagram_upstream_error`; on a change, `instagram_write_outcome_unknown`)."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not generally available yet. error_code: `instagram_feature_disabled`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "instagram_feature_disabled",
+                  "message": "Not generally available yet. error_code: `instagram_feature_disabled`."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -90296,9 +90755,10 @@
           "post_approved",
           "post_rejected",
           "post_approval_expired",
-          "linkedin_page_activity"
+          "linkedin_page_activity",
+          "instagram_mention_received"
         ],
-        "description": "Webhook event name (dots are accepted too: social_account.connected). youtube_video_* are accepted only while YouTube push is on, post_approval_* only while post approvals are on, linkedin_page_activity (likes, reshares, mentions, Page comments and comment edits/deletes on a subscribed LinkedIn Page: `action` reaction|repost|mention|page_comment|comment_edited|comment_deleted) only while it is on. dm_received, comment_received, telegram_update, the Google Business events, post_analytics_updated and the gated ones are opt-in: they are only sent if listed."
+        "description": "Webhook event name (dots are accepted too: social_account.connected). youtube_video_* are accepted only while YouTube push is on, post_approval_* only while post approvals are on, linkedin_page_activity (likes, reshares, mentions, Page comments and comment edits/deletes on a subscribed LinkedIn Page: `action` reaction|repost|mention|page_comment|comment_edited|comment_deleted) only while it is on. instagram_mention_received (another account @mentioned the connected Instagram account in a caption or a comment: `mention` {type comment|caption, comment_id, media_id; text/from/parent_id when Instagram sends them}) only while it is on. dm_received, comment_received, telegram_update, the Google Business events, post_analytics_updated and the gated ones are opt-in: they are only sent if listed."
       },
       "ClientPostApproval": {
         "type": "object",

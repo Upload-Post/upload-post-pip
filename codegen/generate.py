@@ -28,6 +28,10 @@ Inputs, both in codegen/:
                or {"description", "schema"}}}
                used instead of the spec's texts, when those document what is off
                in production.
+    hidden_enum_values: value -> why: enum values dropped from every enum of the
+               spec (e.g. a webhook event that is off in production).
+    text_removals: exact pieces of text dropped from every text of the spec (the
+               sentences that document what is off in production).
 
 Every other operation gets a method named after its operationId (npm: as is,
 with the SDK's spelling of LinkedIn/AutoDM/OAuth...; pip: in snake_case). The
@@ -60,6 +64,32 @@ def load(name):
 
 SPEC = load('openapi.json')
 MAP = load('sdk-map.json')
+
+
+def prune(node):
+    """Drop sdk-map.json hidden_enum_values and text_removals from the spec, in place."""
+    hidden, cuts = MAP.get('hidden_enum_values', {}), MAP.get('text_removals', [])
+
+    def clean(value):
+        if isinstance(value, str):
+            for cut in cuts:
+                value = value.replace(cut, '')
+            return value
+        prune(value)
+        return value
+
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == 'enum' and isinstance(value, list):
+                node[key] = [v for v in value if v not in hidden]
+            else:
+                node[key] = clean(value)
+    elif isinstance(node, list):
+        for i, value in enumerate(node):
+            node[i] = clean(value)
+
+
+prune(SPEC)
 
 
 def resolve(node, seen=()):

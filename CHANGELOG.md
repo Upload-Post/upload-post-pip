@@ -18,7 +18,12 @@ those. Only additions: no existing method changes its name, arguments or result.
   `threads_ghost_post` and `list_threads_ghost_posts`.
 - Instagram: `list_instagram_stories`, `list_instagram_tagged_media`; `upload_photos` with a
   single video takes `cover_url`, `thumb_offset`, `share_to_feed` and `audio_name`;
-  `user_tags` also on a video Story.
+  `user_tags` also on a video Story; `create_comment` posts a top-level comment on your own
+  post (`post_id`/`post_url` without `comment_id`); comments carry `like_count` and `hidden`;
+  `get_analytics` returns `breakdowns_detail` and post analytics `profile_activity`,
+  `profile_activity_breakdown` and `reels_skip_rate` (documented);
+  `get_instagram_messaging_profile`, `set_instagram_messaging_profile` and
+  `delete_instagram_messaging_profile` (ice breakers and persistent menu).
 - WhatsApp: `send_dm` `flow`, `carousel`, `location_request`, `call_button` (documented;
   sent as given); blocked users, commands and ice breakers, number (display name, PIN,
   quality, limit), analytics and templates (`edit_whatsapp_template`,
@@ -27,7 +32,9 @@ those. Only additions: no existing method changes its name, arguments or result.
   followers and following, lists, trends, analytics), `manage_x_lists`; `post_action`
   `unrepost` / `bookmark` / `unbookmark`, `comment_action` `hide` / `unhide` of a reply;
   upload fields `x_video_title`, `x_video_description`, `x_video_cta*` (videos) and
-  `x_clip_post_id`, `x_clip_start_seconds`, `x_clip_end_seconds` (text posts).
+  `x_clip_post_id`, `x_clip_start_seconds`, `x_clip_end_seconds` (text posts). Bookmarks,
+  lists, followers/following, likers, `reposts_of_me` and hiding replies need an X account
+  connected or reconnected on or after 2026-11-25 (otherwise `403 x_reconnect_required`).
 
 ### Changed
 

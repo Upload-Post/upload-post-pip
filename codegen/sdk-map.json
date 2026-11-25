@@ -460,7 +460,10 @@
     "listWhatsappTemplateLibrary": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
     "getXMentions": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
     "readX": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
-    "manageXLists": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off)."
+    "manageXLists": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
+    "getInstagramMessagingProfile": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
+    "setInstagramMessagingProfile": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
+    "deleteInstagramMessagingProfile": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off)."
   },
   "hidden_fields": {
     "startOAuthConnection": {
@@ -497,37 +500,17 @@
       }
     },
     "readX": {
-      "description": "One read-only X API call per request, with the fields fixed by Upload-Post. `data`, `includes` and `meta` are X's own objects. Answers are cached for a few minutes per account (trends 15 min, analytics 1 h): repeating the call within that time costs nothing (`cached: true`). Pagination: pass `pagination.next_cursor` back as `cursor`. Kinds that need a permission accounts did not grant before answer `403` `x_reconnect_required`.\n\n| kind | X endpoint | X permission | X price | X rate limit (15 min) |\n|---|---|---|---|---|\n| search_recent | GET /2/tweets/search/recent (`query`, last 7 days) | - | $0.005/post + $0.010/author | 300 per account |\n| counts_recent | GET /2/tweets/counts/recent (`query`, `granularity`) | - | $0.005/request | 300 per app |\n| liking_users | GET /2/tweets/{post_id}/liking_users | like.read | $0.010/user | 75 |\n| reposted_by | GET /2/tweets/{post_id}/retweeted_by | - | $0.010/user | 75 |\n| quote_posts | GET /2/tweets/{post_id}/quote_tweets (`exclude`) | - | $0.005/post + $0.010/author | 75 |\n| bookmarks | GET /2/users/{id}/bookmarks | bookmark.read | $0.005/post + $0.010/author | 180 |\n| followers, following | GET /2/users/{id}/followers, /following (max 100 per page here) | follows.read | $0.010/user | 300 |\n| owned_lists, followed_lists, pinned_lists | GET /2/users/{id}/owned_lists, /followed_lists, /pinned_lists | list.read | $0.005/list | 15 |\n| list, list_posts, list_members, list_followers | GET /2/lists/{list_id}[/tweets, /members, /followers] | list.read | $0.005/list, $0.005/post, $0.010/user | 75 / 900 |\n| trends | GET /2/trends/by/woeid/{woeid} (`limit` = max_trends, 1-50) | - | $0.010/request | 75 per app |\n| trend_locations | GET /2/trends/locations | - | $0.010/request (cached 24 h for everyone) | - |\n| personalized_trends | GET /2/users/personalized_trends | - | $0.010/request | 10 (100 per 24 h) |\n| post_analytics | GET /2/tweets/analytics (`ids` up to 100, `start_time`, `end_time`, `granularity`) | - | not published by X; counted as $0.005 per post | 300 |\n| media_analytics | GET /2/media/analytics (`media_keys` up to 100, `start_time`, `end_time`, `granularity`) | - | not published by X; counted as $0.005 per media | - |",
-      "params": {
-        "kind": {
-          "schema": {
-            "type": "string",
-            "enum": [
-              "search_recent",
-              "counts_recent",
-              "liking_users",
-              "reposted_by",
-              "quote_posts",
-              "bookmarks",
-              "followers",
-              "following",
-              "owned_lists",
-              "followed_lists",
-              "pinned_lists",
-              "list",
-              "list_posts",
-              "list_members",
-              "list_followers",
-              "trends",
-              "trend_locations",
-              "personalized_trends",
-              "post_analytics",
-              "media_analytics"
-            ]
-          }
-        }
-      }
+      "description": "One read-only X API call per request, with the fields fixed by Upload-Post. `data`, `includes` and `meta` are X's own objects. Answers are cached for a few minutes per account (trends 15 min, analytics 1 h): repeating the call within that time costs nothing (`cached: true`). Pagination: pass `pagination.next_cursor` back as `cursor`. Kinds that need an X permission (liking_users, reposts_of_me, bookmarks, followers, following and the list kinds) need an X account connected or reconnected on or after 2026-11-25; otherwise the API answers `403` `x_reconnect_required`.\n\n| kind | X endpoint | X permission | X price | X rate limit (15 min) |\n|---|---|---|---|---|\n| search_recent | GET /2/tweets/search/recent (`query`, last 7 days) | - | $0.005/post + $0.010/author | 300 per account |\n| counts_recent | GET /2/tweets/counts/recent (`query`, `granularity`) | - | $0.005/request | 300 per app |\n| liking_users | GET /2/tweets/{post_id}/liking_users | like.read | $0.010/user | 75 |\n| reposted_by | GET /2/tweets/{post_id}/retweeted_by | - | $0.010/user | 75 |\n| quote_posts | GET /2/tweets/{post_id}/quote_tweets (`exclude`) | - | $0.005/post + $0.010/author | 75 |\n| reposts_of_me | GET /2/users/reposts_of_me | timeline.read | $0.005/post + $0.010/author | - |\n| bookmarks | GET /2/users/{id}/bookmarks | bookmark.read | $0.005/post + $0.010/author | 180 |\n| followers, following | GET /2/users/{id}/followers, /following (max 100 per page here) | follows.read | $0.010/user | 300 |\n| owned_lists, followed_lists, pinned_lists | GET /2/users/{id}/owned_lists, /followed_lists, /pinned_lists | list.read | $0.005/list | 15 |\n| list, list_posts, list_members, list_followers | GET /2/lists/{list_id}[/tweets, /members, /followers] | list.read | $0.005/list, $0.005/post, $0.010/user | 75 / 900 |\n| trends | GET /2/trends/by/woeid/{woeid} (`limit` = max_trends, 1-50) | - | $0.010/request | 75 per app |\n| trend_locations | GET /2/trends/locations | - | $0.010/request (cached 24 h for everyone) | - |\n| personalized_trends | GET /2/users/personalized_trends | - | $0.010/request | 10 (100 per 24 h) |\n| post_analytics | GET /2/tweets/analytics (`ids` up to 100, `start_time`, `end_time`, `granularity`) | - | not published by X; counted as $0.005 per post | 300 |\n| media_analytics | GET /2/media/analytics (`media_keys` up to 100, `start_time`, `end_time`, `granularity`) | - | not published by X; counted as $0.005 per media | - |"
+    },
+    "manageXLists": {
+      "description": "Needs the X permission list.write: the X account must have been connected or reconnected on or after 2026-11-25, otherwise the API answers `403` `x_reconnect_required`. Each call counts toward the daily X write limit shared with replies, edits, reposts and likes. X price: list create $0.010, list manage $0.005. X rate limit: 300 per 15 min per account. Read lists with `GET /uploadposts/x/read/owned_lists` and `list_members`."
     }
   },
-  "_comment_production": "Production (2026-11-25): 'excluded' leaves out every operation that is off in production; 'available' lists the ones switched on there although the spec still marks them not generally available; 'hidden_fields' and 'descriptions' keep fields and texts of features that are off out of the SDK."
+  "_comment_production": "Production (2026-11-25): 'excluded' leaves out every operation that is off in production; 'available' lists the ones switched on there although the spec still marks them not generally available; 'hidden_fields' and 'descriptions' keep fields and texts of features that are off out of the SDK.",
+  "hidden_enum_values": {
+    "instagram_mention_received": "Instagram mention webhook: off in production."
+  },
+  "text_removals": [
+    "instagram_mention_received (another account @mentioned the connected Instagram account in a caption or a comment: `mention` {type comment|caption, comment_id, media_id; text/from/parent_id when Instagram sends them}) only while it is on. "
+  ]
 }

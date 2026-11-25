@@ -1934,7 +1934,9 @@ class UploadPostClient:
             plus two audience breakdowns with the same shape ('age', 'gender',
             'country', 'city'): 'follower_demographics' for the account's followers
             and 'engaged_audience_demographics' for the accounts that engaged with
-            its content.
+            its content; 'breakdowns_detail' is the account insights by breakdown,
+            ``{metric: {breakdown: {value: count}}}`` (e.g. views by follower_type,
+            reach by follow_type, likes by media_product_type).
         """
         profile = self._path_param("profile_username", profile_username)
         if isinstance(platforms, str):
@@ -2004,7 +2006,10 @@ class UploadPostClient:
         second by second), 'impression_sources' (For You, search, profile...),
         'audience_types' (followers vs non-followers), 'new_followers', 'reach'
         and the watch times ('average_time_watched', 'total_time_watched',
-        'full_video_watched_rate').
+        'full_video_watched_rate'). On Instagram, feed posts and Stories add
+        'profile_activity' (profile actions the post drove) and
+        'profile_activity_breakdown' (by action type), and Reels add
+        'reels_skip_rate' (percentage of views skipped in the first seconds).
 
         TikTok drafts (``post_mode="MEDIA_UPLOAD"`` / ``tiktok_upload_to_draft``)
         have no post until the creator publishes them from the TikTok app.
@@ -2831,8 +2836,9 @@ class UploadPostClient:
 
         X: ``unrepost``, ``bookmark`` (alias ``save``, optional ``folder_id``),
         ``unbookmark``. Each counts toward the daily X write limit; bookmarks
-        need the X bookmark permission (403 ``x_reconnect_required`` for
-        accounts connected before it was asked).
+        need the X bookmark permission: the X account must have been connected
+        or reconnected on or after 2026-11-25, otherwise the API answers 403
+        ``x_reconnect_required``.
 
         Required: ``user``, ``platform``, ``action``. Any other API field goes in ``**params``
         with its API name. Docs: https://docs.upload-post.com/api/bluesky-post-actions
@@ -4638,7 +4644,8 @@ class UploadPostClient:
         Get comments on a post, or the replies hanging from one of them.
 
         Pass comment_id to read that comment's replies instead of the post's
-        top-level comments. It is the same question - what was said here - so it
+        top-level comments. On Instagram each comment and reply also carries
+        ``like_count`` and ``hidden``. It is the same question - what was said here - so it
         is the same endpoint with one more parameter, not a method per platform.
 
         Replies (``comment_id``) work on TikTok, Threads, YouTube, Instagram,
@@ -4783,7 +4790,9 @@ class UploadPostClient:
             image_url: TikTok: public URL of an image to post as (or with) the
                 comment.
 
-        One of post_id, post_url or comment_id is required.
+        One of post_id, post_url or comment_id is required. Instagram: post_id
+        (the numeric media id) or post_url without comment_id posts a top-level
+        comment on your own post.
 
         Returns:
             Creation result with the new comment ID.
@@ -4873,8 +4882,9 @@ class UploadPostClient:
         X (``platform="x"``, ``comment_id`` = the reply's post id): like/unlike
         and hide/unhide of a reply in the account's own conversations. Each
         call counts toward the daily X write limit; hiding needs the X
-        permission tweet.moderate.write (403 ``x_reconnect_required`` until the
-        account reconnects).
+        permission tweet.moderate.write: the X account must have been connected
+        or reconnected on or after 2026-11-25, otherwise the API answers 403
+        ``x_reconnect_required``.
 
         Returns:
             {"success": True, "platform": ..., "action": ...,
@@ -6001,6 +6011,9 @@ class UploadPostClient:
         "getWhatsappAnalytics": ("GET", "/uploadposts/dms/whatsapp/analytics", {"q": ["user", "type", "start", "end", "granularity", "country_codes", "dimensions", "metric_types", "template_ids", "this_number_only"]}),
         "enableWhatsappTemplateInsights": ("POST", "/uploadposts/dms/whatsapp/analytics", {"b": ["user", "action", "confirm"]}),
         "listWhatsappTemplateLibrary": ("GET", "/uploadposts/dms/whatsapp/templates/library", {"q": ["user", "search", "topic", "usecase", "industry", "language", "after"]}),
+        "getInstagramMessagingProfile": ("GET", "/uploadposts/dms/instagram/profile", {"q": ["user", "fields"]}),
+        "setInstagramMessagingProfile": ("POST", "/uploadposts/dms/instagram/profile", {"b": ["user", "ice_breakers", "persistent_menu"]}),
+        "deleteInstagramMessagingProfile": ("DELETE", "/uploadposts/dms/instagram/profile", {"b": ["user", "fields", "confirm"]}),
         "blueskyGraphAction": ("POST", "/uploadposts/bluesky/graph", {"b": ["user", "action", "actor", "list", "post_id", "only_reposts", "only_quoteposts"], "na": True}),
         "listBlueskyLists": ("GET", "/uploadposts/bluesky/lists", {"q": ["user", "purposes", "cursor"], "na": True}),
         "createBlueskyList": ("POST", "/uploadposts/bluesky/lists", {"b": ["user", "name", "purpose", "description", "avatar", "avatar_url", "remove_avatar"], "f": ["avatar"], "na": True}),
@@ -8306,6 +8319,67 @@ class UploadPostClient:
         """
         return self._op("listWhatsappTemplateLibrary", params, user=user)
 
+    def get_instagram_messaging_profile(self, user: str, **params) -> Dict:
+        """Read the Instagram ice breakers and persistent menu.
+
+        Ice breakers and the persistent menu of the Instagram inbox (Meta's
+        `messenger_profile` on graph.instagram.com, permission
+        instagram_business_manage_messages). Instagram Login connections only. Read
+        straight from Instagram (no cache).
+
+        ``GET /api/uploadposts/dms/instagram/profile``
+
+        Args:
+            user: Profile username (alias profile).
+            fields (str, optional): Comma-separated: ice_breakers, persistent_menu
+                (default both).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getInstagramMessagingProfile", params, user=user)
+
+    def set_instagram_messaging_profile(self, user: str, **params) -> Dict:
+        """Set the Instagram ice breakers and/or persistent menu.
+
+        Ice breakers and the persistent menu of the Instagram inbox (Meta's
+        `messenger_profile` on graph.instagram.com, permission
+        instagram_business_manage_messages). Instagram Login connections only. Each
+        field sent replaces what Instagram had for it; validated before calling
+        Instagram.
+
+        ``POST /api/uploadposts/dms/instagram/profile``
+
+        Args:
+            user: Profile username.
+            ice_breakers (List[Dict[str, Any]], optional): Up to 4 questions per
+                locale. Either [{question, payload}] (default locale) or [{locale,
+                call_to_actions: [{question, payload}]}]. Tapping one sends a
+                `dm_received` webhook with the postback payload.
+            persistent_menu (List[Dict[str, Any]], optional): [{locale (default
+                `default`), call_to_actions: [postback | web_url buttons]}]. Meta
+                recommends at most 5 items; existing conversations see a new menu after
+                the person refreshes the inbox.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("setInstagramMessagingProfile", params, user=user)
+
+    def delete_instagram_messaging_profile(self, user: str, fields: List[str], confirm: bool, **params) -> Dict:
+        """Remove the Instagram ice breakers and/or persistent menu.
+
+        Ice breakers and the persistent menu of the Instagram inbox (Meta's
+        `messenger_profile` on graph.instagram.com, permission
+        instagram_business_manage_messages). Instagram Login connections only. Needs
+        `confirm: true`.
+
+        ``DELETE /api/uploadposts/dms/instagram/profile``
+
+        Args:
+            user
+            fields
+            confirm
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteInstagramMessagingProfile", params, user=user, fields=fields, confirm=confirm)
+
     # ---- Bluesky ----
     def bluesky_graph_action(self, user: str, action: str, **params) -> Dict:
         """Follow, block or mute (one target per call).
@@ -10277,8 +10351,10 @@ class UploadPostClient:
         `data`, `includes` and `meta` are X's own objects. Answers are cached for a few
         minutes per account (trends 15 min, analytics 1 h): repeating the call within
         that time costs nothing (`cached: true`). Pagination: pass
-        `pagination.next_cursor` back as `cursor`. Kinds that need a permission accounts
-        did not grant before answer `403` `x_reconnect_required`.
+        `pagination.next_cursor` back as `cursor`. Kinds that need an X permission
+        (liking_users, reposts_of_me, bookmarks, followers, following and the list
+        kinds) need an X account connected or reconnected on or after 2026-11-25;
+        otherwise the API answers `403` `x_reconnect_required`.
 
         ``GET /api/uploadposts/x/read/{kind}``
 
@@ -10315,10 +10391,11 @@ class UploadPostClient:
     def manage_xlists(self, user: str, action: str, **params) -> Dict:
         """Create, edit, delete X lists and add or remove members.
 
-        Needs the X permission list.write (`403` `x_reconnect_required` for accounts
-        connected before it was asked). Each call counts toward the daily X write limit
-        shared with replies, edits, reposts and likes. X price: list create $0.010, list
-        manage $0.005. X rate limit: 300 per 15 min per account. Read lists with `GET
+        Needs the X permission list.write: the X account must have been connected or
+        reconnected on or after 2026-11-25, otherwise the API answers `403`
+        `x_reconnect_required`. Each call counts toward the daily X write limit shared
+        with replies, edits, reposts and likes. X price: list create $0.010, list manage
+        $0.005. X rate limit: 300 per 15 min per account. Read lists with `GET
         /uploadposts/x/read/owned_lists` and `list_members`.
 
         ``POST /api/uploadposts/x/lists``

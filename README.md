@@ -165,6 +165,11 @@ client.upload_document("archive.zip", title="Files", user="my-profile", platform
   takes `cover_url` (a URL), `thumb_offset`, `share_to_feed` and `audio_name`;
   `user_tags` also works on a video Story.
 
+X reads and actions that need an X permission (bookmarks, lists, followers and following,
+likers, `reposts_of_me`, hiding replies) only work with an X account connected or
+reconnected on or after 2026-11-25; an older connection answers `403`
+`x_reconnect_required` (reconnect X to grant them).
+
 ```python
 client.upload_text(
     title="Guess what is coming",
@@ -1468,6 +1473,9 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `get_whatsapp_analytics` | `GET /api/uploadposts/dms/whatsapp/analytics` | WhatsApp analytics. |
 | `enable_whatsapp_template_insights` | `POST /api/uploadposts/dms/whatsapp/analytics` | Enable WhatsApp template analytics. |
 | `list_whatsapp_template_library` | `GET /api/uploadposts/dms/whatsapp/templates/library` | WhatsApp template library. |
+| `get_instagram_messaging_profile` | `GET /api/uploadposts/dms/instagram/profile` | Read the Instagram ice breakers and persistent menu. |
+| `set_instagram_messaging_profile` | `POST /api/uploadposts/dms/instagram/profile` | Set the Instagram ice breakers and/or persistent menu. |
+| `delete_instagram_messaging_profile` | `DELETE /api/uploadposts/dms/instagram/profile` | Remove the Instagram ice breakers and/or persistent menu. |
 
 ### Bluesky
 
