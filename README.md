@@ -156,6 +156,11 @@ client.upload_document("archive.zip", title="Files", user="my-profile", platform
   when it expires).
 - **Facebook** (text posts): `facebook_backdated_time` (a past Unix time or ISO 8601
   date) and `facebook_backdated_time_granularity` (`year`, `month`, `day`, `hour`, `minute`).
+- **X**: `x_video_title`, `x_video_description`, `x_video_cta` (`visit_site`,
+  `watch_now`, `app_install`), `x_video_cta_url`, `x_video_cta_app_store_id`,
+  `x_video_cta_ipad_app_store_id`, `x_video_cta_play_store_id` (videos); `x_clip_post_id`,
+  `x_clip_start_seconds`, `x_clip_end_seconds` (text posts: a clip of the video of
+  another post of the account).
 - **Instagram**: a single video sent with `upload_photos` is published as a Reel and
   takes `cover_url` (a URL), `thumb_offset`, `share_to_feed` and `audio_name`;
   `user_tags` also works on a video Story.
@@ -1567,6 +1572,14 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `upload_chatgpt_ads_creative` | `POST /api/uploadposts/ads/chatgpt/creatives` | Upload a creative image. |
 | `get_chatgpt_ads_account_insights` | `GET /api/uploadposts/ads/chatgpt/insights` | Get ad account insights. |
 | `promote_chatgpt_ads` | `POST /api/uploadposts/ads/chatgpt/promote` | Launch an ad in one call. |
+
+### X
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `get_xmentions` | `GET /api/uploadposts/x/mentions` | Mentions of the whole X account. |
+| `read_x` | `GET /api/uploadposts/x/read/{kind}` | Read X data (search, counts, likers, reposters, quotes, bookmarks, followers, lists, trends, analytics). |
+| `manage_xlists` | `POST /api/uploadposts/x/lists` | Create, edit, delete X lists and add or remove members. |
 
 ### Pinterest
 

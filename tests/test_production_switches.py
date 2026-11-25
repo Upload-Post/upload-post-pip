@@ -28,7 +28,7 @@ OFF_MARKERS = [
     "/ads/meta", "/ads/tiktok", "reposts_of_me", "instagram_connection", "instagram/audio", "business-discovery",
     "collaboration-invites", "threads/locations", "threads/mentions", "threads/search", "threads/profiles",
     "pending-replies", "geo-gating", "linkedin/reactions", "member-analytics", "tiktok/mentions", "ad-authorization",
-    "visitor-posts", "whatsapp/flows", "/x/read", "/x/mentions", "/x/lists", "x_video_cta", "x_clip_post_id", "participant_ids", "include_users", "instagram_paid_partnership",
+    "visitor-posts", "whatsapp/flows", "participant_ids", "include_users", "instagram_paid_partnership",
     "threads_location_id", "facebook_tags", "| /catalogs", "terms/related", "trends/keywords",
 ]
 
@@ -38,7 +38,7 @@ SWITCHED_ON = [
     "listThreadsGhostPosts", "listInstagramStories", "listInstagramTaggedMedia", "editWhatsappTemplate",
     "listWhatsappBlockedUsers", "blockWhatsappUsers", "unblockWhatsappUsers", "getWhatsappAutomation",
     "setWhatsappAutomation", "getWhatsappNumber", "updateWhatsappNumber", "getWhatsappAnalytics",
-    "enableWhatsappTemplateInsights", "listWhatsappTemplateLibrary",
+    "enableWhatsappTemplateInsights", "listWhatsappTemplateLibrary", "getXMentions", "readX", "manageXLists",
 ]
 
 
@@ -105,6 +105,18 @@ class TestSwitchedOn(unittest.TestCase):
         self.assertEqual(f["facebook_backdated_time"], ["2024-01-02"])
         self.assertEqual(f["facebook_backdated_time_granularity"], ["day"])
 
+    def test_x_video_card_and_clip(self):
+        self.client.upload_video("https://example.com/v.mp4", title="t", user="u", platforms=["x"],
+                                 x_video_title="T", x_video_cta="visit_site", x_video_cta_url="https://example.com")
+        f = self.form()
+        self.assertEqual(f["x_video_title"], ["T"])
+        self.assertEqual(f["x_video_cta"], ["visit_site"])
+        self.client.upload_text(title="t", user="u", platforms=["x"], x_clip_post_id="9", x_clip_start_seconds=10,
+                                x_clip_end_seconds=30)
+        f = self.form()
+        self.assertEqual(f["x_clip_post_id"], ["9"])
+        self.assertEqual(f["x_clip_start_seconds"], ["10"])
+
     def test_instagram_video_through_upload_photos(self):
         self.client.upload_photos(["https://example.com/v.mp4"], title="t", user="u", platforms=["instagram"],
                                   cover_url="https://example.com/c.jpg", thumb_offset=1500, share_to_feed=False,
@@ -136,6 +148,13 @@ class TestSwitchedOn(unittest.TestCase):
         self.assertIs(body["location_request"], True)
         self.assertEqual(len(body["carousel"]), 1)
         self.assertEqual(body["call_button"], {"display_text": "Call"})
+
+    def test_read_x(self):
+        self.client.read_x("search_recent", "u", query="upload")
+        args, kwargs = self.request.call_args
+        self.assertEqual(args[0], "GET")
+        self.assertTrue(args[1].endswith("/uploadposts/x/read/search_recent"))
+        self.assertEqual(kwargs["params"]["query"], "upload")
 
 
 if __name__ == "__main__":

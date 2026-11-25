@@ -430,10 +430,7 @@
     "updateInstagramEvent": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Instagram Unified Login.",
     "searchInstagramCreators": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Instagram Unified Login.",
     "listMetaAdsPages": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Meta Ads.",
-    "listMetaAdsPagePosts": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Meta Ads.",
-    "getXMentions": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. X.",
-    "readX": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. X.",
-    "manageXLists": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. X."
+    "listMetaAdsPagePosts": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Meta Ads."
   },
   "names": {},
   "overrides": {},
@@ -460,7 +457,10 @@
     "listWhatsappBlockedUsers": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
     "getWhatsappNumber": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
     "updateWhatsappNumber": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
-    "listWhatsappTemplateLibrary": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off)."
+    "listWhatsappTemplateLibrary": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
+    "getXMentions": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
+    "readX": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
+    "manageXLists": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off)."
   },
   "hidden_fields": {
     "startOAuthConnection": {
@@ -494,6 +494,38 @@
       "description": "Calls Pinterest API v5 with the connection of profile `user`: `{endpoint}` is the path of Pinterest's own reference (developers.pinterest.com/docs/api/v5) without the leading slash, with the same query parameters and JSON body. Boards, board sections and Pins: the operations below. Every parameter and body field is checked against Pinterest's description before calling Pinterest (`invalid_parameter` / `invalid_body`). `data` is Pinterest's answer as is.\n\nTo create, save or delete Pins use `/upload`, `/upload_photos`, `/uploadposts/posts/save` and `/uploadposts/posts/unpublish` (plan limits and history).\n\nReads are cached per account (60 s; `refresh=true` skips the cache) and count against a daily read limit per Upload-Post account; a write through this route drops the cached reads of the account. Deletes need `confirm=true`. An operation that needs a Pinterest permission the connection did not grant answers `403` `pinterest_reconnect_required` (reconnect Pinterest), with `missing_scopes`, without calling Pinterest.\n\n| method | Pinterest path | Pinterest permissions | notes |\n|---|---|---|---|\n| GET | /boards | boards:read | - |\n| POST | /boards | boards:read, boards:write | - |\n| DELETE | /boards/{board_id} | boards:read, boards:write | confirm=true |\n| GET | /boards/{board_id} | boards:read | - |\n| PATCH | /boards/{board_id} | boards:read, boards:write | - |\n| GET | /boards/{board_id}/pins | boards:read, pins:read | - |\n| GET | /boards/{board_id}/sections | boards:read | - |\n| POST | /boards/{board_id}/sections | boards:read, boards:write | - |\n| DELETE | /boards/{board_id}/sections/{section_id} | boards:read, boards:write | confirm=true |\n| PATCH | /boards/{board_id}/sections/{section_id} | boards:read, boards:write | - |\n| GET | /boards/{board_id}/sections/{section_id}/pins | boards:read, pins:read | - |\n| GET | /pins | boards:read, pins:read | - |\n| GET | /pins/{pin_id} | boards:read, pins:read | - |",
       "params": {
         "endpoint": "Pinterest API v5 path without the leading slash, e.g. `boards`, `boards/123/pins`, `boards/123/sections`, `pins/456`."
+      }
+    },
+    "readX": {
+      "description": "One read-only X API call per request, with the fields fixed by Upload-Post. `data`, `includes` and `meta` are X's own objects. Answers are cached for a few minutes per account (trends 15 min, analytics 1 h): repeating the call within that time costs nothing (`cached: true`). Pagination: pass `pagination.next_cursor` back as `cursor`. Kinds that need a permission accounts did not grant before answer `403` `x_reconnect_required`.\n\n| kind | X endpoint | X permission | X price | X rate limit (15 min) |\n|---|---|---|---|---|\n| search_recent | GET /2/tweets/search/recent (`query`, last 7 days) | - | $0.005/post + $0.010/author | 300 per account |\n| counts_recent | GET /2/tweets/counts/recent (`query`, `granularity`) | - | $0.005/request | 300 per app |\n| liking_users | GET /2/tweets/{post_id}/liking_users | like.read | $0.010/user | 75 |\n| reposted_by | GET /2/tweets/{post_id}/retweeted_by | - | $0.010/user | 75 |\n| quote_posts | GET /2/tweets/{post_id}/quote_tweets (`exclude`) | - | $0.005/post + $0.010/author | 75 |\n| bookmarks | GET /2/users/{id}/bookmarks | bookmark.read | $0.005/post + $0.010/author | 180 |\n| followers, following | GET /2/users/{id}/followers, /following (max 100 per page here) | follows.read | $0.010/user | 300 |\n| owned_lists, followed_lists, pinned_lists | GET /2/users/{id}/owned_lists, /followed_lists, /pinned_lists | list.read | $0.005/list | 15 |\n| list, list_posts, list_members, list_followers | GET /2/lists/{list_id}[/tweets, /members, /followers] | list.read | $0.005/list, $0.005/post, $0.010/user | 75 / 900 |\n| trends | GET /2/trends/by/woeid/{woeid} (`limit` = max_trends, 1-50) | - | $0.010/request | 75 per app |\n| trend_locations | GET /2/trends/locations | - | $0.010/request (cached 24 h for everyone) | - |\n| personalized_trends | GET /2/users/personalized_trends | - | $0.010/request | 10 (100 per 24 h) |\n| post_analytics | GET /2/tweets/analytics (`ids` up to 100, `start_time`, `end_time`, `granularity`) | - | not published by X; counted as $0.005 per post | 300 |\n| media_analytics | GET /2/media/analytics (`media_keys` up to 100, `start_time`, `end_time`, `granularity`) | - | not published by X; counted as $0.005 per media | - |",
+      "params": {
+        "kind": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "search_recent",
+              "counts_recent",
+              "liking_users",
+              "reposted_by",
+              "quote_posts",
+              "bookmarks",
+              "followers",
+              "following",
+              "owned_lists",
+              "followed_lists",
+              "pinned_lists",
+              "list",
+              "list_posts",
+              "list_members",
+              "list_followers",
+              "trends",
+              "trend_locations",
+              "personalized_trends",
+              "post_analytics",
+              "media_analytics"
+            ]
+          }
+        }
       }
     }
   },

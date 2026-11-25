@@ -434,7 +434,7 @@ class UploadPostClient:
             self._add_pinterest_params(data, is_video=is_video, **kwargs)
         if "x" in platforms:
             self._add_x_params(
-                data, is_text=is_text, files=files, opened=opened, **kwargs
+                data, is_text=is_text, is_video=is_video, files=files, opened=opened, **kwargs
             )
         if "threads" in platforms:
             self._add_threads_params(data, is_text=is_text, **kwargs)
@@ -791,6 +791,7 @@ class UploadPostClient:
         data: List[tuple],
         is_text: bool = False,
         files: Optional[List[tuple]] = None,
+        is_video: bool = False,
         opened: Optional[List] = None,
         **kwargs,
     ):
@@ -857,6 +858,17 @@ class UploadPostClient:
                 ("x_subtitles_language", "str"),
                 ("x_subtitles_name", "str"),
             ))
+            if is_video:
+                # Video card title/description and call to action.
+                self._put_many(data, kwargs, (
+                    ("x_video_title", "str"),
+                    ("x_video_description", "str"),
+                    ("x_video_cta", "str"),
+                    ("x_video_cta_url", "str"),
+                    ("x_video_cta_app_store_id", "str"),
+                    ("x_video_cta_ipad_app_store_id", "str"),
+                    ("x_video_cta_play_store_id", "str"),
+                ))
         else:
             self._put_many(data, kwargs, (
                 ("x_article_title", "str"),
@@ -868,6 +880,12 @@ class UploadPostClient:
                 data, files, opened, "x_article_cover_media",
                 kwargs.get("x_article_cover_media"),
             )
+            # Clip of the video of another post of the account.
+            self._put_many(data, kwargs, (
+                ("x_clip_post_id", "str"),
+                ("x_clip_start_seconds", "str"),
+                ("x_clip_end_seconds", "str"),
+            ))
 
     def _add_threads_params(self, data: List[tuple], is_text: bool = False, **kwargs):
         """Add Threads-specific parameters."""
@@ -1327,6 +1345,11 @@ class UploadPostClient:
                 community_id: Community ID
                 share_with_followers: Share community post with followers
                 x_long_text_as_post: Post long text as single post
+                x_video_title, x_video_description: Title and description of the video card
+                x_video_cta: Call to action on the video: visit_site, watch_now or app_install
+                x_video_cta_url: https URL of visit_site / watch_now
+                x_video_cta_app_store_id, x_video_cta_ipad_app_store_id,
+                    x_video_cta_play_store_id: app_install app ids
             
             Threads:
                 threads_long_text_as_post: Post long text as single post
@@ -1619,6 +1642,10 @@ class UploadPostClient:
                 poll_reply_settings: Who can reply to poll
                 card_uri: Card URI for Twitter Cards
                 x_long_text_as_post: Post long text as single post
+                x_clip_post_id: Post a clip of the video of this post (exactly one
+                    video, longer than 2 minutes)
+                x_clip_start_seconds, x_clip_end_seconds: Clip range (5-60 s, at most
+                    30% of the video)
 
             Threads:
                 threads_long_text_as_post: Post long text as single post
@@ -2801,6 +2828,11 @@ class UploadPostClient:
 
     def post_action(self, user: str, platform: str, action: str, **params) -> Dict:
         """Act on a published post: Telegram reactions and forward/copy; Bluesky bookmark/unbookmark, pin/unpin, reply and quote settings, detach/reattach quotes.
+
+        X: ``unrepost``, ``bookmark`` (alias ``save``, optional ``folder_id``),
+        ``unbookmark``. Each counts toward the daily X write limit; bookmarks
+        need the X bookmark permission (403 ``x_reconnect_required`` for
+        accounts connected before it was asked).
 
         Required: ``user``, ``platform``, ``action``. Any other API field goes in ``**params``
         with its API name. Docs: https://docs.upload-post.com/api/bluesky-post-actions
@@ -4838,6 +4870,12 @@ class UploadPostClient:
             post_id: Native post ID. Required for hide/unhide and pin/unpin;
                 never sent for like/unlike.
 
+        X (``platform="x"``, ``comment_id`` = the reply's post id): like/unlike
+        and hide/unhide of a reply in the account's own conversations. Each
+        call counts toward the daily X write limit; hiding needs the X
+        permission tweet.moderate.write (403 ``x_reconnect_required`` until the
+        account reconnects).
+
         Returns:
             {"success": True, "platform": ..., "action": ...,
              "comment_id": ..., "result": {...}}
@@ -6042,6 +6080,9 @@ class UploadPostClient:
         "uploadChatgptAdsCreative": ("POST", "/uploadposts/ads/chatgpt/creatives", {"q": ["ad_account_id", "profile_username"], "b": ["image_url", "ad_account_id", "profile_username", "file"], "f": ["file"]}),
         "getChatgptAdsAccountInsights": ("GET", "/uploadposts/ads/chatgpt/insights", {"q": ["since", "until", "time_granularity", "aggregation_level", "fields", "segments", "filters", "sort", "time_ranges", "limit", "after", "before", "ad_account_id", "profile_username"]}),
         "promoteChatgptAds": ("POST", "/uploadposts/ads/chatgpt/promote", {"q": ["ad_account_id", "profile_username"], "b": ["title", "body", "target_url", "image_url", "file_id", "budget", "budget_micros", "max_bid", "max_bid_micros", "name", "status", "bidding_type", "billing_event_type", "start_time", "end_time", "description", "conversion_event_setting_ids", "locations", "custom_audience_ids", "excluded_custom_audience_ids", "targeting", "context_hints", "price", "ad_group_name", "ad_name", "ad_account_id", "profile_username"]}),
+        "getXMentions": ("GET", "/uploadposts/x/mentions", {"q": ["user", "limit", "cursor", "verified_only", "verified_type", "min_followers", "replies"]}),
+        "readX": ("GET", "/uploadposts/x/read/{kind}", {"q": ["user", "limit", "cursor", "query", "post_id", "list_id", "woeid", "ids", "media_keys", "start_time", "end_time", "since_id", "until_id", "sort_order", "granularity", "exclude"]}),
+        "manageXLists": ("POST", "/uploadposts/x/lists", {"b": ["user", "action", "list_id", "name", "description", "private", "user_id", "confirm"]}),
         "readPinterestApi": ("GET", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "refresh"]}),
         "postPinterestApi": ("POST", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
         "patchPinterestApi": ("PATCH", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
@@ -10202,6 +10243,98 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("promoteChatgptAds", params, title=title, body=body, target_url=target_url)
+
+    # ---- X ----
+    def get_xmentions(self, user: str, **params) -> Dict:
+        """Mentions of the whole X account.
+
+        Posts that @mention the X account of the profile (not only replies to one post),
+        newest first, with the author's `verified`, `verified_type` (blue, business,
+        government, none) and `followers_count`. `verified: true` includes any paid X
+        Premium account: use `verified_type` to tell organisations and governments
+        apart.
+
+        ``GET /api/uploadposts/x/mentions``
+
+        Args:
+            user: Profile username.
+            limit (int, optional): Mentions scanned per page.
+            cursor (str, optional): `next_cursor` of the previous page
+                (`until_<id>`).
+            verified_only (bool, optional): Only authors with `verified: true`.
+            verified_type (str, optional): Comma separated: blue, business,
+                government.
+            min_followers (int, optional)
+            replies (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getXMentions", params, user=user)
+
+    def read_x(self, kind: str, user: str, **params) -> Dict:
+        """Read X data (search, counts, likers, reposters, quotes, bookmarks, followers, lists, trends, analytics).
+
+        One read-only X API call per request, with the fields fixed by Upload-Post.
+        `data`, `includes` and `meta` are X's own objects. Answers are cached for a few
+        minutes per account (trends 15 min, analytics 1 h): repeating the call within
+        that time costs nothing (`cached: true`). Pagination: pass
+        `pagination.next_cursor` back as `cursor`. Kinds that need a permission accounts
+        did not grant before answer `403` `x_reconnect_required`.
+
+        ``GET /api/uploadposts/x/read/{kind}``
+
+        Args:
+            kind
+            user: Profile username.
+            limit (int, optional): Page size (X range per kind: 10-100 for
+                search_recent and quote_posts, 1-100 otherwise; trends 1-50).
+            cursor (str, optional): `next_cursor` of the previous page.
+            query (str, optional): search_recent / counts_recent: X search query
+                (1-512 characters).
+            post_id (str, optional): liking_users / reposted_by / quote_posts.
+            list_id (str, optional): list, list_posts, list_members, list_followers.
+            woeid (int, optional): trends: Yahoo WOEID of the place (see
+                trend_locations).
+            ids (str, optional): post_analytics: post ids, comma separated (1-100).
+            media_keys (str, optional): media_analytics: media keys, comma separated
+                (1-100).
+            start_time (str, optional): ISO 8601 date-time (search, counts,
+                analytics).
+            end_time (str, optional): ISO 8601 date-time.
+            since_id (str, optional): search_recent / counts_recent.
+            until_id (str, optional): search_recent / counts_recent.
+            sort_order (str, optional): search_recent: recency or relevancy.
+            granularity (str, optional): counts_recent: minute, hour, day.
+                post_analytics: hourly, daily, weekly, total. media_analytics: hourly,
+                daily, total.
+            exclude (str, optional): quote_posts: replies, retweets or both (comma
+                separated).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("readX", params, kind=kind, user=user)
+
+    def manage_xlists(self, user: str, action: str, **params) -> Dict:
+        """Create, edit, delete X lists and add or remove members.
+
+        Needs the X permission list.write (`403` `x_reconnect_required` for accounts
+        connected before it was asked). Each call counts toward the daily X write limit
+        shared with replies, edits, reposts and likes. X price: list create $0.010, list
+        manage $0.005. X rate limit: 300 per 15 min per account. Read lists with `GET
+        /uploadposts/x/read/owned_lists` and `list_members`.
+
+        ``POST /api/uploadposts/x/lists``
+
+        Args:
+            user: Profile username.
+            action
+            list_id (str, optional): Every action but create.
+            name (str, optional)
+            description (str, optional)
+            private (bool, optional)
+            user_id (str, optional): add_member / remove_member: numeric X user id.
+            confirm (bool, optional): delete: must be true.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("manageXLists", params, user=user, action=action)
 
     # ---- Pinterest ----
     def read_pinterest_api(self, endpoint: str, user: str, **params) -> Dict:

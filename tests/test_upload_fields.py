@@ -53,16 +53,6 @@ NOT_SENT = {
     "threads_share_to_instagram": THREADS_PERMISSIONS,
     "threads_share_to_instagram_dark_mode": THREADS_PERMISSIONS,
     "facebook_tags": "Facebook user tags: not confirmed as switched on in production",
-    "x_video_title": "X post extra fields: off in production",
-    "x_video_description": "X post extra fields: off in production",
-    "x_video_cta": "X post extra fields: off in production",
-    "x_video_cta_url": "X post extra fields: off in production",
-    "x_video_cta_app_store_id": "X post extra fields: off in production",
-    "x_video_cta_ipad_app_store_id": "X post extra fields: off in production",
-    "x_video_cta_play_store_id": "X post extra fields: off in production",
-    "x_clip_post_id": "X post extra fields: off in production",
-    "x_clip_start_seconds": "X post extra fields: off in production",
-    "x_clip_end_seconds": "X post extra fields: off in production",
 }
 
 UPLOADS = [

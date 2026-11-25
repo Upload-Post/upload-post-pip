@@ -23,6 +23,11 @@ those. Only additions: no existing method changes its name, arguments or result.
   sent as given); blocked users, commands and ice breakers, number (display name, PIN,
   quality, limit), analytics and templates (`edit_whatsapp_template`,
   `list_whatsapp_template_library`).
+- X: `get_x_mentions`, `read_x` (search and counts, likers, reposters, quotes, bookmarks,
+  followers and following, lists, trends, analytics), `manage_x_lists`; `post_action`
+  `unrepost` / `bookmark` / `unbookmark`, `comment_action` `hide` / `unhide` of a reply;
+  upload fields `x_video_title`, `x_video_description`, `x_video_cta*` (videos) and
+  `x_clip_post_id`, `x_clip_start_seconds`, `x_clip_end_seconds` (text posts).
 
 ### Changed
 
