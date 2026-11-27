@@ -126,6 +126,14 @@ class TestPhoneNumbers(unittest.TestCase):
                 self.assertIn(event, enum)
                 self.assertIn(event, SHIPPED)
 
+    def test_purchase_and_kyc_docs_explain_pending_payment_limits_are_integers(self):
+        for name in ("purchase_phone_number", "submit_phone_number_kyc"):
+            doc = " ".join(getattr(UploadPostClient, name).__doc__.split())
+            self.assertIn("`pending_payment` (paid; our carrier is confirming the order", doc, name)
+            self.assertIn("Repeating the same `purchase_intent_id` returns the same number", doc, name)
+        for name in ("search_available_phone_numbers", "list_phone_number_messages", "list_phone_number_calls"):
+            self.assertIn("limit (int, optional)", getattr(UploadPostClient, name).__doc__, name)
+
     def test_the_shipped_files_do_not_mention_internal_names(self):
         for marker in ("Telnyx", "telnyx", "PHONE_NUMBERS_", "TELNYX_", "UPLOADPOSTS_PHONE", "_ALLOWLIST"):
             with self.subTest(marker=marker):

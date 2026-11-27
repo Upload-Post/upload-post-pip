@@ -10570,13 +10570,16 @@ class UploadPostClient:
     def purchase_phone_number(self, profile_username: str, country: str, number_type: str, purchase_intent_id: str, end_user: Dict[str, Any], accept_terms: bool, terms_version: str, **params) -> Dict:
         """Buy a phone number.
 
-        Charges the prorated price on the account's subscription first; the number is
-        ordered only once that payment succeeds (if the carrier then fails, the charge
-        is refunded). Paid plans only. Countries that need identity documents answer 202
-        `status: kyc_required` with `fields_url`: send them to POST
-        /uploadposts/phone-numbers/kyc with the same body. Idempotent on
-        `purchase_intent_id`. API key only (never a profile JWT). These numbers cannot
-        call emergency services.
+        Charges the prorated price on the subscription first and orders the number once
+        paid. Paid plans only. 200 = `active`. 202 `status`: `kyc_required` (nothing
+        charged; send the documents of `fields_url` with the same body to POST
+        /uploadposts/phone-numbers/kyc), `pending_regulatory` (paid; our carrier is
+        reviewing the documents) or `pending_payment` (paid; our carrier is confirming
+        the order: within about 15 minutes it ends `active`, `phone_number_activated`
+        webhook, or `failed` with the charge refunded; poll GET
+        /uploadposts/phone-numbers/{number_id}). Repeating the same `purchase_intent_id`
+        returns the same number and never charges twice. API key only. No emergency
+        calls.
 
         ``POST /api/uploadposts/phone-numbers/purchase``
 
@@ -10620,11 +10623,13 @@ class UploadPostClient:
 
         Same body as the purchase plus `values` (requirement_id -> text, for
         `text`/`date` requirements) and `documents` (requirement_id -> `{filename,
-        content_base64}`: PDF, JPG or PNG up to 10 MB, base64-encoded; sent to the
-        carrier and not kept by Upload-Post). GET /uploadposts/phone-numbers/kyc lists
-        the requirement ids. Creates the carrier review and buys the number, which stays
-        `pending_regulatory` until approved (declined = refunded,
-        `phone_number_declined` webhook). API key only (never a profile JWT).
+        content_base64}`: PDF, JPG or PNG up to 10 MB, base64; sent to the carrier, not
+        kept by Upload-Post). Buys the number: 202 `pending_regulatory` until approved
+        (declined = refunded, `phone_number_declined` webhook) or `pending_payment`
+        (paid; our carrier is confirming the order: within about 15 minutes it ends
+        `active`, `phone_number_activated` webhook, or `failed` with the charge
+        refunded; poll GET /uploadposts/phone-numbers/{number_id}). Repeating the same
+        `purchase_intent_id` returns the same number. API key only.
 
         ``POST /api/uploadposts/phone-numbers/kyc``
 

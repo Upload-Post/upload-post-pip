@@ -767,12 +767,28 @@ is nowhere to send it.
 Buy a phone number inside Upload-Post and use it for WhatsApp, SMS and calls
 ([guide](https://docs.upload-post.com/api/phone-numbers)). Paid plans only (a
 trial or the Free plan answers `402` `phone_numbers_paid_plan_required` with
-`upgrade_url`). Each number costs 3 to 30 per month in your account's billing
-currency (USD, EUR or GBP, the same amount in each: $3 = 3 EUR = 3 GBP),
-depending on country and type, with no setup fee, charged on your subscription;
-usage (outbound SMS, forwarded minutes, recording, transcription) goes on the
-next invoice. An account billed in another currency gets `409`
-`phone_numbers_currency_unsupported`. Numbers
+`upgrade_url`).
+
+**Price.** There is no single price: it depends on the country and the number
+type. The monthly price is our carrier's monthly cost × 1.5, rounded up to the
+next whole amount, with a minimum of 3 and a maximum of 30 (a number that
+would cost more than 30 is not offered). No setup fee.
+
+| Carrier cost / month | × 1.5 | Monthly price |
+| :-- | :-- | :-- |
+| $1.00 | $1.50 | 3 (minimum) |
+| $2.40 | $3.60 | 4 |
+| $7.30 | $10.95 | 11 |
+| $19.50 | $29.25 | 30 |
+| above $20.00 | over $30 | not offered |
+
+`list_phone_number_countries` gives the real price of each country and type (`monthly_cents`,
+`currency`). It is charged on your subscription (prorated now, then each
+renewal; annual plans pay 12 months) in the account's billing currency, USD,
+EUR or GBP, with the same amount in each ($3 = 3 EUR = 3 GBP); an account
+billed in another currency gets `409` `phone_numbers_currency_unsupported`.
+Usage (outbound SMS, forwarded minutes, recording, transcription) goes on the
+next invoice. Numbers
 **cannot call emergency services** (112/911) and make no outbound calls. If
 phone numbers are not available for your account yet, `get_phone_numbers_config`
 answers `enabled: false` and the other methods `403` `phone_numbers_not_available`.
@@ -802,9 +818,14 @@ bought = client.purchase_phone_number(
     terms_version=config["terms_version"],
     phone_number=numbers[0]["phone_number"],
 )
-# 200: status "active". 202: "kyc_required" (nothing charged yet) or
-# "pending_regulatory" (paid, under review by our carrier; the
-# phone_number_activated or phone_number_declined webhook tells you the result).
+# 200: status "active". 202:
+# - "kyc_required": nothing charged yet, send the documents (below);
+# - "pending_regulatory": paid, our carrier is reviewing the documents
+#   (phone_number_activated or phone_number_declined webhook);
+# - "pending_payment": paid, our carrier is still confirming the order. Within
+#   about 15 minutes it ends "active" (phone_number_activated webhook) or
+#   "failed" with the charge refunded: poll get_phone_number(number_id).
+# Repeating the same purchase_intent_id returns the same number.
 ```
 
 Some countries need identity documents. `get_phone_number_kyc_fields` lists
@@ -824,7 +845,7 @@ client.submit_phone_number_kyc(
     values={"req_tax_id": "DE123456789"},                                # text and date requirements
     documents={"req_id_document": {"filename": "id.pdf", "content_base64": content}},  # file requirements
 )
-# The number stays pending_regulatory until approved; declined = refunded.
+# 202 pending_regulatory until approved (declined = refunded), or pending_payment as for a purchase.
 ```
 
 SMS, calls and the codes to connect WhatsApp (ids are `pn_...`):

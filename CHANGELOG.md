@@ -11,7 +11,8 @@ your account, the API answers `403 phone_numbers_not_available`.
 
 - `get_phone_numbers_config`, `list_phone_number_countries`,
   `search_available_phone_numbers`, `purchase_phone_number` (idempotent on
-  `purchase_intent_id`; `end_user`, `accept_terms`, `terms_version`),
+  `purchase_intent_id`; `end_user`, `accept_terms`, `terms_version`; 202 `kyc_required`,
+  `pending_regulatory` or `pending_payment`),
   `get_phone_number_kyc_fields` and `submit_phone_number_kyc` (identity documents
   base64-encoded in `documents`), `list_phone_numbers`, `get_phone_number`,
   `release_phone_number` (final; `confirm=True` is a required argument),
@@ -25,7 +26,7 @@ your account, the API answers `403 phone_numbers_not_available`.
   `phone_number_activated`, `phone_number_declined`, `phone_number_released`,
   `phone_number_port_out` (`update_notification_config` docs and the webhook
   subscription events).
-- README section "Phone numbers".
+- README section "Phone numbers" (how the price of a number is set, with worked examples).
 
 ## 2.22.0
 
