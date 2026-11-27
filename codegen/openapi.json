@@ -94598,6 +94598,18 @@
                 "format": "date-time"
               }
             }
+          },
+          "declined_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the identity review declined the number (only while `regulatory_declined`)."
+          },
+          "remediation_deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Last day to fix the declined review with POST /phone-numbers/{number_id}/remediate (declined_at + 30 days); after it the purchase is cancelled and refunded."
           }
         }
       },

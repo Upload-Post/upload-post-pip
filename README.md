@@ -909,7 +909,8 @@ https://docs.upload-post.com/resources/phone-number-terms
 A declined review does not refund at once: the number goes `regulatory_declined`,
 the payment is kept and the monthly charge is paused (nothing renews), and you
 get an email and the `phone_number_declined` webhook. Fix it and send it again,
-with no second charge. If nothing is fixed within 30 days, or you release the
+with no second charge. The number shows `declined_at` and `remediation_deadline_at`
+(the last day to fix it). If nothing is fixed within 30 days, or you release the
 number, the purchase is cancelled and refunded and the number released. Once
 approved the number goes `active`: nothing more is charged for the period already
 paid; after it, billing resumes (the time to the next renewal is prorated).
