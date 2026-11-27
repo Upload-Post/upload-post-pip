@@ -463,7 +463,24 @@
     "manageXLists": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
     "getInstagramMessagingProfile": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
     "setInstagramMessagingProfile": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
-    "deleteInstagramMessagingProfile": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off)."
+    "deleteInstagramMessagingProfile": "Switched on in production on 2026-11-25 (the spec keeps x-availability because the default in the code is still off).",
+    "getPhoneNumbersConfig": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "listPhoneNumberCountries": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "searchAvailablePhoneNumbers": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "purchasePhoneNumber": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "getPhoneNumberKycFields": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "submitPhoneNumberKyc": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "listPhoneNumbers": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "getPhoneNumber": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "releasePhoneNumber": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "updatePhoneNumberVoice": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "sendPhoneNumberSms": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "listPhoneNumberMessages": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "listPhoneNumberCalls": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "listPhoneNumberCodes": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "preparePhoneNumberWhatsapp": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "getPhoneNumberPortOutInfo": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "getPhoneNumbersUsage": "Phone numbers launch release (TT-1001): merge when production switches them on."
   },
   "hidden_fields": {
     "startOAuthConnection": {
@@ -504,6 +521,17 @@
     },
     "manageXLists": {
       "description": "Needs the X permission list.write: the X account must have been connected or reconnected on or after 2026-11-25, otherwise the API answers `403` `x_reconnect_required`. Each call counts toward the daily X write limit shared with replies, edits, reposts and likes. X price: list create $0.010, list manage $0.005. X rate limit: 300 per 15 min per account. Read lists with `GET /uploadposts/x/read/owned_lists` and `list_members`."
+    },
+    "releasePhoneNumber": {
+      "params": {
+        "confirm": {
+          "description": "Must be true: releasing is final (without it the API answers 400 confirmation_required).",
+          "required": true
+        }
+      }
+    },
+    "submitPhoneNumberKyc": {
+      "description": "Same body as the purchase plus `values` (requirement_id -> text, for `text`/`date` requirements) and `documents` (requirement_id -> `{filename, content_base64}`: PDF, JPG or PNG up to 10 MB, base64-encoded; sent to the carrier and not kept by Upload-Post). GET /uploadposts/phone-numbers/kyc lists the requirement ids. Creates the carrier review and buys the number, which stays `pending_regulatory` until approved (declined = refunded, `phone_number_declined` webhook). API key only (never a profile JWT)."
     }
   },
   "_comment_production": "Production (2026-11-25): 'excluded' leaves out every operation that is off in production; 'available' lists the ones switched on there although the spec still marks them not generally available; 'hidden_fields' and 'descriptions' keep fields and texts of features that are off out of the SDK.",

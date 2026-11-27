@@ -95,6 +95,10 @@
     {
       "name": "TikTok Ads",
       "description": "TikTok ads through the customer's own TikTok ad account (Marketing API): connection, Spark Ads to promote an existing post, campaigns, ad groups, ads, creatives, audiences and reports. Spend runs on the customer's ad account; Upload-Post never charges it. Not generally available yet."
+    },
+    {
+      "name": "Phone Numbers",
+      "description": "Buy your own phone number inside Upload-Post and use it for WhatsApp, SMS and calls. Paid plans only. No emergency calls."
     }
   ],
   "security": [
@@ -87447,6 +87451,2149 @@
           }
         }
       }
+    },
+    "/uploadposts/phone-numbers/config": {
+      "get": {
+        "operationId": "getPhoneNumbersConfig",
+        "summary": "Phone numbers: availability for this account",
+        "description": "**Not generally available yet.** Off by default: answers `enabled: false` until the feature is available.\n\nWhether the account can buy a number now and why not (`reason`: `phone_numbers_paid_plan_required`, `phone_numbers_limit_reached`, `purchase_velocity`, `phone_numbers_capacity`, `phone_numbers_not_configured`, `phone_numbers_account_suspended`), plus the current `terms_version`. Upload-Post numbers cannot call emergency services.",
+        "responses": {
+          "200": {
+            "description": "Configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "max_numbers": {
+                      "type": "integer"
+                    },
+                    "numbers_count": {
+                      "type": "integer"
+                    },
+                    "can_purchase": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "upgrade_url": {
+                      "type": "string"
+                    },
+                    "terms_version": {
+                      "type": "string"
+                    },
+                    "terms_url": {
+                      "type": "string"
+                    },
+                    "countries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "emergency_calls": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/countries": {
+      "get": {
+        "operationId": "listPhoneNumberCountries",
+        "summary": "Countries and prices of phone numbers",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nCountries and number types on sale, cheapest first. Price per month in USD cents (3 to 30 USD); `needs_kyc` = identity documents required; `sms` = can receive SMS, `sms_send` = can send.",
+        "responses": {
+          "200": {
+            "description": "Countries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "countries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "types": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "number_type": {
+                                  "type": "string"
+                                },
+                                "monthly_cents": {
+                                  "type": "integer"
+                                },
+                                "currency": {
+                                  "type": "string"
+                                },
+                                "needs_kyc": {
+                                  "type": "boolean"
+                                },
+                                "sms": {
+                                  "type": "boolean"
+                                },
+                                "sms_send": {
+                                  "type": "boolean"
+                                },
+                                "voice": {
+                                  "type": "boolean"
+                                },
+                                "whatsapp": {
+                                  "type": "boolean"
+                                },
+                                "emergency_calls": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the carrier (`error_code`: `phone_numbers_rate_limited`); honour `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/available": {
+      "get": {
+        "operationId": "searchAvailablePhoneNumbers",
+        "summary": "Search numbers to buy",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nNumbers available now with their monthly price.",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO country code."
+          },
+          {
+            "name": "number_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "local (default), mobile or national."
+          },
+          {
+            "name": "area_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "National destination code."
+          },
+          {
+            "name": "locality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "City."
+          },
+          {
+            "name": "contains",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Digits the number must contain."
+          },
+          {
+            "name": "sms",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "true = only numbers with SMS."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "1-50 (default 20)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Numbers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "numbers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "phone_number": {
+                            "type": "string"
+                          },
+                          "features": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "locality": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "monthly_cents": {
+                            "type": "integer"
+                          },
+                          "currency": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid country or type (`error_code`: `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the carrier (`error_code`: `phone_numbers_rate_limited`); honour `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable (`error_code`: `phone_numbers_capacity`, `phone_numbers_not_configured`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/purchase": {
+      "post": {
+        "operationId": "purchasePhoneNumber",
+        "summary": "Buy a phone number",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nCharges the prorated price on the account's subscription first; the number is ordered only once that payment succeeds (if the carrier then fails, the charge is refunded). Paid plans only. Countries that need identity documents answer 202 `status: kyc_required` with `fields_url`: send them to POST /uploadposts/phone-numbers/kyc with the same body. Idempotent on `purchase_intent_id`. API key only (never a profile JWT). These numbers cannot call emergency services.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "profile_username",
+                  "country",
+                  "number_type",
+                  "purchase_intent_id",
+                  "accept_terms",
+                  "terms_version",
+                  "end_user"
+                ],
+                "properties": {
+                  "profile_username": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string",
+                    "example": "US"
+                  },
+                  "number_type": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "mobile",
+                      "national"
+                    ]
+                  },
+                  "phone_number": {
+                    "type": "string",
+                    "description": "A number from GET /available; omit to take the first one."
+                  },
+                  "area_code": {
+                    "type": "string"
+                  },
+                  "purchase_intent_id": {
+                    "type": "string",
+                    "description": "Your idempotency key (8-100 characters). Repeating it returns the same number and never charges twice; use a new one to retry a failed purchase."
+                  },
+                  "end_user": {
+                    "$ref": "#/components/schemas/PhoneNumberEndUser"
+                  },
+                  "accept_terms": {
+                    "type": "boolean",
+                    "example": true,
+                    "description": "Must be true: no emergency calls (112/911), acceptable use, porting authorization and carrier data processing in the US."
+                  },
+                  "terms_version": {
+                    "type": "string",
+                    "example": "2026-11-27",
+                    "description": "The `terms_version` of GET /uploadposts/phone-numbers/config."
+                  }
+                }
+              },
+              "example": {
+                "profile_username": "client-a",
+                "country": "US",
+                "number_type": "local",
+                "area_code": "415",
+                "purchase_intent_id": "buy-2026-11-27-0001",
+                "accept_terms": true,
+                "terms_version": "2026-11-27",
+                "end_user": {
+                  "type": "business",
+                  "first_name": "Ana",
+                  "last_name": "Lopez",
+                  "business_name": "Acme Inc",
+                  "phone": "+14155550100",
+                  "address": {
+                    "street_address": "1 Market St",
+                    "locality": "San Francisco",
+                    "administrative_area": "CA",
+                    "postal_code": "94105",
+                    "country_code": "US"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bought and active (or a repeated purchase_intent_id).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "`status: kyc_required` (no charge yet: send the documents), or `pending_regulatory` (paid; the carrier is reviewing).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "purchase_intent_id": {
+                      "type": "string"
+                    },
+                    "fields_url": {
+                      "type": "string"
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`, `terms_not_accepted`, `phone_numbers_kyc_invalid`, `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Paid plan required (`error_code`: `phone_numbers_paid_plan_required`, with `upgrade_url`), or the payment failed (`error_code`: `phone_numbers_payment_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), only the owner may buy (`error_code`: `phone_numbers_owner_only`), or numbers are suspended on the account (`error_code`: `phone_numbers_account_suspended`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile not found (`error_code`: `profile_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "One purchase every 10 minutes (`error_code`: `purchase_velocity`), the account has the maximum of numbers (`error_code`: `phone_numbers_limit_reached`), the number was taken (`error_code`: `phone_number_unavailable`) or the subscription cannot carry it (`error_code`: `phone_numbers_currency_unsupported`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the carrier (`error_code`: `phone_numbers_rate_limited`); honour `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier refused the order, the charge was refunded (`error_code`: `phone_numbers_carrier_error`), or billing failed before charging (`error_code`: `phone_numbers_billing_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable (`error_code`: `phone_numbers_capacity`, `phone_numbers_not_configured`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/kyc": {
+      "get": {
+        "operationId": "getPhoneNumberKycFields",
+        "summary": "Identity fields a country needs",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nThe end-user fields every purchase needs and the carrier requirements of this country and type (`kind`: text, date, address, file).",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO country code."
+          },
+          {
+            "name": "number_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "local (default), mobile or national."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "country": {
+                      "type": "string"
+                    },
+                    "number_type": {
+                      "type": "string"
+                    },
+                    "terms_version": {
+                      "type": "string"
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "end_user": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "requirements": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "requirement_id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "text",
+                                  "date",
+                                  "address",
+                                  "file"
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "example": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid country or type (`error_code`: `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the carrier (`error_code`: `phone_numbers_rate_limited`); honour `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      },
+      "post": {
+        "operationId": "submitPhoneNumberKyc",
+        "summary": "Send identity documents and buy",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nSame body as the purchase plus `values` and `documents` (JSON), or multipart with the JSON in the field `data` and each file as `document_<requirement_id>`. Creates the carrier review and buys the number, which stays `pending_regulatory` until approved (declined = refunded, `phone_number_declined` webhook). API key only (never a profile JWT).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "profile_username",
+                      "country",
+                      "number_type",
+                      "purchase_intent_id",
+                      "accept_terms",
+                      "terms_version",
+                      "end_user"
+                    ],
+                    "properties": {
+                      "profile_username": {
+                        "type": "string"
+                      },
+                      "country": {
+                        "type": "string",
+                        "example": "US"
+                      },
+                      "number_type": {
+                        "type": "string",
+                        "enum": [
+                          "local",
+                          "mobile",
+                          "national"
+                        ]
+                      },
+                      "phone_number": {
+                        "type": "string",
+                        "description": "A number from GET /available; omit to take the first one."
+                      },
+                      "area_code": {
+                        "type": "string"
+                      },
+                      "purchase_intent_id": {
+                        "type": "string",
+                        "description": "Your idempotency key (8-100 characters). Repeating it returns the same number and never charges twice; use a new one to retry a failed purchase."
+                      },
+                      "end_user": {
+                        "$ref": "#/components/schemas/PhoneNumberEndUser"
+                      },
+                      "accept_terms": {
+                        "type": "boolean",
+                        "example": true,
+                        "description": "Must be true: no emergency calls (112/911), acceptable use, porting authorization and carrier data processing in the US."
+                      },
+                      "terms_version": {
+                        "type": "string",
+                        "example": "2026-11-27",
+                        "description": "The `terms_version` of GET /uploadposts/phone-numbers/config."
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "values": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "requirement_id -> text, for `text`/`date` requirements."
+                      },
+                      "documents": {
+                        "type": "object",
+                        "description": "requirement_id -> {filename, content_base64} (PDF/JPG/PNG, 10 MB). Documents are sent to the carrier and not kept by Upload-Post.",
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "filename": {
+                              "type": "string"
+                            },
+                            "content_base64": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bought (no documents were needed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Paid, under carrier review.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`, `terms_not_accepted`, `phone_numbers_kyc_invalid`, `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Paid plan required (`error_code`: `phone_numbers_paid_plan_required`, with `upgrade_url`), or the payment failed (`error_code`: `phone_numbers_payment_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), only the owner may buy (`error_code`: `phone_numbers_owner_only`), or numbers are suspended on the account (`error_code`: `phone_numbers_account_suspended`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile not found (`error_code`: `profile_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "One purchase every 10 minutes (`error_code`: `purchase_velocity`), the account has the maximum of numbers (`error_code`: `phone_numbers_limit_reached`), the number was taken (`error_code`: `phone_number_unavailable`) or the subscription cannot carry it (`error_code`: `phone_numbers_currency_unsupported`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the carrier (`error_code`: `phone_numbers_rate_limited`); honour `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier refused the order, the charge was refunded (`error_code`: `phone_numbers_carrier_error`), or billing failed before charging (`error_code`: `phone_numbers_billing_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable (`error_code`: `phone_numbers_capacity`, `phone_numbers_not_configured`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers": {
+      "get": {
+        "operationId": "listPhoneNumbers",
+        "summary": "List phone numbers",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nNumbers of the account (pending and active unless `status` says otherwise).",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "One status (see PhoneNumber.status)."
+          },
+          {
+            "name": "profile_username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only this profile."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Numbers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "phone_numbers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PhoneNumber"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status (`error_code`: `phone_numbers_invalid_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}": {
+      "get": {
+        "operationId": "getPhoneNumber",
+        "summary": "Get a phone number",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nOne number.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      },
+      "delete": {
+        "operationId": "releasePhoneNumber",
+        "summary": "Release a phone number",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nFinal: WhatsApp and anything else using the number stop working and the carrier may give it to someone else later. Needs `confirm=true` (query or JSON body). The monthly charge stops (no proration).",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Must be true."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Released.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Release not confirmed: send confirm=true to release the number (`error_code`: `confirmation_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the carrier (`error_code`: `phone_numbers_rate_limited`); honour `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/voice": {
+      "patch": {
+        "operationId": "updatePhoneNumberVoice",
+        "summary": "Call settings of a number",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nForwarding (`forward_to` as `tel:+E164`, only to geographic or mobile numbers in the number's country or the end user's country; `null` = off), voicemail, recording and transcription. Forwarded calls show this number as caller ID. Voicemail always tells the caller the call is recorded and transcribed; with recording off, calls are only logged as missed.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "forward_to": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "tel:+34600111222"
+                  },
+                  "voicemail_enabled": {
+                    "type": "boolean"
+                  },
+                  "voicemail_greeting": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "recording_enabled": {
+                    "type": "boolean"
+                  },
+                  "transcription_enabled": {
+                    "type": "boolean"
+                  },
+                  "transcription_language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "es",
+                      "pt",
+                      "fr",
+                      "de",
+                      "it"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid settings (`error_code`: `phone_numbers_invalid_request`, `phone_numbers_invalid_forward_to`, `phone_numbers_forward_country_not_allowed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not active (`error_code`: `phone_number_not_active`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/sms": {
+      "post": {
+        "operationId": "sendPhoneNumberSms",
+        "summary": "Send an SMS",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nBilled per message part. Not from US/CA numbers yet (they receive SMS). Recipients who replied STOP cannot be messaged; max 10 messages per recipient per 24 h and 1 per second per number; spam, adult, gambling, drugs, crypto and loan content is refused.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "to",
+                  "text"
+                ],
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "example": "+34600111222"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1600
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "$ref": "#/components/schemas/PhoneMessage"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not available (`error_code`: `phone_numbers_not_available`), US/CA number (`error_code`: `sms_registration_required`), no SMS on this number (`error_code`: `sms_not_supported`) or suspended (`error_code`: `phone_number_suspended`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Recipient opted out (`error_code`: `recipient_opted_out`) or number not active (`error_code`: `phone_number_not_active`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Content not allowed (`error_code`: `sms_content_blocked`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Daily usage limit (`error_code`: `phone_usage_daily_cap`), per-recipient limit (`error_code`: `sms_recipient_limit`), 1 message per second (`error_code`: `sms_rate_limited`) or carrier rate limit (`error_code`: `phone_numbers_rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/messages": {
+      "get": {
+        "operationId": "listPhoneNumberMessages",
+        "summary": "SMS of a number",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nInbound and outbound SMS, newest first.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "1-200 (default 50)."
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date: only older messages (pagination)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PhoneMessage"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/calls": {
+      "get": {
+        "operationId": "listPhoneNumberCalls",
+        "summary": "Calls and voicemails of a number",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nCalls newest first, with the voicemail transcript and a signed recording URL (1 hour).",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "1-200 (default 50)."
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date: only older calls (pagination)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calls.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PhoneCall"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/codes": {
+      "get": {
+        "operationId": "listPhoneNumberCodes",
+        "summary": "Verification codes received",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nOne-time codes (4-8 digits, also spoken in English, Spanish or Portuguese) found in SMS and call transcripts of the last 30 minutes. Poll it while connecting WhatsApp.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date: only codes after it."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Codes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "codes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "sms",
+                              "call"
+                            ]
+                          },
+                          "from": {
+                            "type": "string"
+                          },
+                          "received_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/whatsapp/prepare": {
+      "post": {
+        "operationId": "preparePhoneNumberWhatsapp",
+        "summary": "Get ready to receive the WhatsApp code",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nFor 30 minutes, calls to this number are answered, recorded (up to 90 s) and transcribed so the code Meta reads out appears in GET /codes. In Meta's Embedded Signup add the number and choose **Phone call**.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "es",
+                      "pt",
+                      "fr",
+                      "de",
+                      "it"
+                    ],
+                    "default": "en"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "verify_until": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "phone_number": {
+                      "type": "string"
+                    },
+                    "instructions": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid language (`error_code`: `phone_numbers_invalid_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not available (`error_code`: `phone_numbers_not_available`) or suspended (`error_code`: `phone_number_suspended`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not active (`error_code`: `phone_number_not_active`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/port-out": {
+      "get": {
+        "operationId": "getPhoneNumberPortOutInfo",
+        "summary": "Move a number to another carrier",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nWhat to give the new carrier: the name and address as submitted, the account number and the number. Owner only.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Port-out details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "phone_number": {
+                      "type": "string"
+                    },
+                    "account_number": {
+                      "type": "string"
+                    },
+                    "pin": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "name": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "address": {
+                      "type": "object",
+                      "nullable": true
+                    },
+                    "instructions": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/usage": {
+      "get": {
+        "operationId": "getPhoneNumbersUsage",
+        "summary": "Phone usage and charges",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nBillable usage (outbound SMS, forwarded minutes, recording, transcription; inbound minutes at cost; inbound SMS free) with totals in USD. Charged on the next subscription invoice. Over the daily limit, outbound SMS, forwarding and recording stop until midnight UTC.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date (default: start of month)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date (default: now)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "totals": {
+                      "type": "object"
+                    },
+                    "total_usd": {
+                      "type": "number"
+                    },
+                    "today_usd": {
+                      "type": "number"
+                    },
+                    "daily_cap_usd": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`), or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                },
+                "example": {
+                  "success": false,
+                  "error_code": "phone_numbers_not_available",
+                  "error": "Phone numbers are not available on this account yet."
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available"
+      }
     }
   },
   "components": {
@@ -90756,9 +92903,16 @@
           "post_rejected",
           "post_approval_expired",
           "linkedin_page_activity",
-          "instagram_mention_received"
+          "instagram_mention_received",
+          "sms_received",
+          "call_received",
+          "voicemail_received",
+          "phone_number_activated",
+          "phone_number_declined",
+          "phone_number_released",
+          "phone_number_port_out"
         ],
-        "description": "Webhook event name (dots are accepted too: social_account.connected). youtube_video_* are accepted only while YouTube push is on, post_approval_* only while post approvals are on, linkedin_page_activity (likes, reshares, mentions, Page comments and comment edits/deletes on a subscribed LinkedIn Page: `action` reaction|repost|mention|page_comment|comment_edited|comment_deleted) only while it is on. instagram_mention_received (another account @mentioned the connected Instagram account in a caption or a comment: `mention` {type comment|caption, comment_id, media_id; text/from/parent_id when Instagram sends them}) only while it is on. dm_received, comment_received, telegram_update, the Google Business events, post_analytics_updated and the gated ones are opt-in: they are only sent if listed."
+        "description": "Webhook event name (dots are accepted too: social_account.connected). youtube_video_* are accepted only while YouTube push is on, post_approval_* only while post approvals are on, linkedin_page_activity (likes, reshares, mentions, Page comments and comment edits/deletes on a subscribed LinkedIn Page: `action` reaction|repost|mention|page_comment|comment_edited|comment_deleted) only while it is on. instagram_mention_received (another account @mentioned the connected Instagram account in a caption or a comment: `mention` {type comment|caption, comment_id, media_id; text/from/parent_id when Instagram sends them}) only while it is on. dm_received, comment_received, telegram_update, the Google Business events, post_analytics_updated and the gated ones are opt-in: they are only sent if listed. sms_received, call_received, voicemail_received and phone_number_* (phone numbers, opt-in) only while phone numbers are available on the account."
       },
       "ClientPostApproval": {
         "type": "object",
@@ -91363,6 +93517,366 @@
           "details": {
             "code": "tiktok_ads_error",
             "tiktok_code": 40002
+          }
+        }
+      },
+      "PhoneNumberError": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PhoneNumber": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "pn_3f9c0a1b2c3d4e5f6a7b8c9d"
+          },
+          "phone_number": {
+            "type": "string",
+            "example": "+34911234567"
+          },
+          "country": {
+            "type": "string",
+            "example": "ES"
+          },
+          "number_type": {
+            "type": "string",
+            "enum": [
+              "local",
+              "mobile",
+              "national"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "voice"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_payment",
+              "pending_regulatory",
+              "active",
+              "regulatory_declined",
+              "released",
+              "failed",
+              "ported_out"
+            ]
+          },
+          "profile_username": {
+            "type": "string"
+          },
+          "monthly_cents": {
+            "type": "integer",
+            "example": 300,
+            "description": "Monthly price in the subscription currency."
+          },
+          "currency": {
+            "type": "string",
+            "example": "usd"
+          },
+          "billing_interval": {
+            "type": "string",
+            "enum": [
+              "month",
+              "year"
+            ],
+            "description": "Yearly subscriptions pay 12 x monthly_cents."
+          },
+          "purchase_intent_id": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "object",
+            "properties": {
+              "forward_to": {
+                "type": "string",
+                "nullable": true,
+                "example": "tel:+34600111222"
+              },
+              "voicemail_enabled": {
+                "type": "boolean"
+              },
+              "voicemail_greeting": {
+                "type": "string",
+                "nullable": true
+              },
+              "recording_enabled": {
+                "type": "boolean"
+              },
+              "transcription_enabled": {
+                "type": "boolean"
+              },
+              "transcription_language": {
+                "type": "string",
+                "enum": [
+                  "en",
+                  "es",
+                  "pt",
+                  "fr",
+                  "de",
+                  "it"
+                ]
+              }
+            }
+          },
+          "whatsapp": {
+            "type": "object",
+            "properties": {
+              "verify_until": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
+          },
+          "sms_send": {
+            "type": "boolean",
+            "description": "Whether POST /sms can send from this number."
+          },
+          "emergency_calls": {
+            "type": "boolean",
+            "example": false,
+            "description": "Always false: these numbers cannot call emergency services."
+          },
+          "suspended": {
+            "type": "boolean"
+          },
+          "suspended_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "abuse_review": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "activated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "released_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "release_scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Set when the subscription ended: the number is suspended and released on this date."
+          },
+          "decline_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "failure_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "port_out": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      },
+      "PhoneNumberEndUser": {
+        "type": "object",
+        "description": "Who uses the number (required by the carrier for every purchase). Stored encrypted.",
+        "required": [
+          "type",
+          "first_name",
+          "last_name",
+          "phone",
+          "address"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "individual",
+              "business"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "business_name": {
+            "type": "string",
+            "description": "Required for a business."
+          },
+          "phone": {
+            "type": "string",
+            "example": "+34600111222"
+          },
+          "email": {
+            "type": "string"
+          },
+          "address": {
+            "type": "object",
+            "required": [
+              "street_address",
+              "locality",
+              "postal_code",
+              "country_code"
+            ],
+            "properties": {
+              "street_address": {
+                "type": "string"
+              },
+              "extended_address": {
+                "type": "string"
+              },
+              "locality": {
+                "type": "string"
+              },
+              "administrative_area": {
+                "type": "string"
+              },
+              "postal_code": {
+                "type": "string"
+              },
+              "country_code": {
+                "type": "string",
+                "example": "ES",
+                "description": "ES, DE, FR and IT numbers need an address in that country."
+              }
+            }
+          }
+        }
+      },
+      "PhoneMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PhoneCall": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "forward",
+              "voicemail",
+              "whatsapp_verify",
+              "missed"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "nullable": true
+          },
+          "forwarded_to": {
+            "type": "string",
+            "nullable": true
+          },
+          "consent_notice_played": {
+            "type": "boolean"
+          },
+          "recording_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Signed URL, valid 1 hour."
+          },
+          "transcript": {
+            "type": "string",
+            "nullable": true
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

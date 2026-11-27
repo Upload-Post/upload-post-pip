@@ -68,6 +68,7 @@ client.upload_video("video.mp4", title="Hi", user="my-profile",
 - ✅ **Direct Messages** - Instagram, WhatsApp (messaging only: WhatsApp does not publish posts), Bluesky and Telegram bot DMs
 - ✅ **AutoDM rules** - Account-wide Instagram comment/story/keyword DMs
 - ✅ **Webhook deliveries** - 7-day delivery log and redelivery
+- ✅ **Phone numbers** - Buy a number for WhatsApp, SMS and calls (paid plans; no emergency calls)
 - ✅ **Full Type Hints**
 
 ## API Reference
@@ -760,6 +761,112 @@ Webhooks are delivered **at least once**: a timeout, connection error, `5xx`,
 `job_id`, `profile_username`, `limit` (1-100), `page` (1-50). `redeliver_webhook`
 answers 409 `webhook_removed` / `event_unsubscribed` / `blocked_url` when there
 is nowhere to send it.
+
+## Phone numbers
+
+Buy a phone number inside Upload-Post and use it for WhatsApp, SMS and calls
+([guide](https://docs.upload-post.com/api/phone-numbers)). Paid plans only (a
+trial or the Free plan answers `402` `phone_numbers_paid_plan_required` with
+`upgrade_url`). Each number costs $3 to $30 per month depending on country and
+type (no setup fee), charged on your subscription; usage (outbound SMS,
+forwarded minutes, recording, transcription) goes on the next invoice. Numbers
+**cannot call emergency services** (112/911) and make no outbound calls. If
+phone numbers are not available for your account yet, `get_phone_numbers_config`
+answers `enabled: false` and the other methods `403` `phone_numbers_not_available`.
+
+```python
+import uuid
+
+# 1. Can this account buy, and which terms apply?
+config = client.get_phone_numbers_config()  # enabled, can_purchase, reason, terms_version, terms_url...
+
+# 2. Pick a number (countries: US, GB, ES, FR, DE, IT, MX, BR; types local, mobile, national)
+countries = client.list_phone_number_countries()["countries"]  # per type: monthly_cents, needs_kyc, sms, sms_send
+numbers = client.search_available_phone_numbers("ES", number_type="mobile", sms=True)["numbers"]
+
+# 3. Buy it. purchase_intent_id is your idempotency key: repeat it to retry
+#    safely, it never charges twice.
+end_user = {
+    "type": "business",  # or "individual"
+    "first_name": "Ana", "last_name": "García", "business_name": "Acme SL",
+    "phone": "+34600111222", "email": "ana@example.com",
+    "address": {"street_address": "Calle Mayor 1", "locality": "Madrid",
+                "postal_code": "28013", "country_code": "ES"},
+}
+bought = client.purchase_phone_number(
+    "my-profile", "ES", "mobile", str(uuid.uuid4()), end_user,
+    accept_terms=True,  # no emergency calls, acceptable use: config["terms_url"]
+    terms_version=config["terms_version"],
+    phone_number=numbers[0]["phone_number"],
+)
+# 200: status "active". 202: "kyc_required" (nothing charged yet) or
+# "pending_regulatory" (paid, under review by our carrier; the
+# phone_number_activated or phone_number_declined webhook tells you the result).
+```
+
+Some countries need identity documents. `get_phone_number_kyc_fields` lists
+them; send them with the same fields as the purchase. The client sends the
+documents base64-encoded in JSON (PDF, JPG or PNG, up to 10 MB each):
+
+```python
+import base64
+
+fields = client.get_phone_number_kyc_fields("DE", number_type="local")["fields"]
+# fields["requirements"]: [{"requirement_id", "label", "kind": text|date|address|file, ...}]
+with open("id.pdf", "rb") as fh:
+    content = base64.b64encode(fh.read()).decode()
+client.submit_phone_number_kyc(
+    "my-profile", "DE", "local", purchase_intent_id, end_user,
+    accept_terms=True, terms_version=config["terms_version"],
+    values={"req_tax_id": "DE123456789"},                                # text and date requirements
+    documents={"req_id_document": {"filename": "id.pdf", "content_base64": content}},  # file requirements
+)
+# The number stays pending_regulatory until approved; declined = refunded.
+```
+
+SMS, calls and the codes to connect WhatsApp (ids are `pn_...`):
+
+```python
+number_id = bought["phone_number"]["id"]
+
+# SMS (US/CA numbers receive SMS but cannot send yet; STOP opt-outs are honoured)
+client.send_phone_number_sms(number_id, "+34600999888", "Your order has shipped")
+messages = client.list_phone_number_messages(number_id, limit=50)["messages"]
+
+# Calls: forward to a number of the same country, voicemail with transcription
+client.update_phone_number_voice(number_id, forward_to="tel:+34600111222",
+                                 voicemail_enabled=True, transcription_language="es")
+# forward_to="" turns forwarding off (None values are not sent)
+calls = client.list_phone_number_calls(number_id)["calls"]  # recording URL valid 1 h, transcript
+
+# WhatsApp: there are no pre-verified numbers. Prepare the number, then in the
+# dashboard's WhatsApp connect add it and choose "Phone call" (not SMS):
+# Upload-Post answers Meta's call and the code shows up in list_phone_number_codes.
+client.prepare_phone_number_whatsapp(number_id, language="en")  # 30-minute window
+codes = client.list_phone_number_codes(number_id)["codes"]      # poll every few seconds
+
+# Usage and charges of the month
+usage = client.get_phone_numbers_usage()
+```
+
+Releasing is final: WhatsApp on the number stops working, the carrier may give
+the number to someone else later and the monthly charge stops (no proration).
+It needs `confirm=True` (otherwise `400` `confirmation_required`). To keep the
+number with another carrier, `get_phone_number_port_out_info` gives what the new
+carrier needs.
+
+```python
+client.release_phone_number(number_id, confirm=True)
+```
+
+Webhooks (opt-in: list them in `webhook_events`): `sms_received` (`message`),
+`call_received` and `voicemail_received` (`call`), `phone_number_activated`,
+`phone_number_declined`, `phone_number_released` and `phone_number_port_out`
+(`number`, plus `reason` or `port_out_status`). Every body has `event`,
+`platform: "phone"`, `account_id` (the `pn_...` id), `phone_number` and
+`profile_username`. Only the account owner can buy, send documents, release or
+port out a number (team members get `403` `phone_numbers_owner_only`). Terms:
+https://docs.upload-post.com/resources/phone-number-terms
 
 ## Team members (acting on the owner's account)
 
@@ -1597,6 +1704,28 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `post_pinterest_api` | `POST /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 POST (create a board or a board section). |
 | `patch_pinterest_api` | `PATCH /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 PATCH (update a board or a board section). |
 | `delete_pinterest_api` | `DELETE /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 DELETE (delete a board or a board section). |
+
+### Phone Numbers
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `get_phone_numbers_config` | `GET /api/uploadposts/phone-numbers/config` | Phone numbers: availability for this account. |
+| `list_phone_number_countries` | `GET /api/uploadposts/phone-numbers/countries` | Countries and prices of phone numbers. |
+| `search_available_phone_numbers` | `GET /api/uploadposts/phone-numbers/available` | Search numbers to buy. |
+| `purchase_phone_number` | `POST /api/uploadposts/phone-numbers/purchase` | Buy a phone number. |
+| `get_phone_number_kyc_fields` | `GET /api/uploadposts/phone-numbers/kyc` | Identity fields a country needs. |
+| `submit_phone_number_kyc` | `POST /api/uploadposts/phone-numbers/kyc` | Send identity documents and buy. |
+| `list_phone_numbers` | `GET /api/uploadposts/phone-numbers` | List phone numbers. |
+| `get_phone_number` | `GET /api/uploadposts/phone-numbers/{number_id}` | Get a phone number. |
+| `release_phone_number` | `DELETE /api/uploadposts/phone-numbers/{number_id}` | Release a phone number. |
+| `update_phone_number_voice` | `PATCH /api/uploadposts/phone-numbers/{number_id}/voice` | Call settings of a number. |
+| `send_phone_number_sms` | `POST /api/uploadposts/phone-numbers/{number_id}/sms` | Send an SMS. |
+| `list_phone_number_messages` | `GET /api/uploadposts/phone-numbers/{number_id}/messages` | SMS of a number. |
+| `list_phone_number_calls` | `GET /api/uploadposts/phone-numbers/{number_id}/calls` | Calls and voicemails of a number. |
+| `list_phone_number_codes` | `GET /api/uploadposts/phone-numbers/{number_id}/codes` | Verification codes received. |
+| `prepare_phone_number_whatsapp` | `POST /api/uploadposts/phone-numbers/{number_id}/whatsapp/prepare` | Get ready to receive the WhatsApp code. |
+| `get_phone_number_port_out_info` | `GET /api/uploadposts/phone-numbers/{number_id}/port-out` | Move a number to another carrier. |
+| `get_phone_numbers_usage` | `GET /api/uploadposts/phone-numbers/usage` | Phone usage and charges. |
 <!-- /openapi:methods -->
 
 ## What a TikTok connection can do (`capabilities`)

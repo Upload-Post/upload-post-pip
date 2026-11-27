@@ -2556,8 +2556,11 @@ class UploadPostClient:
                 names or a ``{name: bool}`` dict: upload_completed,
                 social_account_connected, social_account_disconnected,
                 social_account_reauth_required, and the opt-in dm_received
-                (Instagram, WhatsApp, Bluesky) and
-                comment_received. The opt-in events are only sent when listed.
+                (Instagram, WhatsApp, Bluesky),
+                comment_received and phone number events (sms_received,
+                call_received, voicemail_received, phone_number_activated,
+                phone_number_declined, phone_number_released,
+                phone_number_port_out). The opt-in events are only sent when listed.
             webhook_url: Webhook URL for notifications.
             channels: Which channels are on, e.g. ``{"webhook": True}``
                 (``telegram``, ``slack``, ``whatsapp``, ``webhook``).
@@ -6100,6 +6103,23 @@ class UploadPostClient:
         "postPinterestApi": ("POST", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
         "patchPinterestApi": ("PATCH", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
         "deletePinterestApi": ("DELETE", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
+        "getPhoneNumbersConfig": ("GET", "/uploadposts/phone-numbers/config", {}),
+        "listPhoneNumberCountries": ("GET", "/uploadposts/phone-numbers/countries", {}),
+        "searchAvailablePhoneNumbers": ("GET", "/uploadposts/phone-numbers/available", {"q": ["country", "number_type", "area_code", "locality", "contains", "sms", "limit"]}),
+        "purchasePhoneNumber": ("POST", "/uploadposts/phone-numbers/purchase", {"b": ["profile_username", "country", "number_type", "phone_number", "area_code", "purchase_intent_id", "end_user", "accept_terms", "terms_version"]}),
+        "getPhoneNumberKycFields": ("GET", "/uploadposts/phone-numbers/kyc", {"q": ["country", "number_type"]}),
+        "submitPhoneNumberKyc": ("POST", "/uploadposts/phone-numbers/kyc", {"b": ["profile_username", "country", "number_type", "phone_number", "area_code", "purchase_intent_id", "end_user", "accept_terms", "terms_version", "values", "documents"]}),
+        "listPhoneNumbers": ("GET", "/uploadposts/phone-numbers", {"q": ["status", "profile_username"]}),
+        "getPhoneNumber": ("GET", "/uploadposts/phone-numbers/{number_id}", {}),
+        "releasePhoneNumber": ("DELETE", "/uploadposts/phone-numbers/{number_id}", {"q": ["confirm"]}),
+        "updatePhoneNumberVoice": ("PATCH", "/uploadposts/phone-numbers/{number_id}/voice", {"b": ["forward_to", "voicemail_enabled", "voicemail_greeting", "recording_enabled", "transcription_enabled", "transcription_language"]}),
+        "sendPhoneNumberSms": ("POST", "/uploadposts/phone-numbers/{number_id}/sms", {"b": ["to", "text"]}),
+        "listPhoneNumberMessages": ("GET", "/uploadposts/phone-numbers/{number_id}/messages", {"q": ["limit", "before"]}),
+        "listPhoneNumberCalls": ("GET", "/uploadposts/phone-numbers/{number_id}/calls", {"q": ["limit", "before"]}),
+        "listPhoneNumberCodes": ("GET", "/uploadposts/phone-numbers/{number_id}/codes", {"q": ["since"]}),
+        "preparePhoneNumberWhatsapp": ("POST", "/uploadposts/phone-numbers/{number_id}/whatsapp/prepare", {"b": ["language"]}),
+        "getPhoneNumberPortOutInfo": ("GET", "/uploadposts/phone-numbers/{number_id}/port-out", {}),
+        "getPhoneNumbersUsage": ("GET", "/uploadposts/phone-numbers/usage", {"q": ["from", "to"]}),
     }
 
     # ---- Telegram ----
@@ -10497,5 +10517,318 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("deletePinterestApi", params, endpoint=endpoint, user=user)
+
+    # ---- Phone Numbers ----
+    def get_phone_numbers_config(self, **params) -> Dict:
+        """Phone numbers: availability for this account.
+
+        Whether the account can buy a number now and why not (`reason`:
+        `phone_numbers_paid_plan_required`, `phone_numbers_limit_reached`,
+        `purchase_velocity`, `phone_numbers_capacity`, `phone_numbers_not_configured`,
+        `phone_numbers_account_suspended`), plus the current `terms_version`.
+        Upload-Post numbers cannot call emergency services.
+
+        ``GET /api/uploadposts/phone-numbers/config``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("getPhoneNumbersConfig", params)
+
+    def list_phone_number_countries(self, **params) -> Dict:
+        """Countries and prices of phone numbers.
+
+        Countries and number types on sale, cheapest first. Price per month in USD cents
+        (3 to 30 USD); `needs_kyc` = identity documents required; `sms` = can receive
+        SMS, `sms_send` = can send.
+
+        ``GET /api/uploadposts/phone-numbers/countries``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("listPhoneNumberCountries", params)
+
+    def search_available_phone_numbers(self, country: str, **params) -> Dict:
+        """Search numbers to buy.
+
+        Numbers available now with their monthly price.
+
+        ``GET /api/uploadposts/phone-numbers/available``
+
+        Args:
+            country: ISO country code.
+            number_type (str, optional): local (default), mobile or national.
+            area_code (str, optional): National destination code.
+            locality (str, optional): City.
+            contains (str, optional): Digits the number must contain.
+            sms (bool, optional): true = only numbers with SMS.
+            limit (int, optional): 1-50 (default 20).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("searchAvailablePhoneNumbers", params, country=country)
+
+    def purchase_phone_number(self, profile_username: str, country: str, number_type: str, purchase_intent_id: str, end_user: Dict[str, Any], accept_terms: bool, terms_version: str, **params) -> Dict:
+        """Buy a phone number.
+
+        Charges the prorated price on the account's subscription first; the number is
+        ordered only once that payment succeeds (if the carrier then fails, the charge
+        is refunded). Paid plans only. Countries that need identity documents answer 202
+        `status: kyc_required` with `fields_url`: send them to POST
+        /uploadposts/phone-numbers/kyc with the same body. Idempotent on
+        `purchase_intent_id`. API key only (never a profile JWT). These numbers cannot
+        call emergency services.
+
+        ``POST /api/uploadposts/phone-numbers/purchase``
+
+        Args:
+            profile_username
+            country
+            number_type
+            phone_number (str, optional): A number from GET /available; omit to take
+                the first one.
+            area_code (str, optional)
+            purchase_intent_id: Your idempotency key (8-100 characters). Repeating
+                it returns the same number and never charges twice; use a new one to
+                retry a failed purchase.
+            end_user: Who uses the number (required by the carrier for every
+                purchase). Stored encrypted.
+            accept_terms: Must be true: no emergency calls (112/911), acceptable
+                use, porting authorization and carrier data processing in the US.
+            terms_version: The `terms_version` of GET
+                /uploadposts/phone-numbers/config.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("purchasePhoneNumber", params, profile_username=profile_username, country=country, number_type=number_type, purchase_intent_id=purchase_intent_id, end_user=end_user, accept_terms=accept_terms, terms_version=terms_version)
+
+    def get_phone_number_kyc_fields(self, country: str, **params) -> Dict:
+        """Identity fields a country needs.
+
+        The end-user fields every purchase needs and the carrier requirements of this
+        country and type (`kind`: text, date, address, file).
+
+        ``GET /api/uploadposts/phone-numbers/kyc``
+
+        Args:
+            country: ISO country code.
+            number_type (str, optional): local (default), mobile or national.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getPhoneNumberKycFields", params, country=country)
+
+    def submit_phone_number_kyc(self, profile_username: str, country: str, number_type: str, purchase_intent_id: str, end_user: Dict[str, Any], accept_terms: bool, terms_version: str, **params) -> Dict:
+        """Send identity documents and buy.
+
+        Same body as the purchase plus `values` (requirement_id -> text, for
+        `text`/`date` requirements) and `documents` (requirement_id -> `{filename,
+        content_base64}`: PDF, JPG or PNG up to 10 MB, base64-encoded; sent to the
+        carrier and not kept by Upload-Post). GET /uploadposts/phone-numbers/kyc lists
+        the requirement ids. Creates the carrier review and buys the number, which stays
+        `pending_regulatory` until approved (declined = refunded,
+        `phone_number_declined` webhook). API key only (never a profile JWT).
+
+        ``POST /api/uploadposts/phone-numbers/kyc``
+
+        Args:
+            profile_username
+            country
+            number_type
+            phone_number (str, optional): A number from GET /available; omit to take
+                the first one.
+            area_code (str, optional)
+            purchase_intent_id: Your idempotency key (8-100 characters). Repeating
+                it returns the same number and never charges twice; use a new one to
+                retry a failed purchase.
+            end_user: Who uses the number (required by the carrier for every
+                purchase). Stored encrypted.
+            accept_terms: Must be true: no emergency calls (112/911), acceptable
+                use, porting authorization and carrier data processing in the US.
+            terms_version: The `terms_version` of GET
+                /uploadposts/phone-numbers/config.
+            values (Dict[str, Any], optional): requirement_id -> text, for
+                `text`/`date` requirements.
+            documents (Dict[str, Any], optional): requirement_id -> {filename,
+                content_base64} (PDF/JPG/PNG, 10 MB). Documents are sent to the carrier
+                and not kept by Upload-Post.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("submitPhoneNumberKyc", params, profile_username=profile_username, country=country, number_type=number_type, purchase_intent_id=purchase_intent_id, end_user=end_user, accept_terms=accept_terms, terms_version=terms_version)
+
+    def list_phone_numbers(self, **params) -> Dict:
+        """List phone numbers.
+
+        Numbers of the account (pending and active unless `status` says otherwise).
+
+        ``GET /api/uploadposts/phone-numbers``
+
+        Args:
+            status (str, optional): One status (see PhoneNumber.status).
+            profile_username (str, optional): Only this profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listPhoneNumbers", params)
+
+    def get_phone_number(self, number_id: str, **params) -> Dict:
+        """Get a phone number.
+
+        One number.
+
+        ``GET /api/uploadposts/phone-numbers/{number_id}``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getPhoneNumber", params, number_id=number_id)
+
+    def release_phone_number(self, number_id: str, confirm: bool, **params) -> Dict:
+        """Release a phone number.
+
+        Final: WhatsApp and anything else using the number stop working and the carrier
+        may give it to someone else later. Needs `confirm=true` (query or JSON body).
+        The monthly charge stops (no proration).
+
+        ``DELETE /api/uploadposts/phone-numbers/{number_id}``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            confirm: Must be true: releasing is final (without it the API answers
+                400 confirmation_required).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("releasePhoneNumber", params, number_id=number_id, confirm=confirm)
+
+    def update_phone_number_voice(self, number_id: str, **params) -> Dict:
+        """Call settings of a number.
+
+        Forwarding (`forward_to` as `tel:+E164`, only to geographic or mobile numbers in
+        the number's country or the end user's country; `null` = off), voicemail,
+        recording and transcription. Forwarded calls show this number as caller ID.
+        Voicemail always tells the caller the call is recorded and transcribed; with
+        recording off, calls are only logged as missed.
+
+        ``PATCH /api/uploadposts/phone-numbers/{number_id}/voice``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            forward_to (str, optional)
+            voicemail_enabled (bool, optional)
+            voicemail_greeting (str, optional)
+            recording_enabled (bool, optional)
+            transcription_enabled (bool, optional)
+            transcription_language (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updatePhoneNumberVoice", params, number_id=number_id)
+
+    def send_phone_number_sms(self, number_id: str, to: str, text: str, **params) -> Dict:
+        """Send an SMS.
+
+        Billed per message part. Not from US/CA numbers yet (they receive SMS).
+        Recipients who replied STOP cannot be messaged; max 10 messages per recipient
+        per 24 h and 1 per second per number; spam, adult, gambling, drugs, crypto and
+        loan content is refused.
+
+        ``POST /api/uploadposts/phone-numbers/{number_id}/sms``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            to
+            text
+            **params: Any other API field, by its API name.
+        """
+        return self._op("sendPhoneNumberSms", params, number_id=number_id, to=to, text=text)
+
+    def list_phone_number_messages(self, number_id: str, **params) -> Dict:
+        """SMS of a number.
+
+        Inbound and outbound SMS, newest first.
+
+        ``GET /api/uploadposts/phone-numbers/{number_id}/messages``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            limit (int, optional): 1-200 (default 50).
+            before (str, optional): ISO date: only older messages (pagination).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listPhoneNumberMessages", params, number_id=number_id)
+
+    def list_phone_number_calls(self, number_id: str, **params) -> Dict:
+        """Calls and voicemails of a number.
+
+        Calls newest first, with the voicemail transcript and a signed recording URL (1
+        hour).
+
+        ``GET /api/uploadposts/phone-numbers/{number_id}/calls``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            limit (int, optional): 1-200 (default 50).
+            before (str, optional): ISO date: only older calls (pagination).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listPhoneNumberCalls", params, number_id=number_id)
+
+    def list_phone_number_codes(self, number_id: str, **params) -> Dict:
+        """Verification codes received.
+
+        One-time codes (4-8 digits, also spoken in English, Spanish or Portuguese) found
+        in SMS and call transcripts of the last 30 minutes. Poll it while connecting
+        WhatsApp.
+
+        ``GET /api/uploadposts/phone-numbers/{number_id}/codes``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            since (str, optional): ISO date: only codes after it.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listPhoneNumberCodes", params, number_id=number_id)
+
+    def prepare_phone_number_whatsapp(self, number_id: str, **params) -> Dict:
+        """Get ready to receive the WhatsApp code.
+
+        For 30 minutes, calls to this number are answered, recorded (up to 90 s) and
+        transcribed so the code Meta reads out appears in GET /codes. In Meta's Embedded
+        Signup add the number and choose **Phone call**.
+
+        ``POST /api/uploadposts/phone-numbers/{number_id}/whatsapp/prepare``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            language (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("preparePhoneNumberWhatsapp", params, number_id=number_id)
+
+    def get_phone_number_port_out_info(self, number_id: str, **params) -> Dict:
+        """Move a number to another carrier.
+
+        What to give the new carrier: the name and address as submitted, the account
+        number and the number. Owner only.
+
+        ``GET /api/uploadposts/phone-numbers/{number_id}/port-out``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getPhoneNumberPortOutInfo", params, number_id=number_id)
+
+    def get_phone_numbers_usage(self, **params) -> Dict:
+        """Phone usage and charges.
+
+        Billable usage (outbound SMS, forwarded minutes, recording, transcription;
+        inbound minutes at cost; inbound SMS free) with totals in USD. Charged on the
+        next subscription invoice. Over the daily limit, outbound SMS, forwarding and
+        recording stop until midnight UTC.
+
+        ``GET /api/uploadposts/phone-numbers/usage``
+
+        Args:
+            from (str, optional): ISO date (default: start of month).
+            to (str, optional): ISO date (default: now).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getPhoneNumbersUsage", params)
 
     # </openapi:methods>

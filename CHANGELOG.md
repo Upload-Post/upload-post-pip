@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.23.0
+
+Phone numbers: buy a number inside Upload-Post and use it for WhatsApp, SMS and
+calls (paid plans only; no emergency calls). Only additions: no existing method
+changes its name, arguments or result. Until phone numbers are available for
+your account, the API answers `403 phone_numbers_not_available`.
+
+### Added
+
+- `get_phone_numbers_config`, `list_phone_number_countries`,
+  `search_available_phone_numbers`, `purchase_phone_number` (idempotent on
+  `purchase_intent_id`; `end_user`, `accept_terms`, `terms_version`),
+  `get_phone_number_kyc_fields` and `submit_phone_number_kyc` (identity documents
+  base64-encoded in `documents`), `list_phone_numbers`, `get_phone_number`,
+  `release_phone_number` (final; `confirm=True` is a required argument),
+  `get_phone_number_port_out_info`.
+- `update_phone_number_voice` (forwarding, voicemail, recording, transcription),
+  `send_phone_number_sms`, `list_phone_number_messages`, `list_phone_number_calls`,
+  `list_phone_number_codes` and `prepare_phone_number_whatsapp` (receive the WhatsApp
+  code by phone call), `get_phone_numbers_usage`.
+- Webhook events (opt-in): `sms_received`, `call_received`, `voicemail_received`,
+  `phone_number_activated`, `phone_number_declined`, `phone_number_released`,
+  `phone_number_port_out` (`update_notification_config` docs and the webhook
+  subscription events).
+- README section "Phone numbers".
+
 ## 2.22.0
 
 Covers the API features switched on in production on 2026-11-25, and only
