@@ -10876,7 +10876,7 @@ class UploadPostClient:
         (requirement_id -> text), `documents` (requirement_id -> `{filename,
         content_base64}`, PDF/JPG/PNG up to 10 MB, base64) and/or `end_user` (new
         address). Back to `pending_regulatory` (`phone_number_kyc_resubmitted` webhook);
-        once approved, `active` and billing resumes (no new proration). Never charges
+        once approved, `active` (the paid period is not charged twice). Never charges
         again. 409 `phone_number_unavailable` (`keeps_payment: true`): send
         `phone_number` = another available number, same country and type, no higher
         price. 409 `phone_number_remediation_in_progress` or 503
