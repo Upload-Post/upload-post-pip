@@ -480,7 +480,13 @@
     "listPhoneNumberCodes": "Phone numbers launch release (TT-1001): merge when production switches them on.",
     "preparePhoneNumberWhatsapp": "Phone numbers launch release (TT-1001): merge when production switches them on.",
     "getPhoneNumberPortOutInfo": "Phone numbers launch release (TT-1001): merge when production switches them on.",
-    "getPhoneNumbersUsage": "Phone numbers launch release (TT-1001): merge when production switches them on."
+    "getPhoneNumbersUsage": "Phone numbers launch release (TT-1001): merge when production switches them on.",
+    "getPhoneNumberKycRemediation": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
+    "remediatePhoneNumberKyc": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
+    "replyPhoneNumberKycReviewer": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
+    "createPhoneNumberKycLink": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
+    "listPhoneNumberKycLinks": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
+    "revokePhoneNumberKycLink": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on."
   },
   "hidden_fields": {
     "startOAuthConnection": {
@@ -523,6 +529,7 @@
       "description": "Needs the X permission list.write: the X account must have been connected or reconnected on or after 2026-11-25, otherwise the API answers `403` `x_reconnect_required`. Each call counts toward the daily X write limit shared with replies, edits, reposts and likes. X price: list create $0.010, list manage $0.005. X rate limit: 300 per 15 min per account. Read lists with `GET /uploadposts/x/read/owned_lists` and `list_members`."
     },
     "releasePhoneNumber": {
+      "description": "Final: WhatsApp and anything else using the number stop working and the carrier may give it to someone else later. Needs `confirm=true` (query or JSON body). The monthly charge stops (no proration). Releasing a number whose identity review was declined (`regulatory_declined`) cancels the purchase and refunds it.",
       "params": {
         "confirm": {
           "description": "Must be true: releasing is final (without it the API answers 400 confirmation_required).",
@@ -531,10 +538,16 @@
       }
     },
     "submitPhoneNumberKyc": {
-      "description": "Same body as the purchase plus `values` (requirement_id -> text, for `text`/`date` requirements) and `documents` (requirement_id -> `{filename, content_base64}`: PDF, JPG or PNG up to 10 MB, base64; sent to the carrier, not kept by Upload-Post). Buys the number: 202 `pending_regulatory` until approved (declined = refunded, `phone_number_declined` webhook) or `pending_payment` (paid; our carrier is confirming the order: within about 15 minutes it ends `active`, `phone_number_activated` webhook, or `failed` with the charge refunded; poll GET /uploadposts/phone-numbers/{number_id}). Repeating the same `purchase_intent_id` returns the same number. API key only."
+      "description": "Same body as the purchase plus `values` (requirement_id -> text) and `documents` (requirement_id -> `{filename, content_base64}`: PDF, JPG or PNG up to 10 MB, base64; sent to the carrier, not kept by Upload-Post). 202 `pending_regulatory` until approved, or `pending_payment` (paid; our carrier is confirming the order: within about 15 minutes it ends `active` or `failed` and refunded). Declined = `regulatory_declined` (`phone_number_declined` webhook): the payment is kept, the monthly charge paused; fix it with POST .../{number_id}/remediate (not fixed in 30 days, or released = refunded). Repeating the same `purchase_intent_id` returns the same number. API key only."
     },
     "purchasePhoneNumber": {
       "description": "Charges the prorated price on the subscription first and orders the number once paid. Paid plans only. 200 = `active`. 202 `status`: `kyc_required` (nothing charged; send the documents of `fields_url` with the same body to POST /uploadposts/phone-numbers/kyc), `pending_regulatory` (paid; our carrier is reviewing the documents) or `pending_payment` (paid; our carrier is confirming the order: within about 15 minutes it ends `active`, `phone_number_activated` webhook, or `failed` with the charge refunded; poll GET /uploadposts/phone-numbers/{number_id}). Repeating the same `purchase_intent_id` returns the same number and never charges twice. API key only. No emergency calls."
+    },
+    "remediatePhoneNumberKyc": {
+      "description": "Send ONLY what was declined (`needs_fix` in GET .../remediate): `values` (requirement_id -> text), `documents` (requirement_id -> `{filename, content_base64}`, PDF/JPG/PNG up to 10 MB, base64) and/or `end_user` (a new address). The review is submitted again: back to `pending_regulatory` (`phone_number_kyc_resubmitted` webhook); once approved, `active` and the monthly charge resumes (no new proration). Never charges again. Number gone: 409 `phone_number_unavailable` with `keeps_payment: true`; send `phone_number` = another available number of the same country and type, no higher price. Not fixed within 30 days of the decline = cancelled and refunded. Owner only."
+    },
+    "createPhoneNumberKycLink": {
+      "description": "White-label hosted page (no login, single use, 7 days) where your end user fills in the identity details and documents for one number and accepts the phone-number terms. Optional `branding` (`company_name`, `logo_url` https, `brand_color` #RRGGBB) and `language` (en, es, pt-BR); after submitting, the page sends them to `redirect_url` (https) with `?kyc=submitted&country=XX`. The purchase is billed to YOUR account (paid plan checked now and on submit: 402 `phone_numbers_paid_plan_required`). Send your end user `url`; keep `id` to list or revoke it (the token is not shown again). At most 20 active links (409 `phone_kyc_links_limit`). Owner only."
     }
   },
   "_comment_production": "Production (2026-11-25): 'excluded' leaves out every operation that is off in production; 'available' lists the ones switched on there although the spec still marks them not generally available; 'hidden_fields' and 'descriptions' keep fields and texts of features that are off out of the SDK.",

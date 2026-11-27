@@ -2560,7 +2560,8 @@ class UploadPostClient:
                 comment_received and phone number events (sms_received,
                 call_received, voicemail_received, phone_number_activated,
                 phone_number_declined, phone_number_released,
-                phone_number_port_out). The opt-in events are only sent when listed.
+                phone_number_port_out, phone_number_kyc_comment,
+                phone_number_kyc_resubmitted). The opt-in events are only sent when listed.
             webhook_url: Webhook URL for notifications.
             channels: Which channels are on, e.g. ``{"webhook": True}``
                 (``telegram``, ``slack``, ``whatsapp``, ``webhook``).
@@ -6120,6 +6121,12 @@ class UploadPostClient:
         "preparePhoneNumberWhatsapp": ("POST", "/uploadposts/phone-numbers/{number_id}/whatsapp/prepare", {"b": ["language"]}),
         "getPhoneNumberPortOutInfo": ("GET", "/uploadposts/phone-numbers/{number_id}/port-out", {}),
         "getPhoneNumbersUsage": ("GET", "/uploadposts/phone-numbers/usage", {"q": ["from", "to"]}),
+        "getPhoneNumberKycRemediation": ("GET", "/uploadposts/phone-numbers/{number_id}/remediate", {}),
+        "remediatePhoneNumberKyc": ("POST", "/uploadposts/phone-numbers/{number_id}/remediate", {"b": ["values", "documents", "end_user", "phone_number"]}),
+        "replyPhoneNumberKycReviewer": ("POST", "/uploadposts/phone-numbers/{number_id}/remediate/reply", {"b": ["text", "attachments"]}),
+        "listPhoneNumberKycLinks": ("GET", "/uploadposts/phone-numbers/kyc/share", {}),
+        "createPhoneNumberKycLink": ("POST", "/uploadposts/phone-numbers/kyc/share", {"b": ["profile_username", "country", "number_type", "phone_number", "branding", "redirect_url", "language"]}),
+        "revokePhoneNumberKycLink": ("DELETE", "/uploadposts/phone-numbers/kyc/share/{link_id}", {}),
     }
 
     # ---- Telegram ----
@@ -10621,15 +10628,15 @@ class UploadPostClient:
     def submit_phone_number_kyc(self, profile_username: str, country: str, number_type: str, purchase_intent_id: str, end_user: Dict[str, Any], accept_terms: bool, terms_version: str, **params) -> Dict:
         """Send identity documents and buy.
 
-        Same body as the purchase plus `values` (requirement_id -> text, for
-        `text`/`date` requirements) and `documents` (requirement_id -> `{filename,
-        content_base64}`: PDF, JPG or PNG up to 10 MB, base64; sent to the carrier, not
-        kept by Upload-Post). Buys the number: 202 `pending_regulatory` until approved
-        (declined = refunded, `phone_number_declined` webhook) or `pending_payment`
-        (paid; our carrier is confirming the order: within about 15 minutes it ends
-        `active`, `phone_number_activated` webhook, or `failed` with the charge
-        refunded; poll GET /uploadposts/phone-numbers/{number_id}). Repeating the same
-        `purchase_intent_id` returns the same number. API key only.
+        Same body as the purchase plus `values` (requirement_id -> text) and `documents`
+        (requirement_id -> `{filename, content_base64}`: PDF, JPG or PNG up to 10 MB,
+        base64; sent to the carrier, not kept by Upload-Post). 202 `pending_regulatory`
+        until approved, or `pending_payment` (paid; our carrier is confirming the order:
+        within about 15 minutes it ends `active` or `failed` and refunded). Declined =
+        `regulatory_declined` (`phone_number_declined` webhook): the payment is kept,
+        the monthly charge paused; fix it with POST .../{number_id}/remediate (not fixed
+        in 30 days, or released = refunded). Repeating the same `purchase_intent_id`
+        returns the same number. API key only.
 
         ``POST /api/uploadposts/phone-numbers/kyc``
 
@@ -10690,7 +10697,8 @@ class UploadPostClient:
 
         Final: WhatsApp and anything else using the number stop working and the carrier
         may give it to someone else later. Needs `confirm=true` (query or JSON body).
-        The monthly charge stops (no proration).
+        The monthly charge stops (no proration). Releasing a number whose identity
+        review was declined (`regulatory_declined`) cancels the purchase and refunds it.
 
         ``DELETE /api/uploadposts/phone-numbers/{number_id}``
 
@@ -10836,5 +10844,119 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("getPhoneNumbersUsage", params)
+
+    def get_phone_number_kyc_remediation(self, number_id: str, **params) -> Dict:
+        """Why the identity review declined a number.
+
+        Status of the carrier review, which requirements were declined (`needs_fix`),
+        the fields to send again (same shape as GET /kyc) and the reviewer thread. A
+        declined number keeps its payment: fix it with POST, no second charge. Owner
+        only.
+
+        ``GET /api/uploadposts/phone-numbers/{number_id}/remediate``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getPhoneNumberKycRemediation", params, number_id=number_id)
+
+    def remediate_phone_number_kyc(self, number_id: str, **params) -> Dict:
+        """Fix a declined identity review.
+
+        Send ONLY what was declined (`needs_fix` in GET .../remediate): `values`
+        (requirement_id -> text), `documents` (requirement_id -> `{filename,
+        content_base64}`, PDF/JPG/PNG up to 10 MB, base64) and/or `end_user` (a new
+        address). The review is submitted again: back to `pending_regulatory`
+        (`phone_number_kyc_resubmitted` webhook); once approved, `active` and the
+        monthly charge resumes (no new proration). Never charges again. Number gone: 409
+        `phone_number_unavailable` with `keeps_payment: true`; send `phone_number` =
+        another available number of the same country and type, no higher price. Not
+        fixed within 30 days of the decline = cancelled and refunded. Owner only.
+
+        ``POST /api/uploadposts/phone-numbers/{number_id}/remediate``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            values (Dict[str, Any], optional)
+            documents (Dict[str, Any], optional)
+            end_user (Dict[str, Any], optional): Who uses the number (required by
+                the carrier for every purchase). Stored encrypted.
+            phone_number (str, optional): Only when the original number is no longer
+                available.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("remediatePhoneNumberKyc", params, number_id=number_id)
+
+    def reply_phone_number_kyc_reviewer(self, number_id: str, text: str, **params) -> Dict:
+        """Reply to the identity reviewer.
+
+        Adds your message (and optional `attachments` [{filename, content_base64}],
+        PDF/JPG/PNG up to 10 MB) to the reviewer thread shown in GET /remediate. Owner
+        only.
+
+        ``POST /api/uploadposts/phone-numbers/{number_id}/remediate/reply``
+
+        Args:
+            number_id: Upload-Post id of the number (`pn_...`).
+            text
+            attachments (List[Dict[str, Any]], optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("replyPhoneNumberKycReviewer", params, number_id=number_id, text=text)
+
+    def list_phone_number_kyc_links(self, **params) -> Dict:
+        """List shareable KYC links.
+
+        Your KYC links, newest first, with their status and the number each one bought.
+        Tokens are never returned. Owner only.
+
+        ``GET /api/uploadposts/phone-numbers/kyc/share``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("listPhoneNumberKycLinks", params)
+
+    def create_phone_number_kyc_link(self, profile_username: str, country: str, number_type: str, redirect_url: str, **params) -> Dict:
+        """Shareable KYC link for an end user.
+
+        White-label hosted page (no login, single use, 7 days) where your end user fills
+        in the identity details and documents for one number and accepts the
+        phone-number terms. Optional `branding` (`company_name`, `logo_url` https,
+        `brand_color` #RRGGBB) and `language` (en, es, pt-BR); after submitting, the
+        page sends them to `redirect_url` (https) with `?kyc=submitted&country=XX`. The
+        purchase is billed to YOUR account (paid plan checked now and on submit: 402
+        `phone_numbers_paid_plan_required`). Send your end user `url`; keep `id` to list
+        or revoke it (the token is not shown again). At most 20 active links (409
+        `phone_kyc_links_limit`). Owner only.
+
+        ``POST /api/uploadposts/phone-numbers/kyc/share``
+
+        Args:
+            profile_username
+            country
+            number_type
+            phone_number (str, optional): Optional: a number from GET /available.
+            branding (Dict[str, Any], optional)
+            redirect_url: https only.
+            language (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createPhoneNumberKycLink", params, profile_username=profile_username, country=country, number_type=number_type, redirect_url=redirect_url)
+
+    def revoke_phone_number_kyc_link(self, link_id: str, **params) -> Dict:
+        """Revoke a shareable KYC link.
+
+        The link stops working at once: the hosted page answers 410
+        `phone_kyc_link_revoked`. A link already used cannot be revoked (release the
+        number instead). Owner only.
+
+        ``DELETE /api/uploadposts/phone-numbers/kyc/share/{link_id}``
+
+        Args:
+            link_id: `id` of the link (`kl_...`).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("revokePhoneNumberKycLink", params, link_id=link_id)
 
     # </openapi:methods>

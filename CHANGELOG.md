@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.24.0
+
+Phone numbers: fix a declined identity review without paying again, and
+shareable KYC links for your customers. Only additions: no existing method
+changes its name, arguments or result. Until phone numbers are available for
+your account, the API answers `403 phone_numbers_not_available`.
+
+### Added
+
+- `get_phone_number_kyc_remediation` (what the identity review declined,
+  `needs_fix`, the fields to send again and the reviewer thread),
+  `remediate_phone_number_kyc` (send only the corrections; never charges again;
+  `phone_number` when the number is gone, 409 `phone_number_unavailable` with
+  `keeps_payment: true`) and `reply_phone_number_kyc_reviewer` (message and
+  attachments to the reviewer).
+- `create_phone_number_kyc_link` (white-label hosted page, single use, 7 days:
+  `branding`, `redirect_url`, `language`; the purchase is billed to your account),
+  `list_phone_number_kyc_links` and `revoke_phone_number_kyc_link`.
+- Webhook events (opt-in): `phone_number_kyc_comment` (`comment`) and
+  `phone_number_kyc_resubmitted` (`order`), in the `update_notification_config`
+  docs.
+- README: "Fix a declined identity review" and "Let your customers verify their
+  identity with a link".
+
+### Changed
+
+- A declined identity review no longer refunds at once: `regulatory_declined`
+  keeps the payment and pauses the monthly charge; fix it with
+  `remediate_phone_number_kyc`. Not fixed within 30 days, or released, the purchase
+  is cancelled and refunded. The docs of `submit_phone_number_kyc`,
+  `release_phone_number` and the README say so.
+
 ## 2.23.0
 
 Phone numbers: buy a number inside Upload-Post and use it for WhatsApp, SMS and

@@ -845,7 +845,8 @@ client.submit_phone_number_kyc(
     values={"req_tax_id": "DE123456789"},                                # text and date requirements
     documents={"req_id_document": {"filename": "id.pdf", "content_base64": content}},  # file requirements
 )
-# 202 pending_regulatory until approved (declined = refunded), or pending_payment as for a purchase.
+# 202 pending_regulatory until approved, or pending_payment as for a purchase.
+# Declined: regulatory_declined keeps the payment (see "Fix a declined identity review").
 ```
 
 SMS, calls and the codes to connect WhatsApp (ids are `pn_...`):
@@ -875,7 +876,8 @@ usage = client.get_phone_numbers_usage()  # currency, lines, totals, total, toda
 
 Releasing is final: WhatsApp on the number stops working, the carrier may give
 the number to someone else later and the monthly charge stops (no proration).
-It needs `confirm=True` (otherwise `400` `confirmation_required`). To keep the
+Releasing a number whose identity review was declined cancels the purchase and
+refunds it. It needs `confirm=True` (otherwise `400` `confirmation_required`). To keep the
 number with another carrier, `get_phone_number_port_out_info` gives what the new
 carrier needs.
 
@@ -886,11 +888,78 @@ client.release_phone_number(number_id, confirm=True)
 Webhooks (opt-in: list them in `webhook_events`): `sms_received` (`message`),
 `call_received` and `voicemail_received` (`call`), `phone_number_activated`,
 `phone_number_declined`, `phone_number_released` and `phone_number_port_out`
-(`number`, plus `reason` or `port_out_status`). Every body has `event`,
+(`number`, plus `reason` or `port_out_status`), `phone_number_kyc_comment` (the
+identity reviewer wrote: `number`, `comment`) and `phone_number_kyc_resubmitted`
+(corrections sent: `number`, `order`). Every body has `event`,
 `platform: "phone"`, `account_id` (the `pn_...` id), `phone_number` and
-`profile_username`. Only the account owner can buy, send documents, release or
-port out a number (team members get `403` `phone_numbers_owner_only`). Terms:
+`profile_username`. Only the account owner can buy, send documents, fix a
+declined review, create KYC links, release or port out a number (team members
+get `403` `phone_numbers_owner_only`). Terms:
 https://docs.upload-post.com/resources/phone-number-terms
+
+### Fix a declined identity review
+
+A declined review does not refund at once: the number goes `regulatory_declined`,
+the payment is kept and the monthly charge is paused (nothing renews), and you
+get an email and the `phone_number_declined` webhook. Fix it and send it again,
+with no second charge. If nothing is fixed within 30 days, or you release the
+number, the purchase is cancelled and refunded and the number released. Once
+approved the number goes `active` and billing resumes (no new proration).
+
+```python
+declined_id = bought["phone_number"]["id"]  # a regulatory_declined number
+
+# What was declined, what to send again and what the reviewer wrote
+fix = client.get_phone_number_kyc_remediation(declined_id)
+# fix["requirements"]: [{"requirement_id", "label", "kind", "status", "needs_fix"}], fix["fields"] (same
+# shape as get_phone_number_kyc_fields), fix["comments"]: [{"id", "from": reviewer|you, "body", "created_at"}]
+
+# Send ONLY the corrections: values, base64 documents and/or end_user (a new address)
+with open("id-new.pdf", "rb") as fh:
+    content = base64.b64encode(fh.read()).decode()
+resent = client.remediate_phone_number_kyc(
+    declined_id,
+    documents={"req_id_document": {"filename": "id.pdf", "content_base64": content}},
+)
+# resent["status"]: "pending_regulatory" again (phone_number_kyc_resubmitted webhook).
+# If the number is gone the API answers 409 phone_number_unavailable with keeps_payment: true:
+# call it again with phone_number= another available number of the same country and
+# type at no higher price (a dearer one answers 409 phone_numbers_type_not_offered).
+
+# Answer the reviewer (text up to 2000 characters, optional PDF/JPG/PNG attachments up to 10 MB)
+client.reply_phone_number_kyc_reviewer(declined_id, "The new ID is attached.")
+```
+
+### Let your customers verify their identity with a link
+
+When the number is for one of your customers, create a link instead of
+collecting their documents yourself. The link opens a white-label page (your
+`branding`, no login, single use, valid 7 days) where your customer fills in
+the identity details and documents and accepts the phone-number terms. The
+purchase is billed to **your** account: a paid plan is checked when the link is
+created and again when the page is submitted (`402`
+`phone_numbers_paid_plan_required`). After submitting, the page sends your
+customer to `redirect_url?kyc=submitted&country=XX`, and the number follows the
+normal identity review (webhooks as above). At most 20 active links (`409`
+`phone_kyc_links_limit`).
+
+```python
+link = client.create_phone_number_kyc_link(
+    "client-a", "ES", "local",
+    "https://example.com/phone-done",  # redirect_url, https only
+    branding={"company_name": "Acme", "logo_url": "https://example.com/logo.png", "brand_color": "#4F46E5"},
+    language="es",                     # en, es or pt-BR
+    # phone_number="+34911234567",     # optional: a number from search_available_phone_numbers
+)
+# {"id": "kl_...", "url": "https://app.upload-post.com/phone-kyc/...", "expires_at": ...}: send url to your customer.
+
+# Status of each link (active, used, expired, revoked) and the number it bought (number_id)
+links = client.list_phone_number_kyc_links()["links"]
+
+# Stop a link at once (the page answers 410). A used link answers 409 phone_kyc_link_used:
+# release the number instead.
+client.revoke_phone_number_kyc_link(link["id"])
+```
 
 ## Team members (acting on the owner's account)
 
@@ -1750,6 +1819,12 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `prepare_phone_number_whatsapp` | `POST /api/uploadposts/phone-numbers/{number_id}/whatsapp/prepare` | Get ready to receive the WhatsApp code. |
 | `get_phone_number_port_out_info` | `GET /api/uploadposts/phone-numbers/{number_id}/port-out` | Move a number to another carrier. |
 | `get_phone_numbers_usage` | `GET /api/uploadposts/phone-numbers/usage` | Phone usage and charges. |
+| `get_phone_number_kyc_remediation` | `GET /api/uploadposts/phone-numbers/{number_id}/remediate` | Why the identity review declined a number. |
+| `remediate_phone_number_kyc` | `POST /api/uploadposts/phone-numbers/{number_id}/remediate` | Fix a declined identity review. |
+| `reply_phone_number_kyc_reviewer` | `POST /api/uploadposts/phone-numbers/{number_id}/remediate/reply` | Reply to the identity reviewer. |
+| `list_phone_number_kyc_links` | `GET /api/uploadposts/phone-numbers/kyc/share` | List shareable KYC links. |
+| `create_phone_number_kyc_link` | `POST /api/uploadposts/phone-numbers/kyc/share` | Shareable KYC link for an end user. |
+| `revoke_phone_number_kyc_link` | `DELETE /api/uploadposts/phone-numbers/kyc/share/{link_id}` | Revoke a shareable KYC link. |
 <!-- /openapi:methods -->
 
 ## What a TikTok connection can do (`capabilities`)

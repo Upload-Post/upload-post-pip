@@ -25,13 +25,16 @@ with open(os.path.join(ROOT, "codegen", "openapi.json"), encoding="utf-8") as fh
     SPEC = json.load(fh)
 
 PHONE_EVENTS = ["sms_received", "call_received", "voicemail_received", "phone_number_activated",
-                "phone_number_declined", "phone_number_released", "phone_number_port_out"]
+                "phone_number_declined", "phone_number_released", "phone_number_port_out",
+                "phone_number_kyc_comment", "phone_number_kyc_resubmitted"]
 METHODS = [
     "get_phone_numbers_config", "list_phone_number_countries", "search_available_phone_numbers",
     "purchase_phone_number", "get_phone_number_kyc_fields", "submit_phone_number_kyc", "list_phone_numbers",
     "get_phone_number", "release_phone_number", "update_phone_number_voice", "send_phone_number_sms",
     "list_phone_number_messages", "list_phone_number_calls", "list_phone_number_codes",
     "prepare_phone_number_whatsapp", "get_phone_number_port_out_info", "get_phone_numbers_usage",
+    "get_phone_number_kyc_remediation", "remediate_phone_number_kyc", "reply_phone_number_kyc_reviewer",
+    "create_phone_number_kyc_link", "list_phone_number_kyc_links", "revoke_phone_number_kyc_link",
 ]
 END_USER = {
     "type": "business", "first_name": "Ana", "last_name": "Garcia", "business_name": "Acme SL",
@@ -126,6 +129,84 @@ class TestPhoneNumbers(unittest.TestCase):
             with self.subTest(event=event):
                 self.assertIn(event, enum)
                 self.assertIn(event, SHIPPED)
+        doc = " ".join(UploadPostClient.update_notification_config.__doc__.split())
+        self.assertIn("phone_number_port_out, phone_number_kyc_comment, phone_number_kyc_resubmitted)", doc)
+
+    def test_a_declined_review_read_it_send_only_the_corrections_answer_the_reviewer(self):
+        self.client.get_phone_number_kyc_remediation("pn_1")
+        method, url, kwargs = self.sent()
+        self.assertEqual((method, url), ("GET", f"{BASE}/pn_1/remediate"))
+        self.assertNotIn("json", kwargs)
+
+        documents = {"req_id": {"filename": "id.pdf", "content_base64": "JVBERg=="}}
+        self.client.remediate_phone_number_kyc("pn_1", values={"req_tax": "DE2"}, documents=documents,
+                                               phone_number="+4930123")
+        method, url, kwargs = self.sent()
+        self.assertEqual((method, url), ("POST", f"{BASE}/pn_1/remediate"))
+        self.assertEqual(kwargs["json"], {"values": {"req_tax": "DE2"}, "documents": documents,
+                                          "phone_number": "+4930123"})
+        self.assertNotIn("files", kwargs)
+
+        self.client.remediate_phone_number_kyc("pn_1", end_user=END_USER)
+        self.assertEqual(self.sent()[2]["json"], {"end_user": END_USER})
+
+        attachments = [{"filename": "id.png", "content_base64": "iVBORw=="}]
+        self.client.reply_phone_number_kyc_reviewer("pn_1", "New ID attached", attachments=attachments)
+        method, url, kwargs = self.sent()
+        self.assertEqual((method, url), ("POST", f"{BASE}/pn_1/remediate/reply"))
+        self.assertEqual(kwargs["json"], {"text": "New ID attached", "attachments": attachments})
+        params = inspect.signature(UploadPostClient.reply_phone_number_kyc_reviewer).parameters
+        self.assertIs(params["text"].default, inspect.Parameter.empty)
+
+    def test_shareable_kyc_links_create_with_branding_and_redirect_list_revoke(self):
+        branding = {"company_name": "Acme", "logo_url": "https://example.com/l.png", "brand_color": "#4F46E5"}
+        self.client.create_phone_number_kyc_link("client-a", "ES", "local", "https://example.com/done",
+                                                 branding=branding, language="es")
+        method, url, kwargs = self.sent()
+        self.assertEqual((method, url), ("POST", f"{BASE}/kyc/share"))
+        self.assertEqual(kwargs["json"], {
+            "profile_username": "client-a", "country": "ES", "number_type": "local",
+            "redirect_url": "https://example.com/done", "branding": branding, "language": "es",
+        })
+        params = inspect.signature(UploadPostClient.create_phone_number_kyc_link).parameters
+        for name in ("profile_username", "country", "number_type", "redirect_url"):
+            self.assertIs(params[name].default, inspect.Parameter.empty, name)
+
+        self.client.list_phone_number_kyc_links()
+        method, url, kwargs = self.sent()
+        self.assertEqual((method, url), ("GET", f"{BASE}/kyc/share"))
+
+        self.client.revoke_phone_number_kyc_link("kl_1")
+        method, url, kwargs = self.sent()
+        self.assertEqual((method, url), ("DELETE", f"{BASE}/kyc/share/kl_1"))
+        self.assertNotIn("json", kwargs)
+        calls = self.request.call_count
+        with self.assertRaises(Exception):
+            self.client.revoke_phone_number_kyc_link("")
+        self.assertEqual(self.request.call_count, calls)
+
+    def test_the_hosted_kyc_page_endpoints_are_not_sdk_methods(self):
+        for op_id, (_, route, _meta) in UploadPostClient._OPENAPI_OPERATIONS.items():
+            self.assertNotIn("phone-kyc", route, op_id)
+
+    def test_a_declined_review_keeps_the_payment_no_text_says_it_is_refunded_at_once(self):
+        self.assertNotIn("declined = refunded", SHIPPED)
+        self.assertIsNone(re.search(r"declined[^.\n]{0,40}refunded at once",
+                                    SHIPPED.replace("no longer refunds at once", ""), re.I))
+
+        def doc(name):
+            return " ".join(getattr(UploadPostClient, name).__doc__.split())
+        self.assertRegex(doc("submit_phone_number_kyc"), r"the payment is kept, the monthly charge paused; fix it with "
+                                                         r"POST .*remediate \(not fixed in 30 days, or released = refunded\)")
+        self.assertIn("Never charges again", doc("remediate_phone_number_kyc"))
+        self.assertIn("Not fixed within 30 days of the decline = cancelled and refunded", doc("remediate_phone_number_kyc"))
+        self.assertIn("declined (`regulatory_declined`) cancels the purchase and refunds it", doc("release_phone_number"))
+        self.assertIn("billed to YOUR account", doc("create_phone_number_kyc_link"))
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
+            readme = fh.read()
+        self.assertIn("### Fix a declined identity review\n\nA declined review does not refund at once", readme)
+        self.assertIn("### Let your customers verify their identity with a link", readme)
+        self.assertIn("purchase is billed to **your** account", readme)
 
     def test_purchase_and_kyc_docs_explain_pending_payment_limits_are_integers(self):
         for name in ("purchase_phone_number", "submit_phone_number_kyc"):

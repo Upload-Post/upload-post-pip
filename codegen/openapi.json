@@ -88225,7 +88225,7 @@
       "post": {
         "operationId": "submitPhoneNumberKyc",
         "summary": "Send identity documents and buy",
-        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nSame body as the purchase plus `values` and `documents` (JSON), or multipart with the JSON in the field `data` and each file as `document_<requirement_id>`. Creates the carrier review and buys the number, which stays `pending_regulatory` until approved (declined = refunded, `phone_number_declined` webhook). API key only (never a profile JWT).",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nSame body as the purchase plus `values` and `documents` (JSON), or multipart with the JSON in the field `data` and each file as `document_<requirement_id>`. Creates the carrier review and buys the number, which stays `pending_regulatory` until approved (declined = the payment is kept and you fix it with POST /phone-numbers/{number_id}/remediate; DELETE refunds it; `phone_number_declined` webhook). API key only (never a profile JWT).",
         "requestBody": {
           "required": true,
           "content": {
@@ -89679,6 +89679,789 @@
           "Phone Numbers"
         ],
         "x-availability": "not_generally_available"
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/remediate": {
+      "get": {
+        "operationId": "getPhoneNumberKycRemediation",
+        "summary": "Why the identity review declined a number",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nStatus of the carrier review, which requirements were declined (`needs_fix`), the fields to send again (same shape as GET /kyc) and the reviewer thread. A declined number keeps its payment: fix it with POST, no second charge. Owner only.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available",
+        "responses": {
+          "200": {
+            "description": "Remediation status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    },
+                    "group_status": {
+                      "type": "string"
+                    },
+                    "decline_reason": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "requirements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requirement_id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "text",
+                              "date",
+                              "address",
+                              "file"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "example": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "approved",
+                              "unapproved",
+                              "pending-approval",
+                              "declined",
+                              "expired"
+                            ]
+                          },
+                          "needs_fix": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "end_user": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "requirements": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "requirement_id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "text",
+                                  "date",
+                                  "address",
+                                  "file"
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "example": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "approved",
+                                  "unapproved",
+                                  "pending-approval",
+                                  "declined",
+                                  "expired"
+                                ]
+                              },
+                              "needs_fix": {
+                                "type": "boolean"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "comments": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PhoneKycComment"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`) or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The number is not waiting for or declined by the identity review (`error_code`: `phone_number_not_remediable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer or refused the corrections (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "remediatePhoneNumberKyc",
+        "summary": "Fix a declined identity review",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nSend ONLY the corrected `values`, `documents` (JSON base64 or multipart `document_<requirement_id>`, JSON in `data`) and/or `end_user` (a new address). The carrier review is updated and submitted again; the number goes back to `pending_regulatory` (webhook `phone_number_kyc_resubmitted`). If the carrier cancelled the order, the same number is ordered again; if it is gone, answers 409 `phone_number_unavailable` with `keeps_payment: true`: send `phone_number` with another available number of the same country and type and no higher price. Never charges again. Owner only.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "documents": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "content_base64": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "end_user": {
+                    "$ref": "#/components/schemas/PhoneNumberEndUser"
+                  },
+                  "phone_number": {
+                    "type": "string",
+                    "description": "Only when the original number is no longer available."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resubmitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "order": {
+                      "type": "string",
+                      "enum": [
+                        "same_order",
+                        "already_ordered",
+                        "new_order",
+                        "new_order_other_number"
+                      ]
+                    },
+                    "phone_number": {
+                      "$ref": "#/components/schemas/PhoneNumber"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Nothing to fix or invalid corrections (`error_code`: `phone_numbers_kyc_invalid`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`) or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not remediable (`error_code`: `phone_number_not_remediable`), the number is gone (`error_code`: `phone_number_unavailable`, `keeps_payment: true`) or the replacement costs more (`error_code`: `phone_numbers_type_not_offered`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer or refused the corrections (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploadposts/phone-numbers/{number_id}/remediate/reply": {
+      "post": {
+        "operationId": "replyPhoneNumberKycReviewer",
+        "summary": "Reply to the identity reviewer",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nAdds your message (and optional `attachments` [{filename, content_base64}], PDF/JPG/PNG up to 10 MB) to the reviewer thread shown in GET /remediate. Owner only.",
+        "parameters": [
+          {
+            "name": "number_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Upload-Post id of the number (`pn_...`)."
+          }
+        ],
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "attachments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "filename": {
+                          "type": "string"
+                        },
+                        "content_base64": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "comment": {
+                      "$ref": "#/components/schemas/PhoneKycComment"
+                    },
+                    "attachments": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or too long text (`error_code`: `phone_numbers_invalid_request`) or an invalid attachment (`error_code`: `phone_numbers_kyc_invalid`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`) or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Phone number not found (`error_code`: `phone_number_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The number is not waiting for or declined by the identity review (`error_code`: `phone_number_not_remediable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The carrier did not answer or refused the corrections (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploadposts/phone-numbers/kyc/share": {
+      "post": {
+        "operationId": "createPhoneNumberKycLink",
+        "summary": "Shareable KYC link for an end user",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nA white-label page (no login, single use, 7 days) where your end user fills in the identity and documents for one number. The purchase is billed to YOUR account (paid plan, checked now and when the page is submitted) and the end user accepts the phone-number terms on the page. After submitting, the page sends them to `redirect_url` with `?kyc=submitted&country=XX`. At most 20 active links. Owner only.",
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "profile_username",
+                  "country",
+                  "number_type",
+                  "redirect_url"
+                ],
+                "properties": {
+                  "profile_username": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string",
+                    "example": "ES"
+                  },
+                  "number_type": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "mobile",
+                      "national"
+                    ]
+                  },
+                  "phone_number": {
+                    "type": "string",
+                    "description": "Optional: a number from GET /available."
+                  },
+                  "branding": {
+                    "type": "object",
+                    "properties": {
+                      "company_name": {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      "logo_url": {
+                        "type": "string",
+                        "description": "https"
+                      },
+                      "brand_color": {
+                        "type": "string",
+                        "example": "#4F46E5"
+                      }
+                    }
+                  },
+                  "redirect_url": {
+                    "type": "string",
+                    "description": "https only."
+                  },
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "es",
+                      "pt-BR"
+                    ],
+                    "default": "en"
+                  }
+                }
+              },
+              "example": {
+                "profile_username": "client-a",
+                "country": "ES",
+                "number_type": "local",
+                "redirect_url": "https://example.com/done",
+                "branding": {
+                  "company_name": "Acme",
+                  "brand_color": "#4F46E5"
+                },
+                "language": "es"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "url": {
+                      "type": "string",
+                      "example": "https://app.upload-post.com/phone-kyc/abc..."
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "Link id for GET/DELETE (not the token)."
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`, `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "A paid plan is required to buy numbers; it is checked again when the end user submits the page (`error_code`: `phone_numbers_paid_plan_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`) or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile not found (`error_code`: `profile_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "There are already 20 active links (`error_code`: `phone_kyc_links_limit`), or the account is billed in a currency phone numbers do not support (`error_code`: `phone_numbers_currency_unsupported`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listPhoneNumberKycLinks",
+        "summary": "List shareable KYC links",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nYour KYC links, newest first, with their status and the number each one bought. Tokens are never returned. Owner only.",
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available",
+        "responses": {
+          "200": {
+            "description": "Links.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PhoneKycLink"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`) or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploadposts/phone-numbers/kyc/share/{link_id}": {
+      "delete": {
+        "operationId": "revokePhoneNumberKycLink",
+        "summary": "Revoke a shareable KYC link",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nThe link stops working at once: the hosted page answers 410 `phone_kyc_link_revoked`. A link already used cannot be revoked (release the number instead). Owner only.",
+        "parameters": [
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "`id` of the link (`kl_...`)."
+          }
+        ],
+        "tags": [
+          "Phone Numbers"
+        ],
+        "x-availability": "not_generally_available",
+        "responses": {
+          "200": {
+            "description": "Revoked (or already revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "link": {
+                      "$ref": "#/components/schemas/PhoneKycLink"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not generally available yet (`error_code`: `phone_numbers_not_available`) or only the account owner may do this (`error_code`: `phone_numbers_owner_only`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No link with that id on this account (`error_code`: `phone_kyc_link_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The link was already used to buy a number; release the number instead (`error_code`: `phone_kyc_link_used`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -92996,9 +93779,11 @@
           "phone_number_activated",
           "phone_number_declined",
           "phone_number_released",
-          "phone_number_port_out"
+          "phone_number_port_out",
+          "phone_number_kyc_comment",
+          "phone_number_kyc_resubmitted"
         ],
-        "description": "Webhook event name (dots are accepted too: social_account.connected). youtube_video_* are accepted only while YouTube push is on, post_approval_* only while post approvals are on, linkedin_page_activity (likes, reshares, mentions, Page comments and comment edits/deletes on a subscribed LinkedIn Page: `action` reaction|repost|mention|page_comment|comment_edited|comment_deleted) only while it is on. instagram_mention_received (another account @mentioned the connected Instagram account in a caption or a comment: `mention` {type comment|caption, comment_id, media_id; text/from/parent_id when Instagram sends them}) only while it is on. dm_received, comment_received, telegram_update, the Google Business events, post_analytics_updated and the gated ones are opt-in: they are only sent if listed. sms_received, call_received, voicemail_received and phone_number_* (phone numbers, opt-in) only while phone numbers are available on the account."
+        "description": "Webhook event name (dots are accepted too: social_account.connected). youtube_video_* are accepted only while YouTube push is on, post_approval_* only while post approvals are on, linkedin_page_activity (likes, reshares, mentions, Page comments and comment edits/deletes on a subscribed LinkedIn Page: `action` reaction|repost|mention|page_comment|comment_edited|comment_deleted) only while it is on. instagram_mention_received (another account @mentioned the connected Instagram account in a caption or a comment: `mention` {type comment|caption, comment_id, media_id; text/from/parent_id when Instagram sends them}) only while it is on. dm_received, comment_received, telegram_update, the Google Business events, post_analytics_updated and the gated ones are opt-in: they are only sent if listed. sms_received, call_received, voicemail_received and phone_number_* (phone numbers, opt-in; phone_number_kyc_comment = the carrier reviewer wrote, phone_number_kyc_resubmitted = corrections sent) only while phone numbers are available on the account."
       },
       "ClientPostApproval": {
         "type": "object",
@@ -93963,6 +94748,98 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "PhoneKycComment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "enum": [
+              "reviewer",
+              "you"
+            ]
+          },
+          "record": {
+            "type": "string",
+            "enum": [
+              "requirement_group",
+              "sub_number_order"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PhoneKycLink": {
+        "type": "object",
+        "description": "A shareable KYC link as its owner sees it (the token is never returned again).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "kl_3f9c0a1b2c3d4e5f6a7b8c9d"
+          },
+          "profile_username": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "number_type": {
+            "type": "string",
+            "enum": [
+              "local",
+              "mobile",
+              "national"
+            ]
+          },
+          "phone_number": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "used",
+              "expired",
+              "revoked"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "number_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The number bought through the link (`pn_...`)."
           }
         }
       }
