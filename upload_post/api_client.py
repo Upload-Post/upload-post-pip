@@ -6107,9 +6107,9 @@ class UploadPostClient:
         "getPhoneNumbersConfig": ("GET", "/uploadposts/phone-numbers/config", {}),
         "listPhoneNumberCountries": ("GET", "/uploadposts/phone-numbers/countries", {}),
         "searchAvailablePhoneNumbers": ("GET", "/uploadposts/phone-numbers/available", {"q": ["country", "number_type", "area_code", "locality", "contains", "sms", "limit"]}),
-        "purchasePhoneNumber": ("POST", "/uploadposts/phone-numbers/purchase", {"b": ["profile_username", "country", "number_type", "phone_number", "area_code", "purchase_intent_id", "end_user", "accept_terms", "terms_version"]}),
+        "purchasePhoneNumber": ("POST", "/uploadposts/phone-numbers/purchase", {"b": ["profile_username", "country", "number_type", "phone_number", "area_code", "purchase_intent_id", "end_user", "accept_terms", "terms_version", "immediate_start_consent"]}),
         "getPhoneNumberKycFields": ("GET", "/uploadposts/phone-numbers/kyc", {"q": ["country", "number_type"]}),
-        "submitPhoneNumberKyc": ("POST", "/uploadposts/phone-numbers/kyc", {"b": ["profile_username", "country", "number_type", "phone_number", "area_code", "purchase_intent_id", "end_user", "accept_terms", "terms_version", "values", "documents"]}),
+        "submitPhoneNumberKyc": ("POST", "/uploadposts/phone-numbers/kyc", {"b": ["profile_username", "country", "number_type", "phone_number", "area_code", "purchase_intent_id", "end_user", "accept_terms", "terms_version", "immediate_start_consent", "values", "documents"]}),
         "listPhoneNumbers": ("GET", "/uploadposts/phone-numbers", {"q": ["status", "profile_username"]}),
         "getPhoneNumber": ("GET", "/uploadposts/phone-numbers/{number_id}", {}),
         "releasePhoneNumber": ("DELETE", "/uploadposts/phone-numbers/{number_id}", {"q": ["confirm"]}),
@@ -10606,6 +10606,10 @@ class UploadPostClient:
                 use, porting authorization and carrier data processing in the US.
             terms_version: The `terms_version` of GET
                 /uploadposts/phone-numbers/config.
+            immediate_start_consent (bool, optional): Required (true) when
+                `end_user.type` is `individual` (consumers): you ask to start the
+                service now, within the 14-day withdrawal period. Without it: 400
+                `immediate_start_consent_required`. Ignored for businesses.
             **params: Any other API field, by its API name.
         """
         return self._op("purchasePhoneNumber", params, profile_username=profile_username, country=country, number_type=number_type, purchase_intent_id=purchase_intent_id, end_user=end_user, accept_terms=accept_terms, terms_version=terms_version)
@@ -10656,6 +10660,10 @@ class UploadPostClient:
                 use, porting authorization and carrier data processing in the US.
             terms_version: The `terms_version` of GET
                 /uploadposts/phone-numbers/config.
+            immediate_start_consent (bool, optional): Required (true) when
+                `end_user.type` is `individual` (consumers): you ask to start the
+                service now, within the 14-day withdrawal period. Without it: 400
+                `immediate_start_consent_required`. Ignored for businesses.
             values (Dict[str, Any], optional): requirement_id -> text, for
                 `text`/`date` requirements.
             documents (Dict[str, Any], optional): requirement_id -> {filename,
@@ -10866,13 +10874,14 @@ class UploadPostClient:
 
         Send ONLY what was declined (`needs_fix` in GET .../remediate): `values`
         (requirement_id -> text), `documents` (requirement_id -> `{filename,
-        content_base64}`, PDF/JPG/PNG up to 10 MB, base64) and/or `end_user` (a new
-        address). The review is submitted again: back to `pending_regulatory`
-        (`phone_number_kyc_resubmitted` webhook); once approved, `active` and the
-        monthly charge resumes (no new proration). Never charges again. Number gone: 409
-        `phone_number_unavailable` with `keeps_payment: true`; send `phone_number` =
-        another available number of the same country and type, no higher price. Not
-        fixed within 30 days of the decline = cancelled and refunded. Owner only.
+        content_base64}`, PDF/JPG/PNG up to 10 MB, base64) and/or `end_user` (new
+        address). Back to `pending_regulatory` (`phone_number_kyc_resubmitted` webhook);
+        once approved, `active` and billing resumes (no new proration). Never charges
+        again. 409 `phone_number_unavailable` (`keeps_payment: true`): send
+        `phone_number` = another available number, same country and type, no higher
+        price. 409 `phone_number_remediation_in_progress` or 503
+        `phone_numbers_capacity` (payment kept): try again later. 30 days unfixed =
+        cancelled and refunded. Owner only.
 
         ``POST /api/uploadposts/phone-numbers/{number_id}/remediate``
 

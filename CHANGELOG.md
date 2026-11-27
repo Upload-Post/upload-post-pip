@@ -13,11 +13,19 @@ your account, the API answers `403 phone_numbers_not_available`.
   `needs_fix`, the fields to send again and the reviewer thread),
   `remediate_phone_number_kyc` (send only the corrections; never charges again;
   `phone_number` when the number is gone, 409 `phone_number_unavailable` with
-  `keeps_payment: true`) and `reply_phone_number_kyc_reviewer` (message and
+  `keeps_payment: true`; 409 `phone_number_remediation_in_progress` and 503
+  `phone_numbers_capacity` keep the payment, try again later; `order` can be
+  `order_unknown`) and `reply_phone_number_kyc_reviewer` (message and
   attachments to the reviewer).
 - `create_phone_number_kyc_link` (white-label hosted page, single use, 7 days:
   `branding`, `redirect_url`, `language`; the purchase is billed to your account),
-  `list_phone_number_kyc_links` and `revoke_phone_number_kyc_link`.
+  `list_phone_number_kyc_links` and `revoke_phone_number_kyc_link` (guide:
+  https://docs.upload-post.com/guides/phone-number-kyc-link).
+- `immediate_start_consent` on `purchase_phone_number` and `submit_phone_number_kyc`:
+  required (true) for consumers (`end_user.type` `individual`), who ask to start
+  the service within the 14-day withdrawal period; without it 400
+  `immediate_start_consent_required`. Ignored for businesses. Terms version
+  examples are 2026-11-28.
 - Webhook events (opt-in): `phone_number_kyc_comment` (`comment`) and
   `phone_number_kyc_resubmitted` (`order`), in the `update_notification_config`
   docs.

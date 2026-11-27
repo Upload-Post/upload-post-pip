@@ -815,8 +815,9 @@ end_user = {
 bought = client.purchase_phone_number(
     "my-profile", "ES", "mobile", str(uuid.uuid4()), end_user,
     accept_terms=True,  # no emergency calls, acceptable use: config["terms_url"]
-    terms_version=config["terms_version"],
+    terms_version=config["terms_version"],  # e.g. "2026-11-28"
     phone_number=numbers[0]["phone_number"],
+    immediate_start_consent=True,  # required when end_user["type"] is "individual" (consumers)
 )
 # 200: status "active". 202:
 # - "kyc_required": nothing charged yet, send the documents (below);
@@ -827,6 +828,12 @@ bought = client.purchase_phone_number(
 #   "failed" with the charge refunded: poll get_phone_number(number_id).
 # Repeating the same purchase_intent_id returns the same number.
 ```
+
+Consumers (`end_user.type` `individual`) must also send `immediate_start_consent=True`: they ask
+to start the service now, within the 14-day withdrawal period (if they withdraw
+they pay the days already provided; the right ends once the service has been
+fully provided). Without it the API answers `400` `immediate_start_consent_required`
+(with `consent_text` and `terms_url`); it is ignored for businesses.
 
 Some countries need identity documents. `get_phone_number_kyc_fields` lists
 them; send them with the same fields as the purchase. The client sends the
@@ -841,7 +848,7 @@ with open("id.pdf", "rb") as fh:
     content = base64.b64encode(fh.read()).decode()
 client.submit_phone_number_kyc(
     "my-profile", "DE", "local", purchase_intent_id, end_user,
-    accept_terms=True, terms_version=config["terms_version"],
+    accept_terms=True, terms_version=config["terms_version"], immediate_start_consent=True,
     values={"req_tax_id": "DE123456789"},                                # text and date requirements
     documents={"req_id_document": {"filename": "id.pdf", "content_base64": content}},  # file requirements
 )
@@ -925,6 +932,9 @@ resent = client.remediate_phone_number_kyc(
 # If the number is gone the API answers 409 phone_number_unavailable with keeps_payment: true:
 # call it again with phone_number= another available number of the same country and
 # type at no higher price (a dearer one answers 409 phone_numbers_type_not_offered).
+# 409 phone_number_remediation_in_progress (another correction is being sent) or 503
+# phone_numbers_capacity (a new carrier order is not possible right now): the payment is
+# kept, try again later. order "order_unknown": resolved automatically, no second order.
 
 # Answer the reviewer (text up to 2000 characters, optional PDF/JPG/PNG attachments up to 10 MB)
 client.reply_phone_number_kyc_reviewer(declined_id, "The new ID is attached.")
@@ -941,7 +951,7 @@ created and again when the page is submitted (`402`
 `phone_numbers_paid_plan_required`). After submitting, the page sends your
 customer to `redirect_url?kyc=submitted&country=XX`, and the number follows the
 normal identity review (webhooks as above). At most 20 active links (`409`
-`phone_kyc_links_limit`).
+`phone_kyc_links_limit`). Step by step: [shareable KYC links guide](https://docs.upload-post.com/guides/phone-number-kyc-link).
 
 ```python
 link = client.create_phone_number_kyc_link(

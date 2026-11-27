@@ -72,18 +72,35 @@ class TestPhoneNumbers(unittest.TestCase):
 
     def test_purchase_sends_a_json_body_with_end_user_as_given(self):
         self.client.purchase_phone_number("p", "ES", "mobile", "intent-123456", END_USER,
-                                          accept_terms=True, terms_version="2026-11-27",
+                                          accept_terms=True, terms_version="2026-11-28",
                                           phone_number="+34600000001")
         method, url, kwargs = self.sent()
         self.assertEqual((method, url), ("POST", f"{BASE}/purchase"))
         self.assertEqual(kwargs["json"], {
             "profile_username": "p", "country": "ES", "number_type": "mobile", "purchase_intent_id": "intent-123456",
-            "end_user": END_USER, "accept_terms": True, "terms_version": "2026-11-27", "phone_number": "+34600000001",
+            "end_user": END_USER, "accept_terms": True, "terms_version": "2026-11-28", "phone_number": "+34600000001",
         })
+
+    def test_consumers_send_immediate_start_consent_on_purchase_and_kyc(self):
+        individual = dict(END_USER, type="individual")
+        self.client.purchase_phone_number("p", "ES", "mobile", "intent-1", individual, accept_terms=True,
+                                          terms_version="2026-11-28", immediate_start_consent=True)
+        self.assertIs(self.sent()[2]["json"]["immediate_start_consent"], True)
+        self.client.submit_phone_number_kyc("p", "DE", "local", "intent-2", individual, True, "2026-11-28",
+                                            immediate_start_consent=True)
+        self.assertIs(self.sent()[2]["json"]["immediate_start_consent"], True)
+        for name in ("purchase_phone_number", "submit_phone_number_kyc"):
+            doc = " ".join(getattr(UploadPostClient, name).__doc__.split())
+            self.assertRegex(doc, r"immediate_start_consent \(bool, optional\): Required \(true\) when `end_user.type` "
+                                  r"is `individual` \(consumers\).*400 `immediate_start_consent_required`", name)
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
+            readme = fh.read()
+        self.assertRegex(readme, r'immediate_start_consent=True, +# required when end_user\["type"\] is "individual"')
+        self.assertIn('terms_version=config["terms_version"],  # e.g. "2026-11-28"', readme)
 
     def test_kyc_sends_values_and_base64_documents_in_json(self):
         documents = {"req_id": {"filename": "id.pdf", "content_base64": "JVBERg=="}}
-        self.client.submit_phone_number_kyc("p", "DE", "local", "intent-123456", END_USER, True, "2026-11-27",
+        self.client.submit_phone_number_kyc("p", "DE", "local", "intent-123456", END_USER, True, "2026-11-28",
                                             values={"req_tax": "DE1"}, documents=documents)
         method, url, kwargs = self.sent()
         self.assertEqual((method, url), ("POST", f"{BASE}/kyc"))
@@ -199,7 +216,11 @@ class TestPhoneNumbers(unittest.TestCase):
         self.assertRegex(doc("submit_phone_number_kyc"), r"the payment is kept, the monthly charge paused; fix it with "
                                                          r"POST .*remediate \(not fixed in 30 days, or released = refunded\)")
         self.assertIn("Never charges again", doc("remediate_phone_number_kyc"))
-        self.assertIn("Not fixed within 30 days of the decline = cancelled and refunded", doc("remediate_phone_number_kyc"))
+        self.assertIn("30 days unfixed = cancelled and refunded", doc("remediate_phone_number_kyc"))
+        self.assertIn("409 `phone_number_remediation_in_progress` or 503 `phone_numbers_capacity` (payment kept)",
+                      doc("remediate_phone_number_kyc"))
+        self.assertIn("order_unknown", SPEC["paths"]["/uploadposts/phone-numbers/{number_id}/remediate"]["post"]
+                      ["responses"]["200"]["content"]["application/json"]["schema"]["properties"]["order"]["enum"])
         self.assertIn("declined (`regulatory_declined`) cancels the purchase and refunds it", doc("release_phone_number"))
         self.assertIn("billed to YOUR account", doc("create_phone_number_kyc_link"))
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
@@ -207,6 +228,7 @@ class TestPhoneNumbers(unittest.TestCase):
         self.assertIn("### Fix a declined identity review\n\nA declined review does not refund at once", readme)
         self.assertIn("### Let your customers verify their identity with a link", readme)
         self.assertIn("purchase is billed to **your** account", readme)
+        self.assertIn("(https://docs.upload-post.com/guides/phone-number-kyc-link)", readme)
 
     def test_purchase_and_kyc_docs_explain_pending_payment_limits_are_integers(self):
         for name in ("purchase_phone_number", "submit_phone_number_kyc"):

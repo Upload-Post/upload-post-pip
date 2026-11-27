@@ -87902,8 +87902,13 @@
                   },
                   "terms_version": {
                     "type": "string",
-                    "example": "2026-11-27",
+                    "example": "2026-11-28",
                     "description": "The `terms_version` of GET /uploadposts/phone-numbers/config."
+                  },
+                  "immediate_start_consent": {
+                    "type": "boolean",
+                    "example": true,
+                    "description": "Required (true) when `end_user.type` is `individual` (consumers): the express request to start the service at once, within the 14-day withdrawal period, acknowledging that the days already provided are paid if they withdraw and that the right is lost once the service is fully provided. Without it: 400 `immediate_start_consent_required`. Ignored for businesses."
                   }
                 }
               },
@@ -87914,7 +87919,7 @@
                 "area_code": "415",
                 "purchase_intent_id": "buy-2026-11-27-0001",
                 "accept_terms": true,
-                "terms_version": "2026-11-27",
+                "terms_version": "2026-11-28",
                 "end_user": {
                   "type": "business",
                   "first_name": "Ana",
@@ -87987,7 +87992,7 @@
             }
           },
           "400": {
-            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`, `terms_not_accepted`, `phone_numbers_kyc_invalid`, `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
+            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`, `terms_not_accepted`, `immediate_start_consent_required`, `phone_numbers_kyc_invalid`, `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -88280,8 +88285,13 @@
                       },
                       "terms_version": {
                         "type": "string",
-                        "example": "2026-11-27",
+                        "example": "2026-11-28",
                         "description": "The `terms_version` of GET /uploadposts/phone-numbers/config."
+                      },
+                      "immediate_start_consent": {
+                        "type": "boolean",
+                        "example": true,
+                        "description": "Required (true) when `end_user.type` is `individual` (consumers): the express request to start the service at once, within the 14-day withdrawal period, acknowledging that the days already provided are paid if they withdraw and that the right is lost once the service is fully provided. Without it: 400 `immediate_start_consent_required`. Ignored for businesses."
                       }
                     }
                   },
@@ -88365,7 +88375,7 @@
             }
           },
           "400": {
-            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`, `terms_not_accepted`, `phone_numbers_kyc_invalid`, `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
+            "description": "Invalid request (`error_code`: `phone_numbers_invalid_request`, `terms_not_accepted`, `immediate_start_consent_required`, `phone_numbers_kyc_invalid`, `phone_numbers_country_not_available`, `phone_numbers_type_not_offered`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -89960,8 +89970,10 @@
                         "same_order",
                         "already_ordered",
                         "new_order",
-                        "new_order_other_number"
-                      ]
+                        "new_order_other_number",
+                        "order_unknown"
+                      ],
+                      "description": "`order_unknown`: the carrier did not confirm the new order in time; it is resolved automatically (no second order)."
                     },
                     "phone_number": {
                       "$ref": "#/components/schemas/PhoneNumber"
@@ -90006,7 +90018,7 @@
             }
           },
           "409": {
-            "description": "Not remediable (`error_code`: `phone_number_not_remediable`), the number is gone (`error_code`: `phone_number_unavailable`, `keeps_payment: true`) or the replacement costs more (`error_code`: `phone_numbers_type_not_offered`).",
+            "description": "Not remediable (`error_code`: `phone_number_not_remediable`), another correction is being sent (`error_code`: `phone_number_remediation_in_progress`), the number is gone (`error_code`: `phone_number_unavailable`, `keeps_payment: true`) or the replacement costs more (`error_code`: `phone_numbers_type_not_offered`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -90017,6 +90029,16 @@
           },
           "502": {
             "description": "The carrier did not answer or refused the corrections (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A new carrier order is temporarily not possible; your payment is kept, try again later (`error_code`: `phone_numbers_capacity`).",
             "content": {
               "application/json": {
                 "schema": {

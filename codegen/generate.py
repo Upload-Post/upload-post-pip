@@ -27,7 +27,8 @@ Inputs, both in codegen/:
     descriptions: operationId -> {"summary", "description", "params": {name: text
                or {"description", "schema"}}}
                used instead of the spec's texts, when those document what is off
-               in production.
+               in production or are too long to show ("params" covers
+               parameters and body fields).
     hidden_enum_values: value -> why: enum values dropped from every enum of the
                spec (e.g. a webhook event that is off in production).
     text_removals: exact pieces of text dropped from every text of the spec (the
@@ -194,6 +195,11 @@ def operations():
                     if is_binary(v) and k not in files:
                         files.append(k)
                 required_sets.append(set(required) - set(hidden))
+            # "params" of sdk-map.json "descriptions" also cover body fields.
+            for k in body_props:
+                over = texts.get('params', {}).get(k)
+                if over is not None:
+                    body_props[k] = dict(resolve(body_props[k]), **({'description': over} if isinstance(over, str) else over))
             body_required = set.intersection(*required_sets) if required_sets else set()
             security = op.get('security')
             bearer = security == [{'BearerAuth': []}]
