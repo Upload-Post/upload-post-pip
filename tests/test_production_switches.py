@@ -25,7 +25,7 @@ for name in ("upload_post/api_client.py", "README.md"):
         SHIPPED += fh.read()
 
 OFF_MARKERS = [
-    "/ads/meta", "/ads/tiktok", "instagram_mention_received", "message_reactions", "messaging_seen", "messaging_referral", "instagram_connection", "instagram/audio", "business-discovery",
+    "/ads/meta", "spark/authorize-post", "tiktok_spark_scope_missing", "authorization_days", "Spark Ads permission", "instagram_mention_received", "message_reactions", "messaging_seen", "messaging_referral", "instagram_connection", "instagram/audio", "business-discovery",
     "collaboration-invites", "threads/locations", "threads/mentions", "threads/search", "threads/profiles",
     "pending-replies", "geo-gating", "linkedin/reactions", "member-analytics", "tiktok/mentions", "ad-authorization",
     "visitor-posts", "whatsapp/flows", "participant_ids", "include_users", "instagram_paid_partnership",

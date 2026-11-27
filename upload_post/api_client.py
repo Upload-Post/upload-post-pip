@@ -6104,6 +6104,45 @@ class UploadPostClient:
         "postPinterestApi": ("POST", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
         "patchPinterestApi": ("PATCH", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
         "deletePinterestApi": ("DELETE", "/uploadposts/pinterest/api/{endpoint}", {"q": ["user", "confirm"]}),
+        "startTiktokAdsConnection": ("POST", "/uploadposts/ads/tiktok/connect", {"b": ["profile_username", "redirect_url"]}),
+        "listTiktokAdsGrantAdvertisers": ("GET", "/uploadposts/ads/tiktok/grants/{grant_id}/advertisers", {}),
+        "listTiktokAdsAccounts": ("GET", "/uploadposts/ads/tiktok/accounts", {}),
+        "connectTiktokAdsAccount": ("POST", "/uploadposts/ads/tiktok/accounts", {"b": ["grant_id", "advertiser_id", "profile_username", "default"]}),
+        "disconnectTiktokAdsAccount": ("DELETE", "/uploadposts/ads/tiktok/accounts/{advertiser_id}", {"q": ["profile_username"]}),
+        "getTiktokAdsAccount": ("GET", "/uploadposts/ads/tiktok/account", {"q": ["advertiser_id", "profile_username"]}),
+        "boostTiktokPost": ("POST", "/uploadposts/ads/tiktok/boost", {"b": ["advertiser_id", "profile_username", "post_auth_code", "post_id", "identity_id", "identity_type", "identity_authorized_bc_id", "goal", "budget", "schedule", "targeting", "landing_page_url", "call_to_action", "name", "status", "idempotency_key", "frequency", "frequency_schedule", "pause_all_levels"]}),
+        "listTiktokSparkPosts": ("GET", "/uploadposts/ads/tiktok/spark/posts", {"q": ["advertiser_id", "profile_username", "page", "page_size", "identity_id", "identity_type", "identity_authorized_bc_id", "item_type", "cursor", "count", "exclude_adsonly"]}),
+        "pauseTiktokCampaign": ("POST", "/uploadposts/ads/tiktok/campaigns/{campaign_id}/pause", {"b": ["advertiser_id", "profile_username"]}),
+        "resumeTiktokCampaign": ("POST", "/uploadposts/ads/tiktok/campaigns/{campaign_id}/resume", {"b": ["advertiser_id", "profile_username"]}),
+        "deleteTiktokCampaign": ("POST", "/uploadposts/ads/tiktok/campaigns/{campaign_id}/delete", {"b": ["advertiser_id", "profile_username", "confirm"]}),
+        "pauseTiktokAdgroup": ("POST", "/uploadposts/ads/tiktok/adgroups/{adgroup_id}/pause", {"b": ["advertiser_id", "profile_username"]}),
+        "resumeTiktokAdgroup": ("POST", "/uploadposts/ads/tiktok/adgroups/{adgroup_id}/resume", {"b": ["advertiser_id", "profile_username"]}),
+        "deleteTiktokAdgroup": ("POST", "/uploadposts/ads/tiktok/adgroups/{adgroup_id}/delete", {"b": ["advertiser_id", "profile_username", "confirm"]}),
+        "pauseTiktokAd": ("POST", "/uploadposts/ads/tiktok/ads/{ad_id}/pause", {"b": ["advertiser_id", "profile_username"]}),
+        "resumeTiktokAd": ("POST", "/uploadposts/ads/tiktok/ads/{ad_id}/resume", {"b": ["advertiser_id", "profile_username"]}),
+        "deleteTiktokAd": ("POST", "/uploadposts/ads/tiktok/ads/{ad_id}/delete", {"b": ["advertiser_id", "profile_username", "confirm"]}),
+        "listTiktokAdsLocations": ("GET", "/uploadposts/ads/tiktok/locations", {"q": ["advertiser_id", "profile_username", "goal"]}),
+        "listTiktokAdsInterests": ("GET", "/uploadposts/ads/tiktok/interests", {"q": ["advertiser_id", "profile_username", "language"]}),
+        "listTiktokCampaigns": ("GET", "/uploadposts/ads/tiktok/campaigns", {"q": ["advertiser_id", "profile_username", "ids", "page", "page_size"]}),
+        "createTiktokCampaign": ("POST", "/uploadposts/ads/tiktok/campaigns", {"b": ["advertiser_id", "profile_username", "name", "goal", "budget", "status", "idempotency_key"]}),
+        "listTiktokAdgroups": ("GET", "/uploadposts/ads/tiktok/adgroups", {"q": ["advertiser_id", "profile_username", "ids", "campaign_id", "page", "page_size"]}),
+        "createTiktokAdgroup": ("POST", "/uploadposts/ads/tiktok/adgroups", {"b": ["advertiser_id", "profile_username", "campaign_id", "name", "goal", "budget", "schedule", "targeting", "status", "idempotency_key", "frequency", "frequency_schedule"]}),
+        "listTiktokAds": ("GET", "/uploadposts/ads/tiktok/ads", {"q": ["advertiser_id", "profile_username", "ids", "campaign_id", "adgroup_id", "page", "page_size"]}),
+        "createTiktokAd": ("POST", "/uploadposts/ads/tiktok/ads", {"b": ["advertiser_id", "profile_username", "adgroup_id", "name", "post_auth_code", "post_id", "identity_type", "identity_id", "identity_authorized_bc_id", "video_id", "image_id", "ad_text", "goal", "landing_page_url", "call_to_action", "status", "idempotency_key"]}),
+        "getTiktokAdsInsights": ("GET", "/uploadposts/ads/tiktok/insights", {"q": ["advertiser_id", "profile_username", "level", "ids", "start_date", "end_date", "breakdown"]}),
+        "getTiktokCampaignInsights": ("GET", "/uploadposts/ads/tiktok/campaigns/{campaign_id}/insights", {"q": ["advertiser_id", "profile_username", "start_date", "end_date", "breakdown"]}),
+        "getTiktokAdgroupInsights": ("GET", "/uploadposts/ads/tiktok/adgroups/{adgroup_id}/insights", {"q": ["advertiser_id", "profile_username", "start_date", "end_date", "breakdown"]}),
+        "getTiktokAdInsights": ("GET", "/uploadposts/ads/tiktok/ads/{ad_id}/insights", {"q": ["advertiser_id", "profile_username", "start_date", "end_date", "breakdown"]}),
+        "uploadTiktokVideoCreative": ("POST", "/uploadposts/ads/tiktok/creatives/videos", {"b": ["advertiser_id", "profile_username", "video_url", "file_name"]}),
+        "uploadTiktokImageCreative": ("POST", "/uploadposts/ads/tiktok/creatives/images", {"b": ["advertiser_id", "profile_username", "image_url", "file_name"]}),
+        "listTiktokAdsIdentities": ("GET", "/uploadposts/ads/tiktok/identities", {"q": ["advertiser_id", "profile_username", "identity_type", "identity_authorized_bc_id", "page", "page_size"]}),
+        "listTiktokAdsAudiences": ("GET", "/uploadposts/ads/tiktok/audiences", {"q": ["advertiser_id", "profile_username", "page", "page_size"]}),
+        "createTiktokCustomerFileAudience": ("POST", "/uploadposts/ads/tiktok/audiences/customer-file", {"b": ["advertiser_id", "profile_username", "name", "identifier_type", "identifiers", "retention_in_days"]}),
+        "createTiktokLookalikeAudience": ("POST", "/uploadposts/ads/tiktok/audiences/lookalike", {"b": ["advertiser_id", "profile_username", "name", "source_audience_id", "countries", "audience_size", "include_source", "mobile_os", "placements"]}),
+        "updateTiktokCampaign": ("PATCH", "/uploadposts/ads/tiktok/campaigns/{campaign_id}", {"b": ["name", "budget", "advertiser_id", "profile_username"]}),
+        "updateTiktokAdGroup": ("PATCH", "/uploadposts/ads/tiktok/adgroups/{adgroup_id}", {"b": ["name", "budget", "advertiser_id", "profile_username"]}),
+        "updateTiktokAd": ("PATCH", "/uploadposts/ads/tiktok/ads/{ad_id}", {"b": ["name", "ad_text", "adgroup_id", "advertiser_id", "profile_username"]}),
+        "deleteTiktokAudience": ("POST", "/uploadposts/ads/tiktok/audiences/{audience_id}/delete", {"b": ["advertiser_id", "profile_username", "confirm"]}),
         "getPhoneNumbersConfig": ("GET", "/uploadposts/phone-numbers/config", {}),
         "listPhoneNumberCountries": ("GET", "/uploadposts/phone-numbers/countries", {}),
         "searchAvailablePhoneNumbers": ("GET", "/uploadposts/phone-numbers/available", {"q": ["country", "number_type", "area_code", "locality", "contains", "sms", "limit"]}),
@@ -10524,6 +10563,896 @@ class UploadPostClient:
             **params: Any other API field, by its API name.
         """
         return self._op("deletePinterestApi", params, endpoint=endpoint, user=user)
+
+    # ---- TikTok Ads ----
+    def start_tiktok_ads_connection(self, **params) -> Dict:
+        """Start connecting a TikTok ad account.
+
+        Returns `authorize_url`, TikTok's advertiser authorization page for our TikTok
+        for Business app. The advertiser approves it (TikTok sends a verification code
+        to the ad account's email) and is sent back to the Upload-Post dashboard, which
+        finishes the connection. This authorization is separate from the TikTok
+        connection used to publish. Spend always runs on the advertiser's own TikTok ad
+        account: Upload-Post never charges it.
+
+        ``POST /api/uploadposts/ads/tiktok/connect``
+
+        Args:
+            profile_username (str, optional): Link the ad account to this profile
+                when it connects.
+            redirect_url (str, optional): Where the dashboard returns after
+                connecting (http/https).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("startTiktokAdsConnection", params)
+
+    def list_tiktok_ads_grant_advertisers(self, grant_id: str, **params) -> Dict:
+        """List the ad accounts an authorization reaches.
+
+        After the authorization, lists every ad account it reaches (name, currency, time
+        zone, status) and whether it is already connected.
+
+        ``GET /api/uploadposts/ads/tiktok/grants/{grant_id}/advertisers``
+
+        Args:
+            grant_id
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokAdsGrantAdvertisers", params, grant_id=grant_id)
+
+    def list_tiktok_ads_accounts(self, **params) -> Dict:
+        """List connected TikTok ad accounts.
+
+        Connected ad accounts with the profiles linked to each. No secret is ever
+        returned. Reads Upload-Post only (no TikTok call).
+
+        ``GET /api/uploadposts/ads/tiktok/accounts``
+
+        Any API field goes in ``**params`` by its API name.
+        """
+        return self._op("listTiktokAdsAccounts", params)
+
+    def connect_tiktok_ads_account(self, grant_id: str, advertiser_id: str, **params) -> Dict:
+        """Connect an ad account of an authorization.
+
+        Connects one ad account reached by `grant_id` (checked live with TikTok). The
+        first account connected becomes the default.
+
+        ``POST /api/uploadposts/ads/tiktok/accounts``
+
+        Args:
+            grant_id
+            advertiser_id
+            profile_username (str, optional): Link it to this profile.
+            default (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("connectTiktokAdsAccount", params, grant_id=grant_id, advertiser_id=advertiser_id)
+
+    def disconnect_tiktok_ads_account(self, advertiser_id: str, **params) -> Dict:
+        """Disconnect a TikTok ad account.
+
+        Without `profile_username`: forgets the account, unlinks every profile and
+        revokes the TikTok authorization once no other connected account uses it. With
+        `profile_username`: only unlinks that profile. Campaigns keep running in TikTok
+        Ads Manager either way.
+
+        ``DELETE /api/uploadposts/ads/tiktok/accounts/{advertiser_id}``
+
+        Args:
+            advertiser_id: Connected ad account.
+            profile_username (str, optional): Only unlink this profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("disconnectTiktokAdsAccount", params, advertiser_id=advertiser_id)
+
+    def get_tiktok_ads_account(self, **params) -> Dict:
+        """Get the TikTok ad account.
+
+        Live details of the resolved ad account (name, currency, time zone, status,
+        balance, country).
+
+        ``GET /api/uploadposts/ads/tiktok/account``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTiktokAdsAccount", params)
+
+    def boost_tiktok_post(self, goal: str, budget: Dict[str, Any], targeting: Dict[str, Any], **params) -> Dict:
+        """Promote an existing TikTok post (Spark Ads).
+
+        Creates a campaign, an ad group and a Spark Ad from an organic post in one call.
+        The post is identified by `identity_id` + `post_id` for a post of a TikTok
+        account linked to the ad account (GET /uploadposts/ads/tiktok/identities and GET
+        /uploadposts/ads/tiktok/spark/posts?identity_id=, no code needed), or by
+        `post_auth_code` (generated by the post owner in the TikTok app: post → Ad
+        settings → Ad authorization, valid 7-365 days). The campaign is created paused
+        and only switched on at the end when `status` is `active`, so a half-built boost
+        never spends; with `pause_all_levels` the ad group and the ad are created paused
+        too.
+
+        ``POST /api/uploadposts/ads/tiktok/boost``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            post_auth_code (str, optional): Spark Ads authorization code of the
+                post.
+            post_id (str, optional): TikTok post id (`item_id` of GET
+                /uploadposts/ads/tiktok/spark/posts?identity_id=). Always with
+                `identity_id`.
+            identity_id (str, optional): TikTok account identity linked to the ad
+                account (GET /uploadposts/ads/tiktok/identities). With `post_id`,
+                promotes that account's post without an authorization code (Spark Ads
+                Pull).
+            identity_type (str, optional)
+            identity_authorized_bc_id (str, optional): Required with BC_AUTH_TT.
+            goal
+            budget
+            schedule (Dict[str, Any], optional)
+            targeting: Who sees the ad. `countries` (ISO codes) or `location_ids` is
+                required. Without `age_groups`/`age_min`/`age_max`, only people aged 18
+                and over.
+            landing_page_url (str, optional): Required for traffic.
+            call_to_action (str, optional): Shown only with `landing_page_url`:
+                TikTok refuses one without the other (400
+                `tiktok_ads_cta_needs_landing_page`). VIEW_PROFILE only works with the
+                followers goal (TikTok: ENGAGEMENT objective only).
+            name (str, optional)
+            status (str, optional)
+            idempotency_key (str, optional): A retry with the same key within 10
+                minutes answers 409 instead of creating a second campaign.
+            frequency (int, optional): Reach goal only: at most this many
+                impressions per person every `frequency_schedule` days. Default 3.
+            frequency_schedule (int, optional): Reach goal only: days of the
+                frequency cap. Default 7.
+            pause_all_levels (bool, optional): With `status: paused`, also create
+                the ad group and the ad paused (by default only the campaign is paused,
+                so resuming it starts delivery). Each of the three then has to be
+                resumed.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("boostTiktokPost", params, goal=goal, budget=budget, targeting=targeting)
+
+    def list_tiktok_spark_posts(self, **params) -> Dict:
+        """List posts available for Spark Ads.
+
+        Without `identity_id`: posts whose Spark Ads authorization code was applied to
+        the ad account (TikTok /tt_video/list/, paged with `page`). With `identity_id`:
+        posts of a TikTok account linked to the ad account (TikTok /identity/video/get/,
+        20 per page; pass the returned `cursor` while `has_more` is true). Use their
+        `item_id` as `post_id` with `identity_id` in POST /uploadposts/ads/tiktok/ads or
+        /boost.
+
+        ``GET /api/uploadposts/ads/tiktok/spark/posts``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            page (int, optional)
+            page_size (int, optional)
+            identity_id (str, optional): Linked TikTok account identity (GET
+                /uploadposts/ads/tiktok/identities).
+            identity_type (str, optional): With identity_id.
+            identity_authorized_bc_id (str, optional): Required with BC_AUTH_TT.
+            item_type (str, optional): With identity_id: video or photo (carousel)
+                posts.
+            cursor (str, optional): With identity_id: the `cursor` of the previous
+                page.
+            count (int, optional): With identity_id: posts per page.
+            exclude_adsonly (bool, optional): With identity_id: only organic posts
+                (TikTok returns at most the 500 most recent).
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokSparkPosts", params)
+
+    def pause_tiktok_campaign(self, campaign_id: str, **params) -> Dict:
+        """Pause a TikTok campaign.
+
+        Sets the campaign to DISABLE in TikTok. Pausing or resuming the campaign of a
+        boost pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/pause``
+
+        Args:
+            campaign_id: TikTok campaign id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("pauseTiktokCampaign", params, campaign_id=campaign_id)
+
+    def resume_tiktok_campaign(self, campaign_id: str, **params) -> Dict:
+        """Resume a TikTok campaign.
+
+        Sets the campaign to ENABLE in TikTok. Pausing or resuming the campaign of a
+        boost pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/resume``
+
+        Args:
+            campaign_id: TikTok campaign id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("resumeTiktokCampaign", params, campaign_id=campaign_id)
+
+    def delete_tiktok_campaign(self, campaign_id: str, **params) -> Dict:
+        """Delete a TikTok campaign.
+
+        Sets the campaign to DELETE in TikTok. Cannot be undone: send `{"confirm":
+        true}` (`code`: `confirmation_required` otherwise). Pausing or resuming the
+        campaign of a boost pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/delete``
+
+        Args:
+            campaign_id: TikTok campaign id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            confirm (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteTiktokCampaign", params, campaign_id=campaign_id)
+
+    def pause_tiktok_adgroup(self, adgroup_id: str, **params) -> Dict:
+        """Pause a TikTok ad group.
+
+        Sets the ad group to DISABLE in TikTok. Pausing or resuming the campaign of a
+        boost pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/pause``
+
+        Args:
+            adgroup_id: TikTok ad group id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("pauseTiktokAdgroup", params, adgroup_id=adgroup_id)
+
+    def resume_tiktok_adgroup(self, adgroup_id: str, **params) -> Dict:
+        """Resume a TikTok ad group.
+
+        Sets the ad group to ENABLE in TikTok. Pausing or resuming the campaign of a
+        boost pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/resume``
+
+        Args:
+            adgroup_id: TikTok ad group id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("resumeTiktokAdgroup", params, adgroup_id=adgroup_id)
+
+    def delete_tiktok_adgroup(self, adgroup_id: str, **params) -> Dict:
+        """Delete a TikTok ad group.
+
+        Sets the ad group to DELETE in TikTok. Cannot be undone: send `{"confirm":
+        true}` (`code`: `confirmation_required` otherwise). Pausing or resuming the
+        campaign of a boost pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/delete``
+
+        Args:
+            adgroup_id: TikTok ad group id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            confirm (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteTiktokAdgroup", params, adgroup_id=adgroup_id)
+
+    def pause_tiktok_ad(self, ad_id: str, **params) -> Dict:
+        """Pause a TikTok ad.
+
+        Sets the ad to DISABLE in TikTok. Pausing or resuming the campaign of a boost
+        pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/ads/{ad_id}/pause``
+
+        Args:
+            ad_id: TikTok ad id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("pauseTiktokAd", params, ad_id=ad_id)
+
+    def resume_tiktok_ad(self, ad_id: str, **params) -> Dict:
+        """Resume a TikTok ad.
+
+        Sets the ad to ENABLE in TikTok. Pausing or resuming the campaign of a boost
+        pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/ads/{ad_id}/resume``
+
+        Args:
+            ad_id: TikTok ad id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("resumeTiktokAd", params, ad_id=ad_id)
+
+    def delete_tiktok_ad(self, ad_id: str, **params) -> Dict:
+        """Delete a TikTok ad.
+
+        Sets the ad to DELETE in TikTok. Cannot be undone: send `{"confirm": true}`
+        (`code`: `confirmation_required` otherwise). Pausing or resuming the campaign of
+        a boost pauses or resumes the whole boost.
+
+        ``POST /api/uploadposts/ads/tiktok/ads/{ad_id}/delete``
+
+        Args:
+            ad_id: TikTok ad id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            confirm (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteTiktokAd", params, ad_id=ad_id)
+
+    def list_tiktok_ads_locations(self, **params) -> Dict:
+        """List countries for a goal.
+
+        Countries TikTok can deliver the goal to, with their TikTok `location_id`
+        (cached 7 days).
+
+        ``GET /api/uploadposts/ads/tiktok/locations``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            goal (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokAdsLocations", params)
+
+    def list_tiktok_ads_interests(self, **params) -> Dict:
+        """List interest categories.
+
+        TikTok interest categories for `targeting.interest_category_ids` (cached 7
+        days).
+
+        ``GET /api/uploadposts/ads/tiktok/interests``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            language (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokAdsInterests", params)
+
+    def list_tiktok_campaigns(self, **params) -> Dict:
+        """List TikTok campaigns.
+
+        The ad account's campaigns as TikTok returns them (all fields), including the
+        ones created outside Upload-Post. Read live from TikTok (not cached).
+
+        ``GET /api/uploadposts/ads/tiktok/campaigns``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            ids (str, optional): Comma-separated campaign ids (max 100).
+            page (int, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokCampaigns", params)
+
+    def create_tiktok_campaign(self, name: str, goal: str, **params) -> Dict:
+        """Create a TikTok campaign.
+
+        Creates a campaign, paused unless `status` is `active`. Without `budget` the
+        budget lives in the ad groups.
+
+        ``POST /api/uploadposts/ads/tiktok/campaigns``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            name
+            goal: reach = REACH, video_views = VIDEO_VIEWS, traffic = TRAFFIC
+                (website), followers = ENGAGEMENT.
+            budget (Dict[str, Any], optional)
+            status (str, optional)
+            idempotency_key (str, optional): A retry with the same key within 10
+                minutes answers 409 instead of creating it twice.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createTiktokCampaign", params, name=name, goal=goal)
+
+    def list_tiktok_adgroups(self, **params) -> Dict:
+        """List TikTok ad groups.
+
+        The ad account's ad groups as TikTok returns them (all fields), including the
+        ones created outside Upload-Post. Read live from TikTok (not cached).
+
+        ``GET /api/uploadposts/ads/tiktok/adgroups``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            ids (str, optional): Comma-separated ad group ids (max 100).
+            campaign_id (str, optional): Only ad groups of these campaigns
+                (comma-separated).
+            page (int, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokAdgroups", params)
+
+    def create_tiktok_adgroup(self, campaign_id: str, name: str, goal: str, budget: Dict[str, Any], targeting: Dict[str, Any], **params) -> Dict:
+        """Create a TikTok ad group.
+
+        Budget, schedule and targeting (countries, age, gender, interests, languages,
+        audiences) under a campaign, on the TikTok placement. `goal` must match the
+        campaign's.
+
+        ``POST /api/uploadposts/ads/tiktok/adgroups``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            campaign_id
+            name
+            goal: reach = REACH, video_views = VIDEO_VIEWS, traffic = TRAFFIC
+                (website), followers = ENGAGEMENT.
+            budget
+            schedule (Dict[str, Any], optional)
+            targeting: Who sees the ad. `countries` (ISO codes) or `location_ids` is
+                required. Without `age_groups`/`age_min`/`age_max`, only people aged 18
+                and over.
+            status (str, optional)
+            idempotency_key (str, optional): A retry with the same key within 10
+                minutes answers 409 instead of creating it twice.
+            frequency (int, optional): Reach goal only: at most this many
+                impressions per person every `frequency_schedule` days. Default 3.
+            frequency_schedule (int, optional): Reach goal only: days of the
+                frequency cap. Default 7.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createTiktokAdgroup", params, campaign_id=campaign_id, name=name, goal=goal, budget=budget, targeting=targeting)
+
+    def list_tiktok_ads(self, **params) -> Dict:
+        """List TikTok ads.
+
+        The ad account's ads as TikTok returns them (all fields), including the ones
+        created outside Upload-Post. Read live from TikTok (not cached).
+
+        ``GET /api/uploadposts/ads/tiktok/ads``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            ids (str, optional): Comma-separated ad ids (max 100).
+            campaign_id (str, optional): Only ads of these campaigns.
+            adgroup_id (str, optional): Only ads of these ad groups.
+            page (int, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokAds", params)
+
+    def create_tiktok_ad(self, adgroup_id: str, name: str, **params) -> Dict:
+        """Create a TikTok ad.
+
+        Creates a Spark Ad in an ad group: an existing post (`post_auth_code`, or
+        `identity_id` + `post_id` for a post of a TikTok account linked to the ad
+        account, from GET /uploadposts/ads/tiktok/spark/posts?identity_id=) or a new
+        video pushed as a TikTok account identity (`identity_id` from GET /identities,
+        `video_id` and cover `image_id` from POST /creatives, `ad_text`). TikTok no
+        longer accepts custom (non-Spark) identities on the TikTok placement. Paused
+        unless `status` is `active`.
+
+        ``POST /api/uploadposts/ads/tiktok/ads``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            adgroup_id
+            name
+            post_auth_code (str, optional)
+            post_id (str, optional): With identity_id: TikTok post id of the linked
+                account (Spark Ads Pull). Not with video_id/image_id.
+            identity_type (str, optional)
+            identity_id (str, optional): TikTok account identity from GET
+                /uploadposts/ads/tiktok/identities (TT_USER ids are UUIDs).
+            identity_authorized_bc_id (str, optional): Required with BC_AUTH_TT.
+            video_id (str, optional)
+            image_id (str, optional): Cover image.
+            ad_text (str, optional)
+            goal (str, optional): Pass traffic to require landing_page_url.
+            landing_page_url (str, optional)
+            call_to_action (str, optional): Shown only with `landing_page_url`:
+                TikTok refuses one without the other (400
+                `tiktok_ads_cta_needs_landing_page`). VIEW_PROFILE only works with the
+                followers goal (TikTok: ENGAGEMENT objective only).
+            status (str, optional)
+            idempotency_key (str, optional): A retry with the same key within 10
+                minutes answers 409 instead of creating it twice.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createTiktokAd", params, adgroup_id=adgroup_id, name=name)
+
+    def get_tiktok_ads_insights(self, **params) -> Dict:
+        """Report TikTok ads metrics.
+
+        Spend, impressions, clicks, CTR, CPC, CPM, reach, frequency, video views,
+        follows, likes, comments, shares and conversions from TikTok's reporting
+        (synchronous report). `breakdown` adds daily rows or splits by age, gender,
+        country or platform (audience report: spend, impressions, clicks, ctr, cpc, cpm,
+        conversion). Spend is in the ad account currency. Cached for a few minutes.
+
+        ``GET /api/uploadposts/ads/tiktok/insights``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            level (str, optional)
+            ids (str, optional): Comma-separated ids of the level (max 100); not
+                with level=advertiser.
+            start_date (str, optional): Default: 6 days before end_date.
+            end_date (str, optional): Default: today (UTC).
+            breakdown (str, optional): `day` allows at most 30 days; without it, at
+                most 365.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTiktokAdsInsights", params)
+
+    def get_tiktok_campaign_insights(self, campaign_id: str, **params) -> Dict:
+        """Report one TikTok campaign.
+
+        Spend, impressions, clicks, CTR, CPC, CPM, reach, frequency, video views,
+        follows, likes, comments, shares and conversions from TikTok's reporting
+        (synchronous report). `breakdown` adds daily rows or splits by age, gender,
+        country or platform (audience report: spend, impressions, clicks, ctr, cpc, cpm,
+        conversion). Spend is in the ad account currency. Cached for a few minutes.
+
+        ``GET /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/insights``
+
+        Args:
+            campaign_id: TikTok campaign id.
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            start_date (str, optional): Default: 6 days before end_date.
+            end_date (str, optional): Default: today (UTC).
+            breakdown (str, optional): `day` allows at most 30 days; without it, at
+                most 365.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTiktokCampaignInsights", params, campaign_id=campaign_id)
+
+    def get_tiktok_adgroup_insights(self, adgroup_id: str, **params) -> Dict:
+        """Report one TikTok ad group.
+
+        Spend, impressions, clicks, CTR, CPC, CPM, reach, frequency, video views,
+        follows, likes, comments, shares and conversions from TikTok's reporting
+        (synchronous report). `breakdown` adds daily rows or splits by age, gender,
+        country or platform (audience report: spend, impressions, clicks, ctr, cpc, cpm,
+        conversion). Spend is in the ad account currency. Cached for a few minutes.
+
+        ``GET /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/insights``
+
+        Args:
+            adgroup_id: TikTok adgroup id.
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            start_date (str, optional): Default: 6 days before end_date.
+            end_date (str, optional): Default: today (UTC).
+            breakdown (str, optional): `day` allows at most 30 days; without it, at
+                most 365.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTiktokAdgroupInsights", params, adgroup_id=adgroup_id)
+
+    def get_tiktok_ad_insights(self, ad_id: str, **params) -> Dict:
+        """Report one TikTok ad.
+
+        Spend, impressions, clicks, CTR, CPC, CPM, reach, frequency, video views,
+        follows, likes, comments, shares and conversions from TikTok's reporting
+        (synchronous report). `breakdown` adds daily rows or splits by age, gender,
+        country or platform (audience report: spend, impressions, clicks, ctr, cpc, cpm,
+        conversion). Spend is in the ad account currency. Cached for a few minutes.
+
+        ``GET /api/uploadposts/ads/tiktok/ads/{ad_id}/insights``
+
+        Args:
+            ad_id: TikTok ad id.
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            start_date (str, optional): Default: 6 days before end_date.
+            end_date (str, optional): Default: today (UTC).
+            breakdown (str, optional): `day` allows at most 30 days; without it, at
+                most 365.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("getTiktokAdInsights", params, ad_id=ad_id)
+
+    def upload_tiktok_video_creative(self, video_url: str, **params) -> Dict:
+        """Upload a video to the ad account.
+
+        TikTok downloads `video_url` into the ad account's asset library and returns
+        `video_id` for POST /uploadposts/ads/tiktok/ads.
+
+        ``POST /api/uploadposts/ads/tiktok/creatives/videos``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            video_url
+            file_name (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("uploadTiktokVideoCreative", params, video_url=video_url)
+
+    def upload_tiktok_image_creative(self, image_url: str, **params) -> Dict:
+        """Upload an image to the ad account.
+
+        TikTok downloads `image_url` into the ad account's asset library and returns
+        `image_id` for POST /uploadposts/ads/tiktok/ads.
+
+        ``POST /api/uploadposts/ads/tiktok/creatives/images``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            image_url
+            file_name (str, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("uploadTiktokImageCreative", params, image_url=image_url)
+
+    def list_tiktok_ads_identities(self, **params) -> Dict:
+        """List TikTok identities of the ad account.
+
+        TikTok accounts the ad account can run Spark Ads as (`can_push_video`,
+        `can_pull_video`).
+
+        ``GET /api/uploadposts/ads/tiktok/identities``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            identity_type (str, optional)
+            identity_authorized_bc_id (str, optional)
+            page (int, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokAdsIdentities", params)
+
+    def list_tiktok_ads_audiences(self, **params) -> Dict:
+        """List custom and lookalike audiences.
+
+        Audiences of the ad account (owned and shared).
+
+        ``GET /api/uploadposts/ads/tiktok/audiences``
+
+        Args:
+            advertiser_id (str, optional): Connected TikTok ad account. Default: the
+                one linked to `profile_username`, the only one, or the default one. Also
+                accepted as the `X-Ads-Account-Id` header.
+            profile_username (str, optional): Use ONLY the ad account linked to this
+                profile (never the default).
+            page (int, optional)
+            page_size (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("listTiktokAdsAudiences", params)
+
+    def create_tiktok_customer_file_audience(self, name: str, identifier_type: str, identifiers: List[str], **params) -> Dict:
+        """Create a custom audience from emails or phones.
+
+        Normalises (emails lowercased; phones in E.164, e.g. +34600112233) and SHA-256
+        hashes every identifier inside Upload-Post before sending the file to TikTok;
+        values already hashed (64 hex characters) pass through. Raw identifiers are
+        never stored or logged. TikTok needs 30-60 minutes to process the audience and
+        at least 1,000 matched people to target it.
+
+        ``POST /api/uploadposts/ads/tiktok/audiences/customer-file``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            name
+            identifier_type
+            identifiers
+            retention_in_days (int, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createTiktokCustomerFileAudience", params, name=name, identifier_type=identifier_type, identifiers=identifiers)
+
+    def create_tiktok_lookalike_audience(self, name: str, source_audience_id: str, countries: List[str], **params) -> Dict:
+        """Create a lookalike audience.
+
+        Builds a lookalike from an existing audience (not a lookalike, at least 100
+        people) for the given countries.
+
+        ``POST /api/uploadposts/ads/tiktok/audiences/lookalike``
+
+        Args:
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            name
+            source_audience_id
+            countries: ISO country codes.
+            audience_size (str, optional)
+            include_source (bool, optional)
+            mobile_os (str, optional)
+            placements (List[str], optional): Default ["TikTok"].
+            **params: Any other API field, by its API name.
+        """
+        return self._op("createTiktokLookalikeAudience", params, name=name, source_audience_id=source_audience_id, countries=countries)
+
+    def update_tiktok_campaign(self, campaign_id: str, **params) -> Dict:
+        """Edit a TikTok campaign.
+
+        Renames the campaign or changes its budget (`/campaign/update/`). Only the
+        fields sent change; the status is changed with `/pause`, `/resume` or `/delete`.
+        A budget can only be changed on a campaign that already has a daily or lifetime
+        budget; on a no-limit campaign it answers `400` `campaign_without_budget`
+        (change its ad groups instead).
+
+        ``PATCH /api/uploadposts/ads/tiktok/campaigns/{campaign_id}``
+
+        Args:
+            campaign_id: TikTok campaign id.
+            name (str, optional): New campaign name.
+            budget (Any, optional): New budget amount, in the ad account currency (a
+                number, or `{"amount": n}`).
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateTiktokCampaign", params, campaign_id=campaign_id)
+
+    def update_tiktok_ad_group(self, adgroup_id: str, **params) -> Dict:
+        """Edit a TikTok ad group.
+
+        Renames the ad group or changes its budget (`/adgroup/update/`). Only the fields
+        sent change. TikTok requires a new budget of at least 105% of what the ad group
+        already spent.
+
+        ``PATCH /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}``
+
+        Args:
+            adgroup_id: TikTok ad group id.
+            name (str, optional): New ad group name.
+            budget (Any, optional): New budget amount, in the ad account currency (a
+                number, or `{"amount": n}`).
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateTiktokAdGroup", params, adgroup_id=adgroup_id)
+
+    def update_tiktok_ad(self, ad_id: str, **params) -> Dict:
+        """Edit a TikTok ad.
+
+        Renames the ad or changes its text (`/ad/update/` in incremental mode: every
+        other field of the creative stays). Editing the text sends the ad to TikTok's
+        review again. The text of an ad that promotes an existing TikTok post is the
+        post's caption: sending `ad_text` for it answers 400
+        `tiktok_ads_spark_text_fixed`.
+
+        ``PATCH /api/uploadposts/ads/tiktok/ads/{ad_id}``
+
+        Args:
+            ad_id: TikTok ad id.
+            name (str, optional): New ad name.
+            ad_text (str, optional): New ad text.
+            adgroup_id (str, optional): Ad group of the ad. Optional: read from
+                TikTok when missing.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            **params: Any other API field, by its API name.
+        """
+        return self._op("updateTiktokAd", params, ad_id=ad_id)
+
+    def delete_tiktok_audience(self, audience_id: str, **params) -> Dict:
+        """Delete a TikTok custom audience.
+
+        Deletes a custom or lookalike audience of the ad account
+        (`/dmp/custom_audience/delete/`). Cannot be undone: send `{"confirm": true}`.
+
+        ``POST /api/uploadposts/ads/tiktok/audiences/{audience_id}/delete``
+
+        Args:
+            audience_id: TikTok custom audience id.
+            advertiser_id (str, optional): Connected ad account (see `advertiser_id`
+                query).
+            profile_username (str, optional): Use only the ad account linked to this
+                profile.
+            confirm (bool, optional)
+            **params: Any other API field, by its API name.
+        """
+        return self._op("deleteTiktokAudience", params, audience_id=audience_id)
 
     # ---- Phone Numbers ----
     def get_phone_numbers_config(self, **params) -> Dict:

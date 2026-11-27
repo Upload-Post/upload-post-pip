@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.25.0
+
+TikTok Ads: run ads on your own TikTok ad account (TikTok charges the spend;
+Upload-Post never does). Only additions: no existing method changes its name,
+arguments or result. Launch release: published when TikTok Ads is switched on
+for every customer.
+
+### Added
+
+- 39 methods under "TikTok Ads": connect the ad account
+  (`start_tiktok_ads_connection`, `list_tiktok_ads_accounts`,
+  `get_tiktok_ads_account`, `list_tiktok_ads_grant_advertisers`,
+  `connect_tiktok_ads_account`, `disconnect_tiktok_ads_account`); promote a post
+  in one call (`boost_tiktok_post`: campaign + ad group + Spark Ad from
+  `identity_id` + `post_id` of the TikTok account linked to the ad account,
+  paused by default, `pause_all_levels=True` pauses the three) with
+  `list_tiktok_ads_identities` and `list_tiktok_spark_posts`; campaigns, ad groups
+  and ads (`create_tiktok_campaign`, `create_tiktok_adgroup`, `create_tiktok_ad`,
+  `list_tiktok_campaigns`, `list_tiktok_adgroups`, `list_tiktok_ads`,
+  `update_tiktok_campaign`, `update_tiktok_ad_group`, `update_tiktok_ad`, and
+  `pause_*`/`resume_*`/`delete_*` per level, deletes with `confirm=True`); reports
+  (`get_tiktok_ads_insights` and per campaign, ad group and ad); targeting
+  (`list_tiktok_ads_locations`, `list_tiktok_ads_interests`), audiences
+  (`list_tiktok_ads_audiences`, `create_tiktok_customer_file_audience` hashed
+  with SHA-256 before it leaves Upload-Post, `create_tiktok_lookalike_audience`,
+  `delete_tiktok_audience`) and creatives (`upload_tiktok_video_creative`,
+  `upload_tiktok_image_creative`).
+- README section "TikTok Ads".
+- codegen/openapi.json gets only the TikTok Ads paths, its tag and the
+  TiktokAdsAccount / TiktokAdsError schemas from the backend (sass-ai
+  origin/staging 9ed25fa5); nothing else of the newer spec. sdk-map.json lists the
+  39 operations under "available".
+
+### Not included
+
+- Boosting a post of the profile's own TikTok connection without the linked
+  ad-account identity (Upload-Post generating the Spark authorization code): it
+  needs a TikTok permission Upload-Post does not have. The tests fail if it
+  reaches the SDK.
+
 ## 2.24.0
 
 Phone numbers: fix a declined identity review without paying again, and

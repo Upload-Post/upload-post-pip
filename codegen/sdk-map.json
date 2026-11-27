@@ -363,42 +363,6 @@
     "removeTiktokBrandHashtag": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok mentions / Spark.",
     "listTiktokBrandHashtagPosts": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok mentions / Spark.",
     "getTiktokMusicVideos": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok music videos.",
-    "startTiktokAdsConnection": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAdsGrantAdvertisers": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAdsAccounts": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "connectTiktokAdsAccount": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "disconnectTiktokAdsAccount": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "getTiktokAdsAccount": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "boostTiktokPost": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "authorizeTiktokPostForSparkAds": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokSparkPosts": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "pauseTiktokCampaign": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "resumeTiktokCampaign": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "deleteTiktokCampaign": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "pauseTiktokAdgroup": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "resumeTiktokAdgroup": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "deleteTiktokAdgroup": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "pauseTiktokAd": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "resumeTiktokAd": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "deleteTiktokAd": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAdsLocations": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAdsInterests": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokCampaigns": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "createTiktokCampaign": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAdgroups": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "createTiktokAdgroup": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAds": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "createTiktokAd": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "getTiktokAdsInsights": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "getTiktokCampaignInsights": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "getTiktokAdgroupInsights": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "getTiktokAdInsights": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "uploadTiktokVideoCreative": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "uploadTiktokImageCreative": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAdsIdentities": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "listTiktokAdsAudiences": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "createTiktokCustomerFileAudience": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
-    "createTiktokLookalikeAudience": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. TikTok Ads.",
     "listLinkedInReactions": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. LinkedIn.",
     "getLinkedInMemberAnalytics": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. LinkedIn.",
     "searchThreadsLocations": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Threads (needs permissions not granted yet).",
@@ -430,7 +394,8 @@
     "updateInstagramEvent": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Instagram Unified Login.",
     "searchInstagramCreators": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Instagram Unified Login.",
     "listMetaAdsPages": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Meta Ads.",
-    "listMetaAdsPagePosts": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Meta Ads."
+    "listMetaAdsPagePosts": "Off in production (switch off on 2026-11-25): the SDK must not offer it until it is switched on. Meta Ads.",
+    "authorizeTiktokPostForSparkAds": "TikTok Ads: needs TikTok's biz.spark.auth permission, which Upload-Post's TikTok app does not have; the SDK must not offer it (and neither the boost of the profile's own post that depends on it)."
   },
   "names": {},
   "overrides": {},
@@ -486,11 +451,53 @@
     "replyPhoneNumberKycReviewer": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
     "createPhoneNumberKycLink": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
     "listPhoneNumberKycLinks": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
-    "revokePhoneNumberKycLink": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on."
+    "revokePhoneNumberKycLink": "Phone numbers KYC remediation and shareable KYC links (TT-1001): merge when production switches them on.",
+    "startTiktokAdsConnection": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAdsGrantAdvertisers": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAdsAccounts": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "connectTiktokAdsAccount": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "disconnectTiktokAdsAccount": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "getTiktokAdsAccount": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "boostTiktokPost": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokSparkPosts": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "pauseTiktokCampaign": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "resumeTiktokCampaign": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "deleteTiktokCampaign": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "pauseTiktokAdgroup": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "resumeTiktokAdgroup": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "deleteTiktokAdgroup": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "pauseTiktokAd": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "resumeTiktokAd": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "deleteTiktokAd": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAdsLocations": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAdsInterests": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokCampaigns": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "createTiktokCampaign": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAdgroups": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "createTiktokAdgroup": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAds": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "createTiktokAd": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "getTiktokAdsInsights": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "getTiktokCampaignInsights": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "getTiktokAdgroupInsights": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "getTiktokAdInsights": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "uploadTiktokVideoCreative": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "uploadTiktokImageCreative": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAdsIdentities": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "listTiktokAdsAudiences": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "createTiktokCustomerFileAudience": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "createTiktokLookalikeAudience": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "updateTiktokCampaign": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "updateTiktokAdGroup": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "updateTiktokAd": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty).",
+    "deleteTiktokAudience": "TikTok Ads launch release: merge when production switches TikTok Ads on for every customer (TIKTOK_ADS_ALLOWLIST empty)."
   },
   "hidden_fields": {
     "startOAuthConnection": {
       "instagram_connection": "Instagram Unified Login is off in production."
+    },
+    "boostTiktokPost": {
+      "authorization_days": "Only for the boost of the profile's own post, which needs a TikTok permission Upload-Post does not have."
     }
   },
   "descriptions": {
@@ -554,6 +561,21 @@
     },
     "createPhoneNumberKycLink": {
       "description": "White-label hosted page (no login, single use, 7 days) where your end user fills in the identity details and documents for one number and accepts the phone-number terms. Optional `branding` (`company_name`, `logo_url` https, `brand_color` #RRGGBB) and `language` (en, es, pt-BR); after submitting, the page sends them to `redirect_url` (https) with `?kyc=submitted&country=XX`. The purchase is billed to YOUR account (paid plan checked now and on submit: 402 `phone_numbers_paid_plan_required`). Send your end user `url`; keep `id` to list or revoke it (the token is not shown again). At most 20 active links (409 `phone_kyc_links_limit`). Owner only."
+    },
+    "boostTiktokPost": {
+      "description": "Creates a campaign, an ad group and a Spark Ad from an organic post in one call. The post is identified by `identity_id` + `post_id` for a post of a TikTok account linked to the ad account (GET /uploadposts/ads/tiktok/identities and GET /uploadposts/ads/tiktok/spark/posts?identity_id=, no code needed), or by `post_auth_code` (generated by the post owner in the TikTok app: post → Ad settings → Ad authorization, valid 7-365 days). The campaign is created paused and only switched on at the end when `status` is `active`, so a half-built boost never spends; with `pause_all_levels` the ad group and the ad are created paused too. If a later step fails, the error lists in `details.created` what already exists (paused). Goals: `reach` (REACH/CPM), `video_views` (ENGAGED_VIEW/CPV), `traffic` (CLICK/CPC, needs `landing_page_url`), `followers` (ENGAGEMENT/FOLLOWERS). Spend runs on your TikTok ad account.",
+      "params": {
+        "post_id": "TikTok post id (`item_id` of GET /uploadposts/ads/tiktok/spark/posts?identity_id=). Always with `identity_id`."
+      }
+    },
+    "listTiktokCampaigns": {
+      "description": "The ad account's campaigns as TikTok returns them (all fields), including the ones created outside Upload-Post. Read live from TikTok (not cached)."
+    },
+    "listTiktokAdgroups": {
+      "description": "The ad account's ad groups as TikTok returns them (all fields), including the ones created outside Upload-Post. Read live from TikTok (not cached)."
+    },
+    "listTiktokAds": {
+      "description": "The ad account's ads as TikTok returns them (all fields), including the ones created outside Upload-Post. Read live from TikTok (not cached)."
     }
   },
   "_comment_production": "Production (2026-11-25): 'excluded' leaves out every operation that is off in production; 'available' lists the ones switched on there although the spec still marks them not generally available; 'hidden_fields' and 'descriptions' keep fields and texts of features that are off out of the SDK.",

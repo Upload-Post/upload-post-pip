@@ -973,6 +973,57 @@ links = client.list_phone_number_kyc_links()["links"]
 client.revoke_phone_number_kyc_link(link["id"])
 ```
 
+## TikTok Ads
+
+Run TikTok ads on your own TikTok ad account
+([guide](https://docs.upload-post.com/api/tiktok-ads)). TikTok charges the ad
+spend to that ad account; Upload-Post never does. Everything is created
+**paused** unless you send `status="active"`.
+
+Connect the ad account once with `start_tiktok_ads_connection()` (open the
+returned `authorize_url` in a browser; the Upload-Post dashboard finishes it).
+With several ad accounts, pick one per call with `advertiser_id=`, or send
+`profile_username=` to use only the account linked to that profile.
+
+**Boost a post** of the TikTok account linked to the ad account in one call
+(campaign + ad group + Spark Ad):
+
+```python
+identities = client.list_tiktok_ads_identities(profile_username="my-profile")["identities"]
+identity_id = identities[0]["identity_id"]
+posts = client.list_tiktok_spark_posts(profile_username="my-profile", identity_id=identity_id)["posts"]
+
+boost = client.boost_tiktok_post(
+    "reach",                                  # reach | video_views | traffic | followers
+    {"amount": 20, "type": "daily"},          # TikTok's minimum is about 20 EUR a day per ad group
+    {"countries": ["ES"], "age_min": 18, "age_max": 44},
+    profile_username="my-profile",
+    identity_id=identity_id,
+    post_id=posts[0]["item_id"],
+    pause_all_levels=True,                    # campaign, ad group and ad all paused
+    idempotency_key="boost-summer-001",
+)
+
+# Start it: with pause_all_levels resume the three; without it, the campaign alone.
+client.resume_tiktok_ad(boost["ad_id"], profile_username="my-profile")
+client.resume_tiktok_adgroup(boost["adgroup_id"], profile_username="my-profile")
+client.resume_tiktok_campaign(boost["campaign_id"], profile_username="my-profile")
+
+report = client.get_tiktok_campaign_insights(boost["campaign_id"], profile_username="my-profile", breakdown="day")
+```
+
+Step by step: `create_tiktok_campaign`, `create_tiktok_adgroup` (budget,
+schedule, targeting) and `create_tiktok_ad` (`identity_id` + `post_id`, optional
+`landing_page_url` and `call_to_action`). Edit with `update_tiktok_campaign`,
+`update_tiktok_ad_group` and `update_tiktok_ad`; `pause_*`, `resume_*` and
+`delete_*` (`confirm=True`) per level. TikTok's rules the API reports: a
+`call_to_action` needs a `landing_page_url` (`tiktok_ads_cta_needs_landing_page`),
+`VIEW_PROFILE` only with the `followers` goal, the text of an ad made from a post
+is its caption (`tiktok_ads_spark_text_fixed`), a campaign without its own budget
+is edited through its ad groups (`campaign_without_budget`), and without an age
+range only people aged 18 and over see the ad. Every method is listed under
+"TikTok Ads" in [Everything else in the API](#everything-else-in-the-api).
+
 ## Team members (acting on the owner's account)
 
 ```python
@@ -1809,6 +1860,50 @@ Methods marked *not generally available* answer HTTP 503 until the feature is sw
 | `post_pinterest_api` | `POST /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 POST (create a board or a board section). |
 | `patch_pinterest_api` | `PATCH /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 PATCH (update a board or a board section). |
 | `delete_pinterest_api` | `DELETE /api/uploadposts/pinterest/api/{endpoint}` | Pinterest API v5 DELETE (delete a board or a board section). |
+
+### TikTok Ads
+
+| Method | Endpoint | What it does |
+| :-- | :-- | :-- |
+| `start_tiktok_ads_connection` | `POST /api/uploadposts/ads/tiktok/connect` | Start connecting a TikTok ad account. |
+| `list_tiktok_ads_grant_advertisers` | `GET /api/uploadposts/ads/tiktok/grants/{grant_id}/advertisers` | List the ad accounts an authorization reaches. |
+| `list_tiktok_ads_accounts` | `GET /api/uploadposts/ads/tiktok/accounts` | List connected TikTok ad accounts. |
+| `connect_tiktok_ads_account` | `POST /api/uploadposts/ads/tiktok/accounts` | Connect an ad account of an authorization. |
+| `disconnect_tiktok_ads_account` | `DELETE /api/uploadposts/ads/tiktok/accounts/{advertiser_id}` | Disconnect a TikTok ad account. |
+| `get_tiktok_ads_account` | `GET /api/uploadposts/ads/tiktok/account` | Get the TikTok ad account. |
+| `boost_tiktok_post` | `POST /api/uploadposts/ads/tiktok/boost` | Promote an existing TikTok post (Spark Ads). |
+| `list_tiktok_spark_posts` | `GET /api/uploadposts/ads/tiktok/spark/posts` | List posts available for Spark Ads. |
+| `pause_tiktok_campaign` | `POST /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/pause` | Pause a TikTok campaign. |
+| `resume_tiktok_campaign` | `POST /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/resume` | Resume a TikTok campaign. |
+| `delete_tiktok_campaign` | `POST /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/delete` | Delete a TikTok campaign. |
+| `pause_tiktok_adgroup` | `POST /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/pause` | Pause a TikTok ad group. |
+| `resume_tiktok_adgroup` | `POST /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/resume` | Resume a TikTok ad group. |
+| `delete_tiktok_adgroup` | `POST /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/delete` | Delete a TikTok ad group. |
+| `pause_tiktok_ad` | `POST /api/uploadposts/ads/tiktok/ads/{ad_id}/pause` | Pause a TikTok ad. |
+| `resume_tiktok_ad` | `POST /api/uploadposts/ads/tiktok/ads/{ad_id}/resume` | Resume a TikTok ad. |
+| `delete_tiktok_ad` | `POST /api/uploadposts/ads/tiktok/ads/{ad_id}/delete` | Delete a TikTok ad. |
+| `list_tiktok_ads_locations` | `GET /api/uploadposts/ads/tiktok/locations` | List countries for a goal. |
+| `list_tiktok_ads_interests` | `GET /api/uploadposts/ads/tiktok/interests` | List interest categories. |
+| `list_tiktok_campaigns` | `GET /api/uploadposts/ads/tiktok/campaigns` | List TikTok campaigns. |
+| `create_tiktok_campaign` | `POST /api/uploadposts/ads/tiktok/campaigns` | Create a TikTok campaign. |
+| `list_tiktok_adgroups` | `GET /api/uploadposts/ads/tiktok/adgroups` | List TikTok ad groups. |
+| `create_tiktok_adgroup` | `POST /api/uploadposts/ads/tiktok/adgroups` | Create a TikTok ad group. |
+| `list_tiktok_ads` | `GET /api/uploadposts/ads/tiktok/ads` | List TikTok ads. |
+| `create_tiktok_ad` | `POST /api/uploadposts/ads/tiktok/ads` | Create a TikTok ad. |
+| `get_tiktok_ads_insights` | `GET /api/uploadposts/ads/tiktok/insights` | Report TikTok ads metrics. |
+| `get_tiktok_campaign_insights` | `GET /api/uploadposts/ads/tiktok/campaigns/{campaign_id}/insights` | Report one TikTok campaign. |
+| `get_tiktok_adgroup_insights` | `GET /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}/insights` | Report one TikTok ad group. |
+| `get_tiktok_ad_insights` | `GET /api/uploadposts/ads/tiktok/ads/{ad_id}/insights` | Report one TikTok ad. |
+| `upload_tiktok_video_creative` | `POST /api/uploadposts/ads/tiktok/creatives/videos` | Upload a video to the ad account. |
+| `upload_tiktok_image_creative` | `POST /api/uploadposts/ads/tiktok/creatives/images` | Upload an image to the ad account. |
+| `list_tiktok_ads_identities` | `GET /api/uploadposts/ads/tiktok/identities` | List TikTok identities of the ad account. |
+| `list_tiktok_ads_audiences` | `GET /api/uploadposts/ads/tiktok/audiences` | List custom and lookalike audiences. |
+| `create_tiktok_customer_file_audience` | `POST /api/uploadposts/ads/tiktok/audiences/customer-file` | Create a custom audience from emails or phones. |
+| `create_tiktok_lookalike_audience` | `POST /api/uploadposts/ads/tiktok/audiences/lookalike` | Create a lookalike audience. |
+| `update_tiktok_campaign` | `PATCH /api/uploadposts/ads/tiktok/campaigns/{campaign_id}` | Edit a TikTok campaign. |
+| `update_tiktok_ad_group` | `PATCH /api/uploadposts/ads/tiktok/adgroups/{adgroup_id}` | Edit a TikTok ad group. |
+| `update_tiktok_ad` | `PATCH /api/uploadposts/ads/tiktok/ads/{ad_id}` | Edit a TikTok ad. |
+| `delete_tiktok_audience` | `POST /api/uploadposts/ads/tiktok/audiences/{audience_id}/delete` | Delete a TikTok custom audience. |
 
 ### Phone Numbers
 
