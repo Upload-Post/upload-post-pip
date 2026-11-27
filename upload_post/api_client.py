@@ -10537,9 +10537,10 @@ class UploadPostClient:
     def list_phone_number_countries(self, **params) -> Dict:
         """Countries and prices of phone numbers.
 
-        Countries and number types on sale, cheapest first. Price per month in USD cents
-        (3 to 30 USD); `needs_kyc` = identity documents required; `sms` = can receive
-        SMS, `sms_send` = can send.
+        Countries and number types on sale, cheapest first. Price per month in cents of
+        the account's billing currency (3 to 30: $3 = 3 EUR = 3 GBP, the amount
+        charged); `needs_kyc` = identity documents required; `sms` = can receive SMS,
+        `sms_send` = can send.
 
         ``GET /api/uploadposts/phone-numbers/countries``
 
@@ -10818,9 +10819,9 @@ class UploadPostClient:
         """Phone usage and charges.
 
         Billable usage (outbound SMS, forwarded minutes, recording, transcription;
-        inbound minutes at cost; inbound SMS free) with totals in USD. Charged on the
-        next subscription invoice. Over the daily limit, outbound SMS, forwarding and
-        recording stop until midnight UTC.
+        inbound minutes at cost; inbound SMS free) with totals in the account's billing
+        currency. Charged on the next subscription invoice. Over the daily limit,
+        outbound SMS, forwarding and recording stop until midnight UTC.
 
         ``GET /api/uploadposts/phone-numbers/usage``
 

@@ -767,9 +767,12 @@ is nowhere to send it.
 Buy a phone number inside Upload-Post and use it for WhatsApp, SMS and calls
 ([guide](https://docs.upload-post.com/api/phone-numbers)). Paid plans only (a
 trial or the Free plan answers `402` `phone_numbers_paid_plan_required` with
-`upgrade_url`). Each number costs $3 to $30 per month depending on country and
-type (no setup fee), charged on your subscription; usage (outbound SMS,
-forwarded minutes, recording, transcription) goes on the next invoice. Numbers
+`upgrade_url`). Each number costs 3 to 30 per month in your account's billing
+currency (USD, EUR or GBP, the same amount in each: $3 = 3 EUR = 3 GBP),
+depending on country and type, with no setup fee, charged on your subscription;
+usage (outbound SMS, forwarded minutes, recording, transcription) goes on the
+next invoice. An account billed in another currency gets `409`
+`phone_numbers_currency_unsupported`. Numbers
 **cannot call emergency services** (112/911) and make no outbound calls. If
 phone numbers are not available for your account yet, `get_phone_numbers_config`
 answers `enabled: false` and the other methods `403` `phone_numbers_not_available`.
@@ -846,7 +849,7 @@ client.prepare_phone_number_whatsapp(number_id, language="en")  # 30-minute wind
 codes = client.list_phone_number_codes(number_id)["codes"]      # poll every few seconds
 
 # Usage and charges of the month
-usage = client.get_phone_numbers_usage()
+usage = client.get_phone_numbers_usage()  # currency, lines, totals, total, today, daily_cap
 ```
 
 Releasing is final: WhatsApp on the number stops working, the carrier may give

@@ -19,7 +19,8 @@ your account, the API answers `403 phone_numbers_not_available`.
 - `update_phone_number_voice` (forwarding, voicemail, recording, transcription),
   `send_phone_number_sms`, `list_phone_number_messages`, `list_phone_number_calls`,
   `list_phone_number_codes` and `prepare_phone_number_whatsapp` (receive the WhatsApp
-  code by phone call), `get_phone_numbers_usage`.
+  code by phone call), `get_phone_numbers_usage`. Prices and usage are in the account's
+  billing currency (USD, EUR or GBP, same amount; `currency` in the answers).
 - Webhook events (opt-in): `sms_received`, `call_received`, `voicemail_received`,
   `phone_number_activated`, `phone_number_declined`, `phone_number_released`,
   `phone_number_port_out` (`update_notification_config` docs and the webhook

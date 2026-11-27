@@ -87501,6 +87501,11 @@
                     },
                     "emergency_calls": {
                       "type": "boolean"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "example": "usd",
+                      "description": "The account's billing currency (usd, eur or gbp): prices are the same numeric amount in it."
                     }
                   },
                   "additionalProperties": true
@@ -87522,7 +87527,7 @@
       "get": {
         "operationId": "listPhoneNumberCountries",
         "summary": "Countries and prices of phone numbers",
-        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nCountries and number types on sale, cheapest first. Price per month in USD cents (3 to 30 USD); `needs_kyc` = identity documents required; `sms` = can receive SMS, `sms_send` = can send.",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nCountries and number types on sale, cheapest first. Price per month in cents of the account's billing currency (3 to 30: $3 = 3 EUR = 3 GBP, the amount charged); `needs_kyc` = identity documents required; `sms` = can receive SMS, `sms_send` = can send.",
         "responses": {
           "200": {
             "description": "Countries.",
@@ -87583,6 +87588,11 @@
                           }
                         }
                       }
+                    },
+                    "currency": {
+                      "type": "string",
+                      "example": "usd",
+                      "description": "The account's billing currency (usd, eur or gbp): prices are the same numeric amount in it."
                     }
                   },
                   "additionalProperties": true
@@ -87620,6 +87630,16 @@
           },
           "502": {
             "description": "The carrier did not answer (`error_code`: `phone_numbers_carrier_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The account is billed in a currency phone numbers do not support (`error_code`: `phone_numbers_currency_unsupported`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -87800,6 +87820,16 @@
           },
           "503": {
             "description": "Temporarily unavailable (`error_code`: `phone_numbers_capacity`, `phone_numbers_not_configured`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNumberError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The account is billed in a currency phone numbers do not support (`error_code`: `phone_numbers_currency_unsupported`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -89022,7 +89052,7 @@
             }
           },
           "400": {
-            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "description": "Invalid date or limit (`error_code`: `phone_numbers_invalid_request`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -89125,7 +89155,7 @@
             }
           },
           "400": {
-            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "description": "Invalid date or limit (`error_code`: `phone_numbers_invalid_request`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -89241,7 +89271,7 @@
             }
           },
           "400": {
-            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "description": "Invalid date or limit (`error_code`: `phone_numbers_invalid_request`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -89497,7 +89527,7 @@
       "get": {
         "operationId": "getPhoneNumbersUsage",
         "summary": "Phone usage and charges",
-        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nBillable usage (outbound SMS, forwarded minutes, recording, transcription; inbound minutes at cost; inbound SMS free) with totals in USD. Charged on the next subscription invoice. Over the daily limit, outbound SMS, forwarding and recording stop until midnight UTC.",
+        "description": "**Not generally available yet.** Off by default: answers `403` with `phone_numbers_not_available` until the feature is available.\n\nBillable usage (outbound SMS, forwarded minutes, recording, transcription; inbound minutes at cost; inbound SMS free) with totals in the account's billing currency. Charged on the next subscription invoice. Over the daily limit, outbound SMS, forwarding and recording stop until midnight UTC.",
         "parameters": [
           {
             "name": "from",
@@ -89536,22 +89566,78 @@
                     "to": {
                       "type": "string"
                     },
+                    "currency": {
+                      "type": "string",
+                      "example": "usd",
+                      "description": "The account's billing currency (usd, eur or gbp): prices are the same numeric amount in it."
+                    },
                     "lines": {
                       "type": "array",
                       "items": {
-                        "type": "object"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "number_id": {
+                            "type": "string"
+                          },
+                          "phone_number": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "sms_outbound",
+                              "forwarding",
+                              "recording",
+                              "transcription",
+                              "inbound_minutes"
+                            ]
+                          },
+                          "quantity": {
+                            "type": "integer"
+                          },
+                          "unit": {
+                            "type": "string"
+                          },
+                          "amount": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "billed": {
+                            "type": "boolean"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
                       }
                     },
                     "totals": {
-                      "type": "object"
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "quantity": {
+                            "type": "integer"
+                          },
+                          "amount": {
+                            "type": "number"
+                          }
+                        }
+                      }
                     },
-                    "total_usd": {
+                    "total": {
                       "type": "number"
                     },
-                    "today_usd": {
+                    "today": {
                       "type": "number"
                     },
-                    "daily_cap_usd": {
+                    "daily_cap": {
                       "type": "number"
                     }
                   },
@@ -89561,7 +89647,7 @@
             }
           },
           "400": {
-            "description": "Invalid date (`error_code`: `phone_numbers_invalid_request`).",
+            "description": "Invalid date or limit (`error_code`: `phone_numbers_invalid_request`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -93586,7 +93672,7 @@
           "monthly_cents": {
             "type": "integer",
             "example": 300,
-            "description": "Monthly price in the subscription currency."
+            "description": "Monthly price in cents of the subscription currency (same numeric amount as the USD price)."
           },
           "currency": {
             "type": "string",
