@@ -9,6 +9,7 @@ Run with: python -m unittest discover -s tests
 import inspect
 import json
 import os
+import re
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -135,7 +136,8 @@ class TestPhoneNumbers(unittest.TestCase):
             self.assertIn("limit (int, optional)", getattr(UploadPostClient, name).__doc__, name)
 
     def test_the_shipped_files_do_not_mention_internal_names(self):
-        for marker in ("Telnyx", "telnyx", "PHONE_NUMBERS_", "TELNYX_", "UPLOADPOSTS_PHONE", "_ALLOWLIST"):
+        self.assertIsNone(re.search(r"tel[n]yx", SHIPPED, re.I), "the carrier is never named")
+        for marker in ("PHONE_NUMBERS_", "UPLOADPOSTS_PHONE", "_ALLOWLIST"):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, SHIPPED)
 
